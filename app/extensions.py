@@ -3,7 +3,7 @@ Database Extensions for FastAPI
 Converted from Flask-SQLAlchemy to SQLAlchemy 2.0+
 """
 
-from sqlalchemy import create_engine, MetaData, Column, String, DateTime, ForeignKey, Integer, Boolean, Text
+from sqlalchemy import create_engine, MetaData, Column, String, DateTime, Date, ForeignKey, Integer, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, relationship
 import os
@@ -45,6 +45,7 @@ class DB:
     Column = Column
     String = String
     DateTime = DateTime
+    Date = Date
     ForeignKey = ForeignKey
     Integer = Integer
     Boolean = Boolean
