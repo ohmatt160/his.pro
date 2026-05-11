@@ -38,25 +38,28 @@ class PatientService:
     def get_all_patients(facility_slug=None, page=1, per_page=20, search=None):
         """Get paginated list of patients with optional facility filtering"""
         query = Patient.query
-        
+
         # Filter by facility_slug for multi-tenant isolation
         if facility_slug:
             query = query.filter_by(facility_slug=facility_slug)
-        
+
         if search:
             query = query.filter(
-                Patient.first_name.ilike(f'%{search}%') | 
+                Patient.first_name.ilike(f'%{search}%') |
                 Patient.last_name.ilike(f'%{search}%')
             )
-        
-        pagination = query.order_by(Patient.created_at.desc()).paginate(page=page, per_page=per_page, error_out=False)
-        
+
+        query = query.order_by(Patient.created_at.desc())
+        total = query.count()
+        items = query.offset((page - 1) * per_page).limit(per_page).all()
+        pages = (total + per_page - 1) // per_page
+
         return {
-            'items': pagination.items,
-            'total': pagination.total,
+            'items': items,
+            'total': total,
             'page': page,
             'per_page': per_page,
-            'pages': pagination.pages
+            'pages': pages
         }
     
     @staticmethod

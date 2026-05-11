@@ -1,48 +1,81 @@
-import os
-from flask import current_app
-from flask_mail import Mail, Message
+"""
+Email Service - Framework Agnostic
+Converted from Flask-Mail to standard smtplib for FastAPI compatibility
+"""
 
-mail = Mail()
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from typing import Optional
+
+# Email configuration from environment
+MAIL_SERVER = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
+MAIL_PORT = int(os.getenv('MAIL_PORT', 587))
+MAIL_USE_TLS = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
+MAIL_USERNAME = os.getenv('MAIL_USERNAME')
+MAIL_PASSWORD = os.getenv('MAIL_PASSWORD')
+MAIL_DEFAULT_SENDER = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@hispro.com')
+
 
 class EmailService:
-    """Email notification service"""
-    
+    """Email notification service using standard SMTP"""
+
     @staticmethod
     def init_app(app):
-        """Initialize email service with Flask app"""
-        app.config['MAIL_SERVER'] = os.getenv('MAIL_SERVER', 'smtp.gmail.com')
-        app.config['MAIL_PORT'] = int(os.getenv('MAIL_PORT', 587))
-        app.config['MAIL_USE_TLS'] = os.getenv('MAIL_USE_TLS', 'true').lower() == 'true'
-        app.config['MAIL_USERNAME'] = os.getenv('MAIL_USERNAME')
-        app.config['MAIL_PASSWORD'] = os.getenv('MAIL_PASSWORD')
-        app.config['MAIL_DEFAULT_SENDER'] = os.getenv('MAIL_DEFAULT_SENDER', 'noreply@hispro.com')
-        
-        mail.init_app(app)
-    
+        """
+        Initialize email service (kept for compatibility).
+        In FastAPI, nothing needed as config is read from environment.
+        """
+        pass
+
     @staticmethod
-    def send_email(to, subject, body, html=None):
-        """Send email"""
+    def _send_smtp(to: str, subject: str, body: str, html: Optional[str] = None) -> tuple:
+        """Send email via SMTP"""
+        if not all([MAIL_USERNAME, MAIL_PASSWORD]):
+            return False, "Email configuration incomplete"
+
         try:
-            msg = Message(
-                subject=subject,
-                recipients=[to],
-                body=body,
-                html=html
-            )
-            mail.send(msg)
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = MAIL_DEFAULT_SENDER or MAIL_USERNAME
+            msg['To'] = to
+
+            # Attach plain text part
+            text_part = MIMEText(body, 'plain')
+            msg.attach(text_part)
+
+            # Attach HTML part if provided
+            if html:
+                html_part = MIMEText(html, 'html')
+                msg.attach(html_part)
+
+            # Connect to SMTP server
+            with smtplib.SMTP(MAIL_SERVER, MAIL_PORT) as server:
+                server.ehlo()
+                if MAIL_USE_TLS:
+                    server.starttls()
+                    server.ehlo()
+                server.login(MAIL_USERNAME, MAIL_PASSWORD)
+                server.send_message(msg)
+
             return True, "Email sent successfully"
         except Exception as e:
-            print(f"Error sending email: {e}")
             return False, str(e)
-    
+
     @staticmethod
-    def send_password_reset_email(email, reset_token):
+    def send_email(to: str, subject: str, body: str, html: Optional[str] = None) -> tuple:
+        """Send email"""
+        return EmailService._send_smtp(to, subject, body, html)
+
+    @staticmethod
+    def send_password_reset_email(email: str, reset_token: str):
         """Send password reset email"""
         reset_link = f"http://localhost:5173/reset-password?token={reset_token}"
-        
+
         subject = "Password Reset Request - HIS.Pro"
-        body = f"""
-Hello,
+        body = f"""Hello,
 
 You have requested to reset your password for HIS.Pro.
 
@@ -56,9 +89,8 @@ If you did not request this password reset, please ignore this email.
 Best regards,
 HIS.Pro Team
         """
-        
-        html = f"""
-<html>
+
+        html = f"""<html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #2b8cee;">Password Reset Request</h2>
@@ -76,15 +108,14 @@ HIS.Pro Team
 </body>
 </html>
         """
-        
+
         return EmailService.send_email(email, subject, body, html)
-    
+
     @staticmethod
-    def send_welcome_email(email, first_name):
+    def send_welcome_email(email: str, first_name: str):
         """Send welcome email to new user"""
         subject = "Welcome to HIS.Pro"
-        body = f"""
-Hello {first_name},
+        body = f"""Hello {first_name},
 
 Welcome to HIS.Pro! Your account has been created successfully.
 
@@ -93,9 +124,8 @@ You can now log in to access the hospital information system.
 Best regards,
 HIS.Pro Team
         """
-        
-        html = f"""
-<html>
+
+        html = f"""<html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #2b8cee;">Welcome to HIS.Pro!</h2>
@@ -108,15 +138,14 @@ HIS.Pro Team
 </body>
 </html>
         """
-        
+
         return EmailService.send_email(email, subject, body, html)
-    
+
     @staticmethod
-    def send_appointment_reminder(email, patient_name, appointment_date, doctor_name):
+    def send_appointment_reminder(email: str, patient_name: str, appointment_date: str, doctor_name: str):
         """Send appointment reminder email"""
         subject = "Appointment Reminder - HIS.Pro"
-        body = f"""
-Hello {patient_name},
+        body = f"""Hello {patient_name},
 
 This is a reminder for your upcoming appointment:
 
@@ -128,9 +157,8 @@ Please arrive 15 minutes before your scheduled time.
 Best regards,
 HIS.Pro Team
         """
-        
-        html = f"""
-<html>
+
+        html = f"""<html>
 <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
     <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #2b8cee;">Appointment Reminder</h2>
@@ -147,5 +175,5 @@ HIS.Pro Team
 </body>
 </html>
         """
-        
+
         return EmailService.send_email(email, subject, body, html)

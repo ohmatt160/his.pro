@@ -13,24 +13,24 @@ class UserProfileService:
     def get_all_users(page=1, per_page=20, role=None, facility_slug=None):
         """Get paginated list of users, optionally filtered by facility"""
         query = User.query
-        
-        # Filter by facility if provided (multi-tenant)
+
         if facility_slug:
             query = query.filter_by(facility_slug=facility_slug)
-        
+
         if role:
             query = query.filter_by(role=role)
-        
-        pagination = query.order_by(User.created_at.desc()).paginate(
-            page=page, per_page=per_page, error_out=False
-        )
-        
+
+        query = query.order_by(User.created_at.desc())
+        total = query.count()
+        items = query.offset((page - 1) * per_page).limit(per_page).all()
+        pages = (total + per_page - 1) // per_page
+
         return {
-            'items': pagination.items,
-            'total': pagination.total,
+            'items': items,
+            'total': total,
             'page': page,
             'per_page': per_page,
-            'pages': pagination.pages
+            'pages': pages
         }
     
     @staticmethod

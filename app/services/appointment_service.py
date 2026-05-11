@@ -24,18 +24,21 @@ class AppointmentService:
         return Appointment.query.get(appointment_id)
     
     @staticmethod
-    def get_appointments_by_patient(patient_id):
-        """Get all appointments for a patient"""
-        return Appointment.query.filter_by(patient_id=patient_id).order_by(Appointment.appointment_date.desc()).all()
-    
+    def get_appointments_by_patient(patient_id, facility_slug=None):
+        """Get all appointments for a patient, optionally filtered by facility"""
+        query = Appointment.query.filter_by(patient_id=patient_id)
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
+        return query.order_by(Appointment.appointment_date.desc()).all()
+
     @staticmethod
-    def get_appointments_by_doctor(doctor_id, date=None):
-        """Get appointments for a doctor, optionally filtered by date"""
+    def get_appointments_by_doctor(doctor_id, date=None, facility_slug=None):
+        """Get appointments for a doctor, optionally filtered by date and facility"""
         query = Appointment.query.filter_by(doctor_id=doctor_id)
-        
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
         if date:
             query = query.filter(db.func.date(Appointment.appointment_date) == date)
-        
         return query.order_by(Appointment.appointment_date).all()
     
     @staticmethod
@@ -45,6 +48,15 @@ class AppointmentService:
         appointment.save()
         return appointment
     
+    @staticmethod
+    def update_appointment(appointment, data):
+        """Update appointment fields"""
+        for key, value in data.items():
+            if hasattr(appointment, key) and value is not None:
+                setattr(appointment, key, value)
+        appointment.save()
+        return appointment
+
     @staticmethod
     def cancel_appointment(appointment):
         """Cancel appointment"""

@@ -1,12 +1,25 @@
-from app import create_app
-from app.extensions import db
+"""
+Entry point for the HIS.Pro FastAPI Application
+"""
 
-app = create_app()
-
-# Create database tables on startup if they don't exist
-with app.app_context():
-    db.create_all()
-    print("[OK] Database tables initialized")
+import os
+import uvicorn
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+    # Get configuration from environment
+    host = os.getenv('HOST', '0.0.0.0')
+    port = int(os.getenv('PORT', 8000))
+    env = os.getenv('FLASK_ENV', 'development')
+    reload = env == 'development'
+
+    print(f"[OK] Starting HIS.Pro FastAPI server on {host}:{port}")
+    print(f"[OK] Environment: {env}")
+    print(f"[OK] reload: {reload}")
+
+    uvicorn.run(
+        "app.main:app",
+        host=host,
+        port=port,
+        reload=reload,
+        workers=1 if reload else 4
+    )

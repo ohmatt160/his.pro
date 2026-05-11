@@ -21,7 +21,7 @@ class BillingService:
     # ==================== Invoices ====================
     
     @staticmethod
-    def create_invoice(data):
+    def create_invoice(data, facility_slug=None):
         """Create a new invoice with items"""
         invoice = Invoice(
             patient_id=data['patient_id'],
@@ -30,7 +30,8 @@ class BillingService:
             discount=data.get('discount', 0),
             notes=data.get('notes'),
             due_date=data.get('due_date'),
-            invoice_date=data.get('invoice_date', datetime.utcnow())
+            invoice_date=data.get('invoice_date', datetime.utcnow()),
+            facility_slug=facility_slug
         )
         invoice.save()
         

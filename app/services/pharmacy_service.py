@@ -28,6 +28,16 @@ class PharmacyService:
         return medication, None
     
     @staticmethod
+    def get_all_medications(facility_slug=None, active_only=True):
+        """Get all medications, optionally filtered by facility"""
+        query = Medication.query
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
+        if active_only:
+            query = query.filter_by(is_active=True)
+        return query.order_by(Medication.name).all()
+
+    @staticmethod
     def get_medication_by_id(medication_id):
         """Get medication by ID"""
         return Medication.query.get(medication_id)
@@ -50,17 +60,18 @@ class PharmacyService:
         return medication
     
     # ==================== Inventory ====================
-    
+
     @staticmethod
-    def add_inventory(medication_id, data):
+    def add_inventory(medication_id, facility_slug, data):
         """Add inventory for a medication"""
-        medication = Medication.query.get(medication_id)
+        # Verify medication belongs to facility
+        medication = Medication.query.filter_by(id=medication_id, facility_slug=facility_slug).first()
         if not medication:
-            return None, "Medication not found"
-        
+            return None, "Medication not found in this facility"
+
         # Check if inventory exists
         inventory = PharmacyInventory.query.filter_by(medication_id=medication_id).first()
-        
+
         if inventory:
             # Update existing inventory
             inventory.quantity += data.get('quantity', 0)
@@ -69,7 +80,7 @@ class PharmacyService:
             inventory.location = data.get('location', inventory.location)
             inventory.save()
             return inventory, None
-        
+
         # Create new inventory
         inventory = PharmacyInventory(
             medication_id=medication_id,
@@ -80,11 +91,14 @@ class PharmacyService:
         )
         inventory.save()
         return inventory, None
-    
+
     @staticmethod
-    def get_inventory(medication_id):
-        """Get inventory for a medication"""
-        return PharmacyInventory.query.filter_by(medication_id=medication_id).first()
+    def get_inventory(medication_id, facility_slug=None):
+        """Get inventory for a medication, optionally filtered by facility"""
+        query = PharmacyInventory.query.filter_by(medication_id=medication_id)
+        if facility_slug:
+            query = query.join(Medication, PharmacyInventory.medication_id == Medication.id).filter(Medication.facility_slug == facility_slug)
+        return query.first()
     
     @staticmethod
     def check_stock(medication_id, quantity_needed):
@@ -136,14 +150,20 @@ class PharmacyService:
         return Prescription.query.get(prescription_id)
     
     @staticmethod
-    def get_prescriptions_by_patient(patient_id):
-        """Get all prescriptions for a patient"""
-        return Prescription.query.filter_by(patient_id=patient_id).order_by(Prescription.prescription_date.desc()).all()
-    
+    def get_prescriptions_by_patient(patient_id, facility_slug=None):
+        """Get all prescriptions for a patient, optionally filtered by facility"""
+        query = Prescription.query.filter_by(patient_id=patient_id)
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
+        return query.order_by(Prescription.prescription_date.desc()).all()
+
     @staticmethod
-    def get_pending_prescriptions():
-        """Get all pending prescriptions"""
-        return Prescription.query.filter_by(status='PENDING').order_by(Prescription.prescription_date).all()
+    def get_pending_prescriptions(facility_slug=None):
+        """Get all pending prescriptions, optionally filtered by facility"""
+        query = Prescription.query.filter_by(status='PENDING')
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
+        return query.order_by(Prescription.prescription_date).all()
     
     @staticmethod
     def dispense_prescription(prescription_id, dispensed_by_id):
