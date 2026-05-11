@@ -3,7 +3,7 @@ Password Reset Routes - FastAPI Version
 Converted from Flask-RESTx password_reset_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Body
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
 import logging
@@ -23,6 +23,11 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     token: str = Field(...)
+    new_password: str = Field(..., min_length=8)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(...)
     new_password: str = Field(..., min_length=8)
 
 
@@ -58,14 +63,17 @@ async def confirm_password_reset(
 
 @router.post("/change", response_model=MessageResponse)
 async def change_password_authenticated(
-    current_password: str = Field(...),
-    new_password: str = Field(..., min_length=8),
+    data: ChangePasswordRequest,
     current_user: User = Depends(get_current_user)
 ):
     """Change password for authenticated user"""
     from app.services.user_profile_service import UserProfileService
 
-    success, error = UserProfileService.change_password(current_user, current_password, new_password)
+    success, error = UserProfileService.change_password(
+        current_user,
+        data.current_password,
+        data.new_password
+    )
     if not success:
         raise HTTPException(status_code=400, detail=error)
 
