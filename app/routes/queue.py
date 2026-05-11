@@ -34,15 +34,6 @@ class QueueUpdate(BaseModel):
     priority: Optional[str] = Field(None, pattern="^(normal|urgent)$")
     department: Optional[str] = Field(None, max_length=100)
 
-
-class QueueListResponse(BaseModel):
-    queue_entries: List[QueueResponse]
-    total: int
-    page: int
-    per_page: int
-    pages: int
-
-
 class QueueResponse(BaseModel):
     # fields remain
     id: str
@@ -61,6 +52,17 @@ class QueueResponse(BaseModel):
     started_at: Optional[str]
     completed_at: Optional[str]
     created_at: str
+
+class QueueListResponse(BaseModel):
+    queue_entries: List[QueueResponse]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+
+class MessageResponse(BaseModel):
+    message: str
+
 
 
 ...
@@ -103,8 +105,8 @@ async def get_queue(
             patient_name=entry.patient.full_name if entry.patient else None,
             patient_phone=entry.patient.phone if entry.patient else None,
             patient_date_of_birth=entry.patient.date_of_birth.isoformat() if entry.patient and entry.patient.date_of_birth else None,
-        appointment_id=str(entry.appointment_id) if entry.appointment_id else None,
-        appointment_time=entry.appointment.appointment_date.isoformat() if entry.appointment and entry.appointment.appointment_date else None,
+            appointment_id=str(entry.appointment_id) if entry.appointment_id else None,
+            appointment_time=entry.appointment.appointment_date.isoformat() if entry.appointment and entry.appointment.appointment_date else None,
             facility_slug=entry.facility_slug,
             department=entry.department,
             status=entry.status,
