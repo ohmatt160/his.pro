@@ -85,6 +85,10 @@ class LowStockItemResponse(BaseModel):
 class MessageResponse(BaseModel):
     message: str
 
+class ReorderRequest(BaseModel):
+    item_ids: List[str] = Field(..., min_length=1, description="List of inventory item IDs to reorder")
+    supplier_id: Optional[str] = Field(None, description="Optional supplier ID for the reorder")
+    notes: Optional[str] = Field(None, max_length=500, description="Optional notes for the reorder")
 
 @router.get("", response_model=List[InventoryResponse])
 async def get_inventory_items(
@@ -452,12 +456,20 @@ async def get_low_stock(
 
 @router.post("/reorder", response_model=MessageResponse)
 async def create_reorder_requests(
-    data: ReorderRequest,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
-    db: Session = Depends(get_db)
+        data: ReorderRequest,
+        current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
+        db: Session = Depends(get_db)
 ):
     """Create reorder requests for low stock items (placeholder)"""
+    # Validate items exist
+    items = db_session.query(Inventory).filter(
+        Inventory.id.in_(data.item_ids),
+        Inventory.is_active == True
+    ).all()
+
+    if not items:
+        raise HTTPException(status_code=404, detail="No valid inventory items found")
+
     # In a full implementation, this would create PurchaseOrder or similar
-    # For now, just return count
-    count = len(data.item_ids)
+    count = len(items)
     return MessageResponse(message=f"Created {count} reorder request(s)")
