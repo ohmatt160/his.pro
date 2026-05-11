@@ -10,7 +10,7 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
-from app.services.audit_service import AuditService
+from app.services.audit_log_service import  AuditLogService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
 
@@ -44,7 +44,7 @@ async def get_audit_logs(
 ):
     """Get audit logs (admin only)"""
     facility_slug = current_user.facility_slug
-    result = AuditService.get_logs(
+    result = AuditLogService.get_logs(
         facility_slug=facility_slug,
         action=action,
         resource_type=resource_type,
@@ -79,7 +79,7 @@ async def get_audit_log(
 ):
     """Get single audit log entry (admin only)"""
     facility_slug = current_user.facility_slug
-    log = AuditService.get_log_by_id(log_id, facility_slug)
+    log = AuditLogService.get_log_by_id(log_id, facility_slug)
 
     if not log:
         raise HTTPException(status_code=404, detail="Audit log not found")
