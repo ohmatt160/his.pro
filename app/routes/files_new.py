@@ -4,6 +4,7 @@ Converted from Flask-RESTx file_upload_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import List
 import os

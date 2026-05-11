@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 import logging
 
-from app.extensions import get_db
+from app.extensions import get_db, db_session
 from app.services.billing_service import BillingService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User

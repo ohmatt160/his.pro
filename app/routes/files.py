@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime
 import logging
 
+from pydantic import BaseModel
+
 from app.utils.dependencies import role_required
 from app.models.user import User
 from app.services.file_upload_service import FileUploadService
