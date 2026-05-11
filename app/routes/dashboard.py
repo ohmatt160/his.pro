@@ -4,6 +4,7 @@ Converted from Flask-RESTx dashboard_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from datetime import datetime, timedelta

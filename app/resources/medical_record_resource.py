@@ -1,266 +1,252 @@
-from flask_restx import Namespace, fields
-from flask import request
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from app.resources.base_resource import BaseResource
+"""
+EMR Routes - FastAPI Version
+Converted from Flask-RESTx emr_resource.py
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import logging
+
+from app.extensions import get_db
+from app.utils.dependencies import get_current_user, role_required
 from app.services.medical_record_service import MedicalRecordService
-from app.schemas.medical_record_schema import MedicalRecordSchema, ClinicalNoteSchema
-from app.utils.decorators import role_required
+from app.models.user import User
+from app.models.patient import Patient
 
-emr_ns = Namespace('emr', description='Electronic Medical Records operations')
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/emr", tags=["emr"])
 
-# Swagger models
-medical_record_model = emr_ns.model('MedicalRecord', {
-    'patient_id': fields.String(required=True),
-    'appointment_id': fields.String(),
-    'chief_complaint': fields.String(),
-    'vital_signs': fields.Raw(),
-    'symptoms': fields.List(fields.String()),
-    'diagnosis': fields.List(fields.String()),
-    'treatment_plan': fields.String(),
-    'prescriptions': fields.List(fields.Raw()),
-    'lab_orders': fields.List(fields.Raw()),
-    'follow_up_date': fields.String(),
-    'notes': fields.String()
-})
 
-clinical_note_model = emr_ns.model('ClinicalNote', {
-    'patient_id': fields.String(required=True),
-    'record_id': fields.String(),
-    'note_type': fields.String(),
-    'title': fields.String(),
-    'content': fields.String(required=True),
-    'is_confidential': fields.Boolean()
-})
+# Pydantic Models
+class MedicalRecordCreate(BaseModel):
+    patient_id: str = Field(...)
+    appointment_id: Optional[str] = Field(None)
+    chief_complaint: Optional[str] = Field(None)
+    vital_signs: Optional[Dict[str, Any]] = Field(None)
+    symptoms: Optional[List[str]] = Field(None)
+    diagnosis: Optional[List[str]] = Field(None)
+    treatment_plan: Optional[str] = Field(None)
+    prescriptions: Optional[List[Dict[str, Any]]] = Field(None)
+    lab_orders: Optional[List[Dict[str, Any]]] = Field(None)
+    follow_up_date: Optional[str] = Field(None)
+    notes: Optional[str] = Field(None)
+
+
+class MedicalRecordUpdate(BaseModel):
+    chief_complaint: Optional[str] = Field(None)
+    vital_signs: Optional[Dict[str, Any]] = Field(None)
+    symptoms: Optional[List[str]] = Field(None)
+    diagnosis: Optional[List[str]] = Field(None)
+    treatment_plan: Optional[str] = Field(None)
+    prescriptions: Optional[List[Dict[str, Any]]] = Field(None)
+    lab_orders: Optional[List[Dict[str, Any]]] = Field(None)
+    follow_up_date: Optional[str] = Field(None)
+    notes: Optional[str] = Field(None)
+
+
+class MedicalRecordResponse(BaseModel):
+    id: str
+    patient_id: str
+    appointment_id: Optional[str]
+    facility_slug: str
+    chief_complaint: Optional[str]
+    vital_signs: Optional[Dict[str, Any]]
+    symptoms: Optional[List[str]]
+    diagnosis: Optional[List[str]]
+    treatment_plan: Optional[str]
+    prescriptions: Optional[List[Dict[str, Any]]]
+    lab_orders: Optional[List[Dict[str, Any]]]
+    follow_up_date: Optional[str]
+    notes: Optional[str]
+    created_by: str
+    created_at: str
+    updated_at: Optional[str]
+
+
+class ClinicalNoteCreate(BaseModel):
+    patient_id: str = Field(...)
+    record_id: Optional[str] = Field(None)
+    note_type: Optional[str] = Field(None)
+    title: Optional[str] = Field(None)
+    content: str = Field(..., min_length=1)
+    is_confidential: Optional[bool] = Field(False)
+
+
+class ClinicalNoteUpdate(BaseModel):
+    note_type: Optional[str] = Field(None)
+    title: Optional[str] = Field(None)
+    content: Optional[str] = Field(None)
+    is_confidential: Optional[bool] = Field(None)
+
+
+class ClinicalNoteResponse(BaseModel):
+    id: str
+    patient_id: str
+    record_id: Optional[str]
+    facility_slug: str
+    note_type: Optional[str]
+    title: Optional[str]
+    content: str
+    is_confidential: bool
+    created_by: str
+    created_at: str
+    updated_at: Optional[str]
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+# Helper to check facility access
+def check_facility_access(current_user: User):
+    if not current_user.facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    return current_user.facility_slug
+
+
+def verify_patient_access(db: Session, patient_id: str, facility_slug: str):
+    patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    return patient
 
 
 # ==================== Medical Records ====================
 
-class MedicalRecordListResource(BaseResource):
-    """Resource for listing and creating medical records"""
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    def get(self):
-        """Get medical records for a patient"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        patient_id = request.args.get('patient_id')
-        
-        if not patient_id:
-            return self.handle_error("Please provide patient_id", 400)
-        
-        # Verify patient belongs to user's facility
-        from app.models.patient import Patient
-        patient = Patient.query.filter_by(id=patient_id, facility_slug=facility_slug).first()
-        if not patient:
-            return self.handle_error("Patient not found", 404)
-        
-        records = MedicalRecordService.get_medical_records_by_patient(patient_id, facility_slug)
-        schema = MedicalRecordSchema(many=True)
-        return self.handle_response(data=schema.dump(records))
-    
-    @role_required('ADMIN', 'DOCTOR')
-    @emr_ns.expect(medical_record_model)
-    def post(self):
-        """Create a new medical record"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        schema = MedicalRecordSchema()
-        data = schema.load(emr_ns.payload)
-        
-        # Force facility_slug
-        data['facility_slug'] = facility_slug
-        
-        current_user_id = get_jwt_identity()
-        record = MedicalRecordService.create_medical_record(data, current_user_id)
-        
-        return self.handle_response(
-            data=schema.dump(record),
-            message="Medical record created successfully",
-            status_code=201
-        )
+@router.get("/records", response_model=List[MedicalRecordResponse])
+async def list_medical_records(
+        patient_id: str = Query(...),
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Get medical records for a patient"""
+    facility_slug = check_facility_access(current_user)
+    verify_patient_access(db, patient_id, facility_slug)
+
+    records = MedicalRecordService.get_medical_records_by_patient(patient_id, facility_slug)
+    return records
 
 
-class MedicalRecordResource(BaseResource):
-    """Resource for individual medical record operations"""
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    def get(self, record_id):
-        """Get medical record by ID"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        record = MedicalRecordService.get_medical_record_by_id(record_id)
-        
-        if not record:
-            return self.handle_error("Medical record not found", 404)
-        
-        # Verify record belongs to user's facility
-        if record.facility_slug != facility_slug:
-            return self.handle_error("Medical record not found", 404)
-        
-        schema = MedicalRecordSchema()
-        return self.handle_response(data=schema.dump(record))
-    
-    @role_required('ADMIN', 'DOCTOR')
-    @emr_ns.expect(medical_record_model)
-    def put(self, record_id):
-        """Update medical record"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        record = MedicalRecordService.get_medical_record_by_id(record_id)
-        
-        if not record:
-            return self.handle_error("Medical record not found", 404)
-        
-        # Verify record belongs to user's facility
-        if record.facility_slug != facility_slug:
-            return self.handle_error("Medical record not found", 404)
-        
-        schema = MedicalRecordSchema(partial=True)
-        data = schema.load(emr_ns.payload)
-        
-        updated_record = MedicalRecordService.update_medical_record(record, data)
-        
-        return self.handle_response(
-            data=schema.dump(updated_record),
-            message="Medical record updated successfully"
-        )
+@router.post("/records", response_model=MedicalRecordResponse, status_code=status.HTTP_201_CREATED)
+async def create_medical_record(
+        data: MedicalRecordCreate,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+        db: Session = Depends(get_db)
+):
+    """Create a new medical record"""
+    facility_slug = check_facility_access(current_user)
+    verify_patient_access(db, data.patient_id, facility_slug)
+
+    record_data = data.dict()
+    record_data['facility_slug'] = facility_slug
+
+    record = MedicalRecordService.create_medical_record(record_data, str(current_user.id))
+    return record
+
+
+@router.get("/records/{record_id}", response_model=MedicalRecordResponse)
+async def get_medical_record(
+        record_id: str,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Get medical record by ID"""
+    facility_slug = check_facility_access(current_user)
+
+    record = MedicalRecordService.get_medical_record_by_id(record_id)
+
+    if not record or record.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    return record
+
+
+@router.put("/records/{record_id}", response_model=MedicalRecordResponse)
+async def update_medical_record(
+        record_id: str,
+        data: MedicalRecordUpdate,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+        db: Session = Depends(get_db)
+):
+    """Update medical record"""
+    facility_slug = check_facility_access(current_user)
+
+    record = MedicalRecordService.get_medical_record_by_id(record_id)
+
+    if not record or record.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Medical record not found")
+
+    updated_record = MedicalRecordService.update_medical_record(record, data.dict(exclude_unset=True))
+    return updated_record
 
 
 # ==================== Clinical Notes ====================
 
-class ClinicalNoteListResource(BaseResource):
-    """Resource for listing and creating clinical notes"""
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    def get(self):
-        """Get clinical notes for a patient"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        patient_id = request.args.get('patient_id')
-        
-        if not patient_id:
-            return self.handle_error("Please provide patient_id", 400)
-        
-        # Verify patient belongs to user's facility
-        from app.models.patient import Patient
-        patient = Patient.query.filter_by(id=patient_id, facility_slug=facility_slug).first()
-        if not patient:
-            return self.handle_error("Patient not found", 404)
-        
-        notes = MedicalRecordService.get_clinical_notes_by_patient(patient_id, facility_slug)
-        schema = ClinicalNoteSchema(many=True)
-        return self.handle_response(data=schema.dump(notes))
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    @emr_ns.expect(clinical_note_model)
-    def post(self):
-        """Create a new clinical note"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        schema = ClinicalNoteSchema()
-        data = schema.load(emr_ns.payload)
-        
-        # Force facility_slug
-        data['facility_slug'] = facility_slug
-        
-        current_user_id = get_jwt_identity()
-        note = MedicalRecordService.create_clinical_note(data, current_user_id)
-        
-        return self.handle_response(
-            data=schema.dump(note),
-            message="Clinical note created successfully",
-            status_code=201
-        )
+@router.get("/notes", response_model=List[ClinicalNoteResponse])
+async def list_clinical_notes(
+        patient_id: str = Query(...),
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Get clinical notes for a patient"""
+    facility_slug = check_facility_access(current_user)
+    verify_patient_access(db, patient_id, facility_slug)
+
+    notes = MedicalRecordService.get_clinical_notes_by_patient(patient_id, facility_slug)
+    return notes
 
 
-class ClinicalNoteResource(BaseResource):
-    """Resource for individual clinical note operations"""
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    def get(self, note_id):
-        """Get clinical note by ID"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        note = MedicalRecordService.get_clinical_note_by_id(note_id)
-        
-        if not note:
-            return self.handle_error("Clinical note not found", 404)
-        
-        # Verify note belongs to user's facility
-        if note.facility_slug != facility_slug:
-            return self.handle_error("Clinical note not found", 404)
-        
-        schema = ClinicalNoteSchema()
-        return self.handle_response(data=schema.dump(note))
-    
-    @role_required('ADMIN', 'DOCTOR', 'NURSE')
-    @emr_ns.expect(clinical_note_model)
-    def put(self, note_id):
-        """Update clinical note"""
-        # Get current user's facility
-        current_user = self.get_current_user()
-        facility_slug = current_user.facility_slug if current_user else None
-        
-        if not facility_slug:
-            return self.handle_error("User is not associated with a facility", 400)
-        
-        note = MedicalRecordService.get_clinical_note_by_id(note_id)
-        
-        if not note:
-            return self.handle_error("Clinical note not found", 404)
-        
-        # Verify note belongs to user's facility
-        if note.facility_slug != facility_slug:
-            return self.handle_error("Clinical note not found", 404)
-        
-        schema = ClinicalNoteSchema(partial=True)
-        data = schema.load(emr_ns.payload)
-        
-        updated_note = MedicalRecordService.update_clinical_note(note, data)
-        
-        return self.handle_response(
-            data=schema.dump(updated_note),
-            message="Clinical note updated successfully"
-        )
+@router.post("/notes", response_model=ClinicalNoteResponse, status_code=status.HTTP_201_CREATED)
+async def create_clinical_note(
+        data: ClinicalNoteCreate,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Create a new clinical note"""
+    facility_slug = check_facility_access(current_user)
+    verify_patient_access(db, data.patient_id, facility_slug)
+
+    note_data = data.dict()
+    note_data['facility_slug'] = facility_slug
+
+    note = MedicalRecordService.create_clinical_note(note_data, str(current_user.id))
+    return note
 
 
-# Register resources
-emr_ns.add_resource(MedicalRecordListResource, '/records')
-emr_ns.add_resource(MedicalRecordResource, '/records/<string:record_id>')
-emr_ns.add_resource(ClinicalNoteListResource, '/notes')
-emr_ns.add_resource(ClinicalNoteResource, '/notes/<string:note_id>')
+@router.get("/notes/{note_id}", response_model=ClinicalNoteResponse)
+async def get_clinical_note(
+        note_id: str,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Get clinical note by ID"""
+    facility_slug = check_facility_access(current_user)
+
+    note = MedicalRecordService.get_clinical_note_by_id(note_id)
+
+    if not note or note.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Clinical note not found")
+
+    return note
+
+
+@router.put("/notes/{note_id}", response_model=ClinicalNoteResponse)
+async def update_clinical_note(
+        note_id: str,
+        data: ClinicalNoteUpdate,
+        current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+        db: Session = Depends(get_db)
+):
+    """Update clinical note"""
+    facility_slug = check_facility_access(current_user)
+
+    note = MedicalRecordService.get_clinical_note_by_id(note_id)
+
+    if not note or note.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Clinical note not found")
+
+    updated_note = MedicalRecordService.update_clinical_note(note, data.dict(exclude_unset=True))
+    return updated_note

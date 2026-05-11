@@ -1,103 +1,120 @@
-import os
-from flask_restx import Namespace, fields
-from flask import request, current_app
-from flask_jwt_extended import jwt_required, get_jwt_identity
-from werkzeug.utils import secure_filename
-from app.resources.base_resource import BaseResource
+"""
+File Upload Routes - FastAPI Version
+Converted from Flask-RESTx file_upload_resource.py
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
+from typing import Optional, List
+import logging
+
+from app.extensions import get_db
+from app.utils.dependencies import get_current_user, role_required
 from app.services.file_upload_service import FileUploadService
-from app.utils.decorators import role_required
+from app.models.user import User
 
-file_upload_ns = Namespace('files', description='File upload operations')
-
-# Swagger models
-upload_response_model = file_upload_ns.model('UploadResponse', {
-    'filename': fields.String(),
-    'url': fields.String(),
-    'size': fields.Integer()
-})
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/files", tags=["files"])
 
 
-class FileUploadResource(BaseResource):
-    """Resource for file uploads"""
-    
-    @jwt_required()
-    def post(self):
-        """Upload a file"""
-        if 'file' not in request.files:
-            return self.handle_error("No file provided", 400)
-        
-        file = request.files['file']
-        
-        if file.filename == '':
-            return self.handle_error("No file selected", 400)
-        
-        # Get optional parameters
-        folder = request.form.get('folder', 'uploads')
-        allowed_extensions = request.form.get('allowed_extensions', None)
-        
-        if allowed_extensions:
-            allowed_extensions = allowed_extensions.split(',')
-        
-        success, result = FileUploadService.upload_file(
-            file, 
-            folder=folder,
-            allowed_extensions=allowed_extensions
-        )
-        
-        if not success:
-            return self.handle_error(result, 400)
-        
-        return self.handle_response(
-            data=result,
-            message="File uploaded successfully",
-            status_code=201
-        )
+# Pydantic Models
+class UploadResponse(BaseModel):
+    filename: str
+    url: str
+    size: int
 
 
-class FileListResource(BaseResource):
-    """Resource for listing files"""
-    
-    @jwt_required()
-    def get(self):
-        """List uploaded files"""
-        folder = request.args.get('folder', 'uploads')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        
-        result = FileUploadService.list_files(folder=folder, page=page, per_page=per_page)
-        
-        return self.handle_response(data=result)
+class FileInfo(BaseModel):
+    filename: str
+    url: str
+    size: int
+    created_at: Optional[str] = None
+    folder: Optional[str] = None
 
 
-class FileResource(BaseResource):
-    """Resource for individual file operations"""
-    
-    @jwt_required()
-    def get(self, filename):
-        """Get file info"""
-        folder = request.args.get('folder', 'uploads')
-        
-        file_info = FileUploadService.get_file_info(filename, folder=folder)
-        
-        if not file_info:
-            return self.handle_error("File not found", 404)
-        
-        return self.handle_response(data=file_info)
-    
-    @role_required('ADMIN')
-    def delete(self, filename):
-        """Delete a file"""
-        folder = request.args.get('folder', 'uploads')
-        
-        success, message = FileUploadService.delete_file(filename, folder=folder)
-        
-        if not success:
-            return self.handle_error(message, 400)
-        
-        return self.handle_response(message=message)
+class FileListResponse(BaseModel):
+    files: List[FileInfo]
+    total: int
+    page: int
+    per_page: int
 
 
-# Register resources
-file_upload_ns.add_resource(FileUploadResource, '/upload')
-file_upload_ns.add_resource(FileListResource, '')
-file_upload_ns.add_resource(FileResource, '/<string:filename>')
+class MessageResponse(BaseModel):
+    message: str
+
+
+@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_file(
+        file: UploadFile = File(...),
+        folder: str = Form("uploads"),
+        allowed_extensions: Optional[str] = Form(None),
+        current_user: User = Depends(get_current_user)
+):
+    """Upload a file"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file selected")
+
+    # Parse allowed extensions
+    extensions_list = None
+    if allowed_extensions:
+        extensions_list = [ext.strip() for ext in allowed_extensions.split(',')]
+
+    # Read file content
+    file_content = await file.read()
+
+    success, result = FileUploadService.upload_file(
+        file,
+        filename=file.filename,
+        content=file_content,
+        content_type=file.content_type,
+        folder=folder,
+        allowed_extensions=extensions_list
+    )
+
+    if not success:
+        raise HTTPException(status_code=400, detail=result)
+
+    return UploadResponse(**result)
+
+
+@router.get("", response_model=FileListResponse)
+async def list_files(
+        folder: str = Query("uploads"),
+        page: int = Query(1, ge=1),
+        per_page: int = Query(20, ge=1, le=100),
+        current_user: User = Depends(get_current_user)
+):
+    """List uploaded files"""
+    result = FileUploadService.list_files(folder=folder, page=page, per_page=per_page)
+    return FileListResponse(**result)
+
+
+@router.get("/{filename}", response_model=FileInfo)
+async def get_file_info(
+        filename: str,
+        folder: str = Query("uploads"),
+        current_user: User = Depends(get_current_user)
+):
+    """Get file info"""
+    file_info = FileUploadService.get_file_info(filename, folder=folder)
+
+    if not file_info:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileInfo(**file_info)
+
+
+@router.delete("/{filename}", response_model=MessageResponse)
+async def delete_file(
+        filename: str,
+        folder: str = Query("uploads"),
+        current_user: User = Depends(role_required('ADMIN'))
+):
+    """Delete a file"""
+    success, message = FileUploadService.delete_file(filename, folder=folder)
+
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+
+    return MessageResponse(message=message)
