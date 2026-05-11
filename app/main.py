@@ -20,10 +20,22 @@ from app.extensions import engine, get_db
 
 # Import API routers
 from app.routes.auth import router as auth_router
-# TODO: Import other routers as they are converted
-# from app.routes.patients import router as patients_router
-# from app.routes.appointments import router as appointments_router
-# etc.
+from app.routes.patients import router as patients_router
+from app.routes.appointments import router as appointments_router
+from app.routes.laboratory import router as laboratory_router
+from app.routes.pharmacy import router as pharmacy_router
+from app.routes.billing import router as billing_router
+from app.routes.emr import router as emr_router
+from app.routes.users import router as users_router
+from app.routes.password_reset import router as password_reset_router
+from app.routes.facilities import router as facilities_router
+from app.routes.radiology import router as radiology_router
+from app.routes.inventory import router as inventory_router
+from app.routes.queue import router as queue_router
+from app.routes.alerts import router as alerts_router
+from app.routes.dashboard import router as dashboard_router
+from app.routes.audit_logs import router as audit_logs_router
+from app.routes.files import router as files_router
 
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
