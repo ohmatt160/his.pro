@@ -1,5 +1,6 @@
 from app.extensions import db
 from app.models.base_model import BaseModel
+from sqlalchemy import JSON
 
 class Patient(BaseModel):
     """Patient model for storing medical records"""
@@ -13,7 +14,7 @@ class Patient(BaseModel):
     email = db.Column(db.String(120))
     address = db.Column(db.Text)
     blood_type = db.Column(db.String(5))
-    medical_history = db.Column(db.JSON, default=dict)
+    medical_history = db.Column(JSON, default=dict)
     emergency_contact_name = db.Column(db.String(100))
     emergency_contact_phone = db.Column(db.String(20))
     created_by = db.Column(db.String(36), db.ForeignKey('users.id'), index=True)
