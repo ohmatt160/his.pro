@@ -1,3 +1,12 @@
+---
+title: His.pro
+emoji: 😻
+colorFrom: yellow
+colorTo: red
+sdk: docker
+pinned: false
+---
+
 # HIS.Pro - Health Information System
 
 A comprehensive healthcare information system built with Flask (Python) backend and React frontend.
@@ -60,3 +69,5 @@ npm run build
 ## License
 
 MIT
+
+Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
