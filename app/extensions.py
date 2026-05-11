@@ -5,7 +5,7 @@ Converted from Flask-SQLAlchemy to SQLAlchemy 2.0+
 
 from sqlalchemy import create_engine, MetaData
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session, query_property
+from sqlalchemy.orm import sessionmaker, scoped_session
 import os
 from dotenv import load_dotenv
 
@@ -35,8 +35,8 @@ db_session = scoped_session(SessionLocal)
 Base = declarative_base()
 Base.metadata = MetaData()
 
-# Add query property to Base for Flask-SQLAlchemy-like behavior
-Base.query = db_session.query_property()
+# query_property is not available in SQLAlchemy 2.0+, using session directly
+# Base.query = db_session.query_property()
 
 # Create a db-like object for compatibility with BaseModel pattern
 class DB:
