@@ -3,7 +3,7 @@ Authentication Routes - FastAPI Version
 Converted from Flask-RESTx auth_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Field
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
