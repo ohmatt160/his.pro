@@ -1,46 +1,48 @@
 import uuid
 from datetime import datetime
-from app.extensions import db
+from sqlalchemy import Column, String, DateTime, Text
+from app.extensions import Base, db_session
 
-class BaseModel(db.Model):
+
+class BaseModel(Base):
     """Abstract base model with common fields and methods"""
     __abstract__ = True
-    
-    id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
     def save(self):
         """Save instance to database with error handling"""
         try:
-            db.session.add(self)
-            db.session.commit()
+            db_session.add(self)
+            db_session.commit()
             return self
         except Exception as e:
-            db.session.rollback()
+            db_session.rollback()
             raise e
-    
+
     def update(self, **kwargs):
         """Update instance with given kwargs"""
         try:
             for key, value in kwargs.items():
                 if hasattr(self, key):
                     setattr(self, key, value)
-            db.session.commit()
+            db_session.commit()
             return self
         except Exception as e:
-            db.session.rollback()
+            db_session.rollback()
             raise e
-    
+
     def delete(self):
         """Delete instance from database"""
         try:
-            db.session.delete(self)
-            db.session.commit()
+            db_session.delete(self)
+            db_session.commit()
         except Exception as e:
-            db.session.rollback()
+            db_session.rollback()
             raise e
-    
+
     def to_dict(self):
         """Convert model to dictionary"""
         result = {}

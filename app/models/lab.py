@@ -1,22 +1,24 @@
-from app.extensions import db
+from sqlalchemy import Column, String, Numeric, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
+
 
 class LabTest(BaseModel):
     """Lab test definitions"""
     __tablename__ = 'lab_tests'
-    
-    name = db.Column(db.String(200), nullable=False)
-    code = db.Column(db.String(50), unique=True, nullable=False)
-    description = db.Column(db.Text)
-    category = db.Column(db.String(100))  # e.g., Blood, Urine, Radiology
-    unit = db.Column(db.String(50))  # Unit of measurement
-    reference_range = db.Column(db.String(100))  # Normal reference range
-    price = db.Column(db.Numeric(10, 2), default=0)
-    is_active = db.Column(db.Boolean, default=True)
-    
+
+    name = Column(String(200), nullable=False)
+    code = Column(String(50), unique=True, nullable=False)
+    description = Column(Text)
+    category = Column(String(100))  # e.g., Blood, Urine, Radiology
+    unit = Column(String(50))  # Unit of measurement
+    reference_range = Column(String(100))  # Normal reference range
+    price = Column(Numeric(10, 2), default=0)
+    is_active = Column(Boolean, default=True)
+
     # Relationships
-    orders = db.relationship('LabOrder', backref='test', lazy=True)
-    
+    orders = relationship('LabOrder', backref='test', lazy=True)
+
     def to_dict(self):
         data = super().to_dict()
         if self.price:
@@ -27,25 +29,25 @@ class LabTest(BaseModel):
 class LabOrder(BaseModel):
     """Lab orders for patients"""
     __tablename__ = 'lab_orders'
-    
-    patient_id = db.Column(db.String(36), db.ForeignKey('patients.id'), nullable=False, index=True)
-    test_id = db.Column(db.String(36), db.ForeignKey('lab_tests.id'), nullable=False)
-    facility_slug = db.Column(db.String(100), db.ForeignKey('facilities.slug'), nullable=True, index=True)
-    ordered_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    performed_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    status = db.Column(db.String(50), default='PENDING')  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED
-    priority = db.Column(db.String(20), default='ROUTINE')  # ROUTINE, URGENT, EMERGENCY
-    notes = db.Column(db.Text)
-    order_date = db.Column(db.DateTime, nullable=False)
-    collection_date = db.Column(db.DateTime)
-    completed_date = db.Column(db.DateTime)
-    
+
+    patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
+    test_id = Column(String(36), ForeignKey('lab_tests.id'), nullable=False)
+    facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+    ordered_by = Column(String(36), ForeignKey('users.id'))
+    performed_by = Column(String(36), ForeignKey('users.id'))
+    status = Column(String(50), default='PENDING')  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED
+    priority = Column(String(20), default='ROUTINE')  # ROUTINE, URGENT, EMERGENCY
+    notes = Column(Text)
+    order_date = Column(DateTime, nullable=False)
+    collection_date = Column(DateTime)
+    completed_date = Column(DateTime)
+
     # Relationships
-    results = db.relationship('LabResult', backref='order', lazy=True, cascade='all, delete-orphan')
-    
+    results = relationship('LabResult', backref='order', lazy=True, cascade='all, delete-orphan')
+
     STATUSES = ['PENDING', 'COLLECTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED']
     PRIORITIES = ['ROUTINE', 'URGENT', 'EMERGENCY']
-    
+
     def to_dict(self):
         data = super().to_dict()
         if self.order_date:
@@ -60,13 +62,13 @@ class LabOrder(BaseModel):
 class LabResult(BaseModel):
     """Lab results for orders"""
     __tablename__ = 'lab_results'
-    
-    order_id = db.Column(db.String(36), db.ForeignKey('lab_orders.id'), nullable=False)
-    value = db.Column(db.String(100))
-    is_abnormal = db.Column(db.Boolean, default=False)
-    notes = db.Column(db.Text)
-    result_date = db.Column(db.DateTime)
-    
+
+    order_id = Column(String(36), ForeignKey('lab_orders.id'), nullable=False)
+    value = Column(String(100))
+    is_abnormal = Column(Boolean, default=False)
+    notes = Column(Text)
+    result_date = Column(DateTime)
+
     def to_dict(self):
         data = super().to_dict()
         if self.result_date:

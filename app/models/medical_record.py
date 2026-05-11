@@ -1,29 +1,31 @@
-from app.extensions import db
+from sqlalchemy import Column, String, JSON, Text, DateTime, Date, ForeignKey
+from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
+
 
 class MedicalRecord(BaseModel):
     """Electronic Medical Records for patients"""
     __tablename__ = 'medical_records'
-    
-    patient_id = db.Column(db.String(36), db.ForeignKey('patients.id'), nullable=False, index=True)
-    appointment_id = db.Column(db.String(36), db.ForeignKey('appointments.id'))
-    facility_slug = db.Column(db.String(100), db.ForeignKey('facilities.slug'), nullable=True, index=True)
-    created_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    
+
+    patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
+    appointment_id = Column(String(36), ForeignKey('appointments.id'))
+    facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+    created_by = Column(String(36), ForeignKey('users.id'))
+
     # Clinical data
-    chief_complaint = db.Column(db.Text)
-    vital_signs = db.Column(db.JSON, default=dict)  # BP, temp, pulse, etc.
-    symptoms = db.Column(db.JSON, default=list)
-    diagnosis = db.Column(db.JSON, default=list)  # Multiple diagnoses
-    treatment_plan = db.Column(db.Text)
-    prescriptions = db.Column(db.JSON, default=list)  # Medications prescribed
-    lab_orders = db.Column(db.JSON, default=list)  # Lab tests ordered
-    follow_up_date = db.Column(db.Date)
-    notes = db.Column(db.Text)
-    
+    chief_complaint = Column(Text)
+    vital_signs = Column(JSON, default=dict)  # BP, temp, pulse, etc.
+    symptoms = Column(JSON, default=list)
+    diagnosis = Column(JSON, default=list)  # Multiple diagnoses
+    treatment_plan = Column(Text)
+    prescriptions = Column(JSON, default=list)  # Medications prescribed
+    lab_orders = Column(JSON, default=list)  # Lab tests ordered
+    follow_up_date = Column(Date)
+    notes = Column(Text)
+
     # Relationships
-    patient = db.relationship('Patient', backref='medical_records')
-    
+    patient = relationship('Patient', backref='medical_records')
+
     def to_dict(self):
         data = super().to_dict()
         return data
@@ -32,17 +34,17 @@ class MedicalRecord(BaseModel):
 class ClinicalNote(BaseModel):
     """Clinical notes for patient visits"""
     __tablename__ = 'clinical_notes'
-    
-    patient_id = db.Column(db.String(36), db.ForeignKey('patients.id'), nullable=False)
-    record_id = db.Column(db.String(36), db.ForeignKey('medical_records.id'))
-    created_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    
-    note_type = db.Column(db.String(50))  # PROGRESS, INITIAL, DISCHARGE, REFERRAL
-    title = db.Column(db.String(200))
-    content = db.Column(db.Text, nullable=False)
-    is_confidential = db.Column(db.Boolean, default=False)
-    
+
+    patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False)
+    record_id = Column(String(36), ForeignKey('medical_records.id'))
+    created_by = Column(String(36), ForeignKey('users.id'))
+
+    note_type = Column(String(50))  # PROGRESS, INITIAL, DISCHARGE, REFERRAL
+    title = Column(String(200))
+    content = Column(Text, nullable=False)
+    is_confidential = Column(Boolean, default=False)
+
     NOTE_TYPES = ['PROGRESS', 'INITIAL', 'DISCHARGE', 'REFERRAL']
-    
+
     def to_dict(self):
         return super().to_dict()

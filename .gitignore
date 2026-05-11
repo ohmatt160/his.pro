@@ -92,3 +92,4 @@ dist/
 app/static/*.jpg
 app/static/assets/*.png
 app/static/assets/*.jpg
+AI.py

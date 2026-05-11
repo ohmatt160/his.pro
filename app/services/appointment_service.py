@@ -1,3 +1,4 @@
+from sqlalchemy import func
 from app.models.appointment import Appointment
 from app.extensions import db
 from datetime import datetime
@@ -38,7 +39,7 @@ class AppointmentService:
         if facility_slug:
             query = query.filter_by(facility_slug=facility_slug)
         if date:
-            query = query.filter(db.func.date(Appointment.appointment_date) == date)
+            query = query.filter(func.date(Appointment.appointment_date) == date)
         return query.order_by(Appointment.appointment_date).all()
     
     @staticmethod

@@ -1,26 +1,28 @@
-from app.extensions import db
+from sqlalchemy import Column, String, Numeric, Integer, Boolean, Date, DateTime, Text, ForeignKey
+from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
+
 
 class Medication(BaseModel):
     """Medication inventory"""
     __tablename__ = 'medications'
-    
-    name = db.Column(db.String(200), nullable=False)
-    code = db.Column(db.String(50), unique=True, nullable=False)
-    generic_name = db.Column(db.String(200))
-    description = db.Column(db.Text)
-    category = db.Column(db.String(100))  # e.g., Antibiotic, Pain Relief
-    unit = db.Column(db.String(50))  # e.g., tablet, ml, vial
-    strength = db.Column(db.String(50))  # e.g., 500mg
-    price = db.Column(db.Numeric(10, 2), default=0)
-    reorder_level = db.Column(db.Integer, default=10)
-    is_active = db.Column(db.Boolean, default=True)
-    facility_slug = db.Column(db.String(100), db.ForeignKey('facilities.slug'), nullable=True, index=True)
-    
+
+    name = Column(String(200), nullable=False)
+    code = Column(String(50), unique=True, nullable=False)
+    generic_name = Column(String(200))
+    description = Column(Text)
+    category = Column(String(100))  # e.g., Antibiotic, Pain Relief
+    unit = Column(String(50))  # e.g., tablet, ml, vial
+    strength = Column(String(50))  # e.g., 500mg
+    price = Column(Numeric(10, 2), default=0)
+    reorder_level = Column(Integer, default=10)
+    is_active = Column(Boolean, default=True)
+    facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+
     # Relationships
-    inventory = db.relationship('PharmacyInventory', backref='medication', uselist=False)
-    prescription_items = db.relationship('PrescriptionItem', backref='medication', lazy=True)
-    
+    inventory = relationship('PharmacyInventory', backref='medication', uselist=False)
+    prescription_items = relationship('PrescriptionItem', backref='medication', lazy=True)
+
     def to_dict(self):
         data = super().to_dict()
         if self.price:
@@ -31,13 +33,13 @@ class Medication(BaseModel):
 class PharmacyInventory(BaseModel):
     """Pharmacy inventory tracking"""
     __tablename__ = 'pharmacy_inventory'
-    
-    medication_id = db.Column(db.String(36), db.ForeignKey('medications.id'), nullable=False)
-    quantity = db.Column(db.Integer, default=0)
-    expiry_date = db.Column(db.Date)
-    batch_number = db.Column(db.String(100))
-    location = db.Column(db.String(50))  # Storage location
-    
+
+    medication_id = Column(String(36), ForeignKey('medications.id'), nullable=False)
+    quantity = Column(Integer, default=0)
+    expiry_date = Column(Date)
+    batch_number = Column(String(100))
+    location = Column(String(50))  # Storage location
+
     def to_dict(self):
         data = super().to_dict()
         if self.expiry_date:
@@ -48,21 +50,21 @@ class PharmacyInventory(BaseModel):
 class Prescription(BaseModel):
     """Prescriptions for patients"""
     __tablename__ = 'prescriptions'
-    
-    patient_id = db.Column(db.String(36), db.ForeignKey('patients.id'), nullable=False, index=True)
-    prescribed_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    facility_slug = db.Column(db.String(100), db.ForeignKey('facilities.slug'), nullable=True, index=True)
-    status = db.Column(db.String(50), default='PENDING')  # PENDING, DISPENSED, CANCELLED
-    notes = db.Column(db.Text)
-    prescription_date = db.Column(db.DateTime, nullable=False)
-    dispensed_by = db.Column(db.String(36), db.ForeignKey('users.id'))
-    dispensed_date = db.Column(db.DateTime)
-    
+
+    patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
+    prescribed_by = Column(String(36), ForeignKey('users.id'))
+    facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+    status = Column(String(50), default='PENDING')  # PENDING, DISPENSED, CANCELLED
+    notes = Column(Text)
+    prescription_date = Column(DateTime, nullable=False)
+    dispensed_by = Column(String(36), ForeignKey('users.id'))
+    dispensed_date = Column(DateTime)
+
     # Relationships
-    items = db.relationship('PrescriptionItem', backref='prescription', lazy=True, cascade='all, delete-orphan')
-    
+    items = relationship('PrescriptionItem', backref='prescription', lazy=True, cascade='all, delete-orphan')
+
     STATUSES = ['PENDING', 'DISPENSED', 'CANCELLED']
-    
+
     def to_dict(self):
         data = super().to_dict()
         if self.prescription_date:
@@ -75,13 +77,13 @@ class Prescription(BaseModel):
 class PrescriptionItem(BaseModel):
     """Individual items in a prescription"""
     __tablename__ = 'prescription_items'
-    
-    prescription_id = db.Column(db.String(36), db.ForeignKey('prescriptions.id'), nullable=False)
-    medication_id = db.Column(db.String(36), db.ForeignKey('medications.id'), nullable=False)
-    quantity = db.Column(db.Integer, nullable=False)
-    dosage = db.Column(db.String(100))  # e.g., 1 tablet thrice daily
-    instructions = db.Column(db.Text)
-    is_dispensed = db.Column(db.Boolean, default=False)
-    
+
+    prescription_id = Column(String(36), ForeignKey('prescriptions.id'), nullable=False)
+    medication_id = Column(String(36), ForeignKey('medications.id'), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    dosage = Column(String(100))  # e.g., 1 tablet thrice daily
+    instructions = Column(Text)
+    is_dispensed = Column(Boolean, default=False)
+
     def to_dict(self):
         return super().to_dict()
