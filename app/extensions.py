@@ -5,7 +5,7 @@ Converted from Flask-SQLAlchemy to SQLAlchemy 2.0+
 
 from sqlalchemy import create_engine, MetaData, Column, String, DateTime, ForeignKey, Integer, Boolean, Text
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker, scoped_session, relationship
 import os
 from dotenv import load_dotenv
 
@@ -49,6 +49,7 @@ class DB:
     Integer = Integer
     Boolean = Boolean
     Text = Text
+    relationship = relationship
 
 db = DB()
 
