@@ -34,7 +34,7 @@ def get_rate_limit_key(request: Request) -> str:
         pass
     
     # Fall back to IP address
-    return get_remote_address()
+    return get_remote_address(request)
 
 # Initialize rate limiter
 limiter = Limiter(
