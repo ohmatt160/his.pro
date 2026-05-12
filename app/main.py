@@ -64,8 +64,11 @@ async def lifespan(app: FastAPI):
     
     # Initialize database using existing engine from extensions
     # Create tables if they don't exist
-    Base.metadata.create_all(bind=engine)
-    print("[OK] Database tables initialized")
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[OK] Database tables initialized")
+    except Exception as e:
+        print(f"[WARNING] Database init failed (will retry on first request): {e}")
     
     # Initialize Redis if available
     redis_url = os.getenv('REDIS_URL')
