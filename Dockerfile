@@ -35,4 +35,10 @@ RUN mkdir -p uploads
 EXPOSE 5000
 
 # Run the application with gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:7860", "--workers", "2", "app.main:app"]
+CMD ["gunicorn", \
+     "--bind", "0.0.0.0:7860", \
+     "--workers", "2", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--preload", \
+     "--timeout", "120", \
+     "app.main:app"]
