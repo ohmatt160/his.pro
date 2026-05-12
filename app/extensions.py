@@ -15,15 +15,23 @@ load_dotenv()
 DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///./hispro.db')
 
 # Create engine with connection pooling for scalability
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=30,
-    pool_timeout=30,
-    pool_recycle=1800,
-    echo=False
-)
+# SQLite needs special handling
+if 'sqlite' in DATABASE_URL:
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        echo=False
+    )
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=20,
+        max_overflow=30,
+        pool_timeout=30,
+        pool_recycle=1800,
+        echo=False
+    )
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
