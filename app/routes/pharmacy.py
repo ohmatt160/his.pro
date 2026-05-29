@@ -11,7 +11,7 @@ import logging
 
 from app.extensions import get_db
 from app.schemas.inventory import InventoryResponse, InventoryCreate
-from app.schemas.pharmacy import MedicationResponse
+from app.schemas.pharmacy import MedicationResponse, PrescriptionCreate, PrescriptionResponse, MedicationCreate
 from app.schemas.users import MessageResponse
 from app.services.pharmacy_service import PharmacyService
 from app.utils.dependencies import get_current_user, role_required
@@ -55,9 +55,6 @@ async def get_medications(
         ) for m in medications
     ]
 
-
-class MedicationCreate:
-    pass
 
 
 @router.post("/medications", response_model=MedicationResponse, status_code=status.HTTP_201_CREATED)
@@ -207,10 +204,6 @@ async def add_inventory(
 
 # ==================== Prescriptions ====================
 
-class PrescriptionResponse:
-    pass
-
-
 @router.get("/prescriptions", response_model=List[PrescriptionResponse])
 async def get_prescriptions(
     patient_id: Optional[str] = Query(None),
@@ -248,9 +241,6 @@ async def get_prescriptions(
         ) for p in prescriptions
     ]
 
-
-class PrescriptionCreate:
-    pass
 
 
 @router.post("/prescriptions", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
