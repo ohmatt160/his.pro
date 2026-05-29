@@ -4,8 +4,7 @@ FROM python:3.11-slim
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV FLASK_APP=run.py
-ENV FLASK_ENV=production
+ENV APP_ENV=production
 
 # Set work directory
 WORKDIR /app
@@ -32,7 +31,7 @@ COPY . .
 RUN mkdir -p uploads
 
 # Expose port
-EXPOSE 5000
+EXPOSE 7860
 
 # Run the application with gunicorn
 CMD ["gunicorn", \

@@ -8,7 +8,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    role: str = Field(..., pattern="^(admin|doctor|nurse|staff|patient)$")
+    role: str = Field(..., pattern="^(ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|admin|doctor|nurse|lab_tech|pharmacist|receptionist)$")
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     facility_slug: Optional[str] = Field(None, max_length=100)
@@ -26,21 +26,17 @@ class TokenResponse(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     username: str
     email: str
     role: str
     first_name: Optional[str]
     last_name: Optional[str]
+    phone: Optional[str] = None
     facility_slug: Optional[str]
     is_active: bool
     created_at: str
     updated_at: Optional[str]
-
-class MessageResponse(BaseModel):
-    message: str
-
-
 
 class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, min_length=3, max_length=50)
@@ -48,3 +44,6 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     phone: Optional[str] = Field(None, max_length=20)
+
+class MessageResponse(BaseModel):
+    message: str

@@ -9,7 +9,7 @@ if __name__ == '__main__':
     # Get configuration from environment
     host = os.getenv('HOST', '0.0.0.0')
     port = int(os.getenv('PORT', 8000))
-    env = os.getenv('FLASK_ENV', 'development')
+    env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
     reload = env == 'development'
 
     print(f"[OK] Starting HIS.Pro FastAPI server on {host}:{port}")

@@ -8,7 +8,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.base import BaseHTTPMiddleware
 import jwt
 import os
+import uuid
 from datetime import datetime, timedelta
+from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 # JWT Configuration
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or 'your-secret-key-change-in-production'
@@ -19,7 +21,7 @@ JWT_REFRESH_TOKEN_EXPIRES = 86400  # 24 hours
 security = HTTPBearer()
 
 
-def create_access_token(identity: int, expires_delta: timedelta = None) -> str:
+def create_access_token(identity: int | str, expires_delta: timedelta = None) -> str:
     """
     Create a JWT access token
     """
@@ -32,13 +34,14 @@ def create_access_token(identity: int, expires_delta: timedelta = None) -> str:
         "exp": expire,
         "iat": datetime.utcnow(),
         "sub": str(identity),
+        "jti": str(uuid.uuid4()),
         "type": "access"
     }
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
 
-def create_refresh_token(identity: int) -> str:
+def create_refresh_token(identity: int | str) -> str:
     """
     Create a JWT refresh token
     """
@@ -47,6 +50,7 @@ def create_refresh_token(identity: int) -> str:
         "exp": expire,
         "iat": datetime.utcnow(),
         "sub": str(identity),
+        "jti": str(uuid.uuid4()),
         "type": "refresh"
     }
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
@@ -61,10 +65,15 @@ def verify_token(token: str, token_type: str = "access") -> dict:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != token_type:
             raise HTTPException(status_code=401, detail="Invalid token type")
+        jti = payload.get("jti")
+        if jti:
+            from app import jwt_blocklist
+            if jwt_blocklist.is_blocklisted(jti):
+                raise HTTPException(status_code=401, detail="Token has been revoked")
         return payload
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.JWTError:
+    except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 

@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 import redis
 
 # Import database and models
@@ -116,7 +117,8 @@ def create_app() -> FastAPI:
 
     # CORS
     allowed_origins = os.getenv('ALLOWED_ORIGINS', '').split(',') if os.getenv('ALLOWED_ORIGINS') else []
-    if os.getenv('FLASK_ENV') == 'production' and not allowed_origins:
+    app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
+    if app_env == 'production' and not allowed_origins:
         allowed_origins = ['https://his.pro', 'https://www.his.pro']
     elif not allowed_origins:
         allowed_origins = [
@@ -156,7 +158,7 @@ def create_app() -> FastAPI:
         health_status = {"status": "healthy"}
         try:
             with engine.connect() as conn:
-                conn.execute("SELECT 1")
+                conn.execute(text("SELECT 1"))
             health_status["database"] = "connected"
         except Exception as e:
             health_status["database"] = f"error: {str(e)}"
