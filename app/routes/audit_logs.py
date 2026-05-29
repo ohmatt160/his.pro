@@ -10,6 +10,7 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
+from app.schemas.audit_logs import AuditLogResponse
 from app.services.audit_log_service import  AuditLogService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -18,17 +19,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/audit-logs", tags=["audit-logs"])
 
 
-class AuditLogResponse(BaseModel):
-    id: str
-    user_id: Optional[str]
-    action: str
-    resource_type: str
-    resource_id: Optional[str]
-    details: Optional[str]
-    ip_address: Optional[str]
-    user_agent: Optional[str]
-    facility_slug: Optional[str]
-    created_at: str
 
 
 @router.get("", response_model=List[AuditLogResponse])

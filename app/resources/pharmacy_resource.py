@@ -3,7 +3,7 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.resources.base_resource import BaseResource
 from app.services.pharmacy_service import PharmacyService
-from app.schemas.pharmacy_schema import MedicationSchema, PharmacyInventorySchema, PrescriptionSchema, PrescriptionItemSchema
+from app.schemas.pharmacy import MedicationSchema, PharmacyInventorySchema, PrescriptionSchema, PrescriptionItemSchema
 from app.utils.decorators import role_required
 from app.utils.validators import Validators
 

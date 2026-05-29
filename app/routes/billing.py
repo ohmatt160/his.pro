@@ -5,11 +5,11 @@ Converted from Flask-RESTx billing_resource.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
 from typing import Optional, List
 import logging
 
 from app.extensions import get_db, db_session
+from app.schemas.billing import InvoiceResponse, PaymentCreate, PaymentResponse, InvoiceCreate, InvoiceUpdate
 from app.services.billing_service import BillingService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -19,55 +19,6 @@ from app.models.facility import Facility
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 
-
-class InvoiceCreate(BaseModel):
-    patient_id: str = Field(...)
-    amount: float = Field(..., gt=0)
-    due_date: str = Field(...)
-    notes: Optional[str] = Field(None)
-
-
-class InvoiceUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern="^(DRAFT|ISSUED|PAID|OVERDUE|CANCELLED)$")
-    notes: Optional[str] = Field(None)
-
-
-class InvoiceResponse(BaseModel):
-    id: str
-    patient_id: str
-    invoice_number: str
-    amount: float
-    paid_amount: float
-    balance: float
-    status: str
-    due_date: str
-    paid_date: Optional[str]
-    notes: Optional[str]
-    facility_slug: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-
-class PaymentCreate(BaseModel):
-    amount: float = Field(..., gt=0)
-    payment_method: str = Field(..., pattern="^(CASH|CARD|INSURANCE|TRANSFER)$")
-    reference: Optional[str] = Field(None, max_length=100)
-    notes: Optional[str] = Field(None)
-
-
-class PaymentResponse(BaseModel):
-    id: str
-    invoice_id: str
-    amount: float
-    payment_method: str
-    reference: Optional[str]
-    notes: Optional[str]
-    processed_by: Optional[str]
-    created_at: str
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.get("/invoices", response_model=List[InvoiceResponse])

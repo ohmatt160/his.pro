@@ -12,16 +12,13 @@ import uuid
 from datetime import datetime
 import logging
 
+from app.schemas.users import MessageResponse
 from app.utils.dependencies import role_required
 from app.models.user import User
 from app.services.file_upload_service import FileUploadService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)

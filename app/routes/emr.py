@@ -10,6 +10,8 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
+from app.schemas.emr import MedicalRecordResponse, MedicalRecordCreate, MedicalRecordUpdate
+from app.schemas.users import MessageResponse
 from app.services.medical_record_service import MedicalRecordService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -19,38 +21,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/emr", tags=["emr"])
 
 
-class MedicalRecordCreate(BaseModel):
-    patient_id: str = Field(...)
-    record_type: str = Field(..., pattern="^(CONSULTATION|LAB_RESULT|IMAGING|PRESCRIPTION|PROCEDURE|NOTE|VACCINATION)$")
-    title: str = Field(..., max_length=200)
-    description: Optional[str] = Field(None)
-    data: Optional[dict] = Field(default_factory=dict)
-    attachments: Optional[List[str]] = Field(default_factory=list)
-
-
-class MedicalRecordUpdate(BaseModel):
-    title: Optional[str] = Field(None, max_length=200)
-    description: Optional[str] = Field(None)
-    data: Optional[dict] = None
-    attachments: Optional[List[str]] = None
-
-
-class MedicalRecordResponse(BaseModel):
-    id: str
-    patient_id: str
-    record_type: str
-    title: str
-    description: Optional[str]
-    data: Optional[dict]
-    attachments: Optional[List[str]]
-    created_by: str
-    facility_slug: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.get("", response_model=List[MedicalRecordResponse])

@@ -3,7 +3,7 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.resources.base_resource import BaseResource
 from app.services.appointment_service import AppointmentService
-from app.schemas.appointment_schema import AppointmentSchema
+from app.schemas.appointments import AppointmentSchema
 from app.utils.decorators import role_required
 from app.utils.validators import Validators
 

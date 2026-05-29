@@ -10,6 +10,8 @@ from typing import Optional
 import logging
 
 from app.extensions import get_db
+from app.schemas.password_reset import ChangePasswordRequest
+from app.schemas.users import UserResponse, UserUpdate, MessageResponse
 from app.services.user_profile_service import UserProfileService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
@@ -19,35 +21,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-class UserUpdate(BaseModel):
-    username: Optional[str] = Field(None, min_length=3, max_length=50)
-    email: Optional[EmailStr] = Field(None)
-    first_name: Optional[str] = Field(None, max_length=100)
-    last_name: Optional[str] = Field(None, max_length=100)
-    phone: Optional[str] = Field(None, max_length=20)
-
-
-class UserResponse(BaseModel):
-    id: str
-    username: str
-    email: str
-    role: str
-    first_name: Optional[str]
-    last_name: Optional[str]
-    phone: Optional[str]
-    facility_slug: Optional[str]
-    is_active: bool
-    created_at: str
-    updated_at: Optional[str]
-
-
-class PasswordChange(BaseModel):
-    current_password: str = Field(..., min_length=8)
-    new_password: str = Field(..., min_length=8)
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.get("/me", response_model=UserResponse)
@@ -68,6 +41,7 @@ async def get_current_user_profile(
         created_at=current_user.created_at.isoformat() if current_user.created_at else "",
         updated_at=current_user.updated_at.isoformat() if current_user.updated_at else None
     )
+
 
 
 @router.put("/me", response_model=UserResponse)
@@ -102,7 +76,7 @@ async def update_current_user(
 
 @router.post("/me/change-password", response_model=MessageResponse)
 async def change_password(
-    data: PasswordChange,
+    data: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):

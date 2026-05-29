@@ -3,7 +3,7 @@ from flask_restx import Namespace, Resource, fields
 from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity, get_jwt
 from app.resources.base_resource import BaseResource
 from app.services.auth_service import AuthService
-from app.schemas.user_schema import UserSchema, LoginSchema
+from app.schemas.users import UserSchema, LoginSchema
 from app.utils.validators import Validators
 from app.utils.rate_limiter import rate_limit_by_ip, AUTH_RATE_LIMIT
 

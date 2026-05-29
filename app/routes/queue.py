@@ -11,6 +11,8 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db, db_session
+from app.schemas.queue import QueueListResponse, QueueResponse, QueueCreate, QueueUpdate
+from app.schemas.users import MessageResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
 from app.models.patient_queue import PatientQueue
@@ -21,47 +23,6 @@ from app.utils.validators import Validators
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/queue", tags=["queue"])
 
-
-class QueueCreate(BaseModel):
-    patient_id: str = Field(...)
-    appointment_id: Optional[str] = Field(None)
-    department: str = Field(..., max_length=100)
-    priority: Optional[str] = Field('normal', pattern="^(normal|urgent)$")
-
-
-class QueueUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern="^(waiting|in_progress|completed|no_show)$")
-    priority: Optional[str] = Field(None, pattern="^(normal|urgent)$")
-    department: Optional[str] = Field(None, max_length=100)
-
-class QueueResponse(BaseModel):
-    # fields remain
-    id: str
-    patient_id: str
-    patient_name: Optional[str]
-    patient_phone: Optional[str]
-    patient_date_of_birth: Optional[str]
-    appointment_id: Optional[str]
-    appointment_time: Optional[str]
-    facility_slug: str
-    department: str
-    status: str
-    queue_number: int
-    priority: str
-    checked_in_at: Optional[str]
-    started_at: Optional[str]
-    completed_at: Optional[str]
-    created_at: str
-
-class QueueListResponse(BaseModel):
-    queue_entries: List[QueueResponse]
-    total: int
-    page: int
-    per_page: int
-    pages: int
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 

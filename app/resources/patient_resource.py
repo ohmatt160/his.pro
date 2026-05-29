@@ -3,7 +3,7 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.resources.base_resource import BaseResource
 from app.services.patient_service import PatientService
-from app.schemas.patient_schema import PatientSchema
+from app.schemas.patients import PatientSchema
 from app.utils.decorators import role_required
 from app.utils.validators import Validators
 

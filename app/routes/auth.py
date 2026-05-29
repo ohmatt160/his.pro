@@ -6,10 +6,9 @@ Converted from Flask-RESTx auth_resource.py
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field, EmailStr
-from typing import Optional
 import logging
 
+from app.schemas.users import UserResponse, UserRegister, TokenResponse, UserLogin, MessageResponse
 from app.services.auth_service import AuthService
 from app.utils.validators import Validators
 from app.middleware.jwt import verify_token
@@ -24,46 +23,6 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Security scheme
 security = HTTPBearer()
-
-
-# Pydantic models for request/response
-class UserRegister(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    email: EmailStr
-    password: str = Field(..., min_length=8)
-    role: str = Field(..., pattern="^(admin|doctor|nurse|staff|patient)$")
-    first_name: Optional[str] = Field(None, max_length=100)
-    last_name: Optional[str] = Field(None, max_length=100)
-    facility_slug: Optional[str] = Field(None, max_length=100)
-
-
-class UserLogin(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=8)
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-
-
-class UserResponse(BaseModel):
-    id: int
-    username: str
-    email: str
-    role: str
-    first_name: Optional[str]
-    last_name: Optional[str]
-    facility_slug: Optional[str]
-    is_active: bool
-    created_at: str
-    updated_at: Optional[str]
-
-
-class MessageResponse(BaseModel):
-    message: str
-
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(

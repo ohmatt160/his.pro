@@ -81,7 +81,7 @@ node_modules/
 
 # Build outputs
 dist/
-
+resources/
 # Git LFS for binary files
 *.png filter=lfs diff=lfs merge=lfs -text
 *.jpg filter=lfs diff=lfs merge=lfs -text

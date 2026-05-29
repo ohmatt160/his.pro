@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field, EmailStr
 import logging
 
 from app.extensions import get_db
+from app.schemas.password_reset import ForgotPasswordRequest, ResetPasswordRequest, ChangePasswordRequest
+from app.schemas.users import MessageResponse
 from app.services.password_reset_service import PasswordResetService
 from app.utils.dependencies import get_current_user, optional_user
 from app.models.user import User
@@ -16,23 +18,6 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/password-reset", tags=["password-reset"])
 
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    token: str = Field(...)
-    new_password: str = Field(..., min_length=8)
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str = Field(...)
-    new_password: str = Field(..., min_length=8)
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.post("/forgot", response_model=MessageResponse)

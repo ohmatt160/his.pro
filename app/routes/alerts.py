@@ -5,12 +5,13 @@ Converted from Flask-RESTx alert_resource.py
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 import logging
 
 from app.extensions import get_db, db_session
+from app.schemas.alerts import AlertResponse, AlertCreate, AlertUpdate
+from app.schemas.users import MessageResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
 from app.models.user import User
@@ -19,38 +20,6 @@ from app.models.alert import Alert
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-
-class AlertCreate(BaseModel):
-    facility_slug: Optional[str] = Field(None)  # if None, use user's facility
-    alert_type: str = Field(..., pattern="^(info|warning|critical)$")
-    title: str = Field(..., max_length=200)
-    message: str = Field(...)
-    recipient_id: Optional[str] = Field(None)
-    expires_at: Optional[str] = Field(None)  # ISO datetime string
-
-
-class AlertUpdate(BaseModel):
-    title: Optional[str] = Field(None, max_length=200)
-    message: Optional[str] = Field(None)
-    alert_type: Optional[str] = Field(None, pattern="^(info|warning|critical)$")
-
-
-class AlertResponse(BaseModel):
-    id: str
-    facility_slug: str
-    alert_type: str
-    title: str
-    message: str
-    recipient_id: Optional[str]
-    recipient_name: Optional[str]
-    is_read: bool
-    read_at: Optional[str]
-    expires_at: Optional[str]
-    created_at: str
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.get("", response_model=List[AlertResponse])

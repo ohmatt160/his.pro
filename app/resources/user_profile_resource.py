@@ -3,7 +3,7 @@ from flask import request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app.resources.base_resource import BaseResource
 from app.services.user_profile_service import UserProfileService
-from app.schemas.user_schema import UserSchema
+from app.schemas.users import UserSchema
 from app.utils.decorators import role_required
 
 user_profile_ns = Namespace('users', description='User profile management operations')

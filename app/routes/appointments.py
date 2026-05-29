@@ -10,6 +10,8 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
+from app.schemas.appointments import AppointmentResponse, AppointmentCreate, AppointmentUpdate
+from app.schemas.users import MessageResponse
 from app.services.appointment_service import AppointmentService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
@@ -22,37 +24,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 
-class AppointmentCreate(BaseModel):
-    patient_id: str = Field(...)
-    doctor_id: str = Field(...)
-    appointment_date: str = Field(...)
-    reason: Optional[str] = Field(None)
-    notes: Optional[str] = Field(None)
-
-
-class AppointmentUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern="^(SCHEDULED|CONFIRMED|IN_PROGRESS|COMPLETED|CANCELLED|NO_SHOW)$")
-    reason: Optional[str] = Field(None)
-    notes: Optional[str] = Field(None)
-
-
-class AppointmentResponse(BaseModel):
-    id: str
-    patient_id: str
-    doctor_id: str
-    appointment_date: str
-    scheduled_time: Optional[str]
-    duration_minutes: int
-    status: str
-    reason: Optional[str]
-    notes: Optional[str]
-    facility_slug: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-
-class MessageResponse(BaseModel):
-    message: str
 
 
 @router.get("", response_model=List[AppointmentResponse])

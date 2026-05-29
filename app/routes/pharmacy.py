@@ -10,6 +10,9 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
+from app.schemas.inventory import InventoryResponse, InventoryCreate
+from app.schemas.pharmacy import MedicationResponse
+from app.schemas.users import MessageResponse
 from app.services.pharmacy_service import PharmacyService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -20,83 +23,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pharmacy", tags=["pharmacy"])
 
 
-class MedicationCreate(BaseModel):
-    name: str = Field(..., max_length=100)
-    code: str = Field(..., max_length=50)
-    generic_name: Optional[str] = Field(None, max_length=100)
-    description: Optional[str] = Field(None)
-    category: Optional[str] = Field(None, max_length=50)
-    unit: Optional[str] = Field(None, max_length=20)
-    strength: Optional[str] = Field(None, max_length=50)
-    price: Optional[float] = Field(None, ge=0)
-    reorder_level: Optional[int] = Field(None, ge=0)
-
-
-class MedicationResponse(BaseModel):
-    id: str
-    name: str
-    code: str
-    generic_name: Optional[str]
-    description: Optional[str]
-    category: Optional[str]
-    unit: Optional[str]
-    strength: Optional[str]
-    price: Optional[float]
-    reorder_level: Optional[int]
-    is_active: bool
-    facility_slug: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-
-class InventoryCreate(BaseModel):
-    quantity: int = Field(..., ge=0)
-    expiry_date: Optional[str] = Field(None)
-    batch_number: Optional[str] = Field(None, max_length=50)
-    location: Optional[str] = Field(None, max_length=100)
-
-
-class InventoryResponse(BaseModel):
-    id: str
-    medication_id: str
-    quantity: int
-    expiry_date: Optional[str]
-    batch_number: Optional[str]
-    location: Optional[str]
-    last_updated: str
-
-
-class PrescriptionItemCreate(BaseModel):
-    medication_id: str = Field(...)
-    quantity: int = Field(..., gt=0)
-    dosage: Optional[str] = Field(None)
-    instructions: Optional[str] = Field(None)
-
-
-class PrescriptionCreate(BaseModel):
-    patient_id: str = Field(...)
-    items: List[PrescriptionItemCreate] = Field(..., min_items=1)
-    notes: Optional[str] = Field(None)
-
-
-class PrescriptionResponse(BaseModel):
-    id: str
-    patient_id: str
-    prescribed_by: str
-    status: str
-    notes: Optional[str]
-    filled_by: Optional[str]
-    filled_at: Optional[str]
-    facility_slug: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
-
-
-class MessageResponse(BaseModel):
-    message: str
-
-
 # ==================== Medications ====================
+
+
 
 @router.get("/medications", response_model=List[MedicationResponse])
 async def get_medications(
@@ -125,6 +54,10 @@ async def get_medications(
             updated_at=m.updated_at.isoformat() if m.updated_at else None
         ) for m in medications
     ]
+
+
+class MedicationCreate:
+    pass
 
 
 @router.post("/medications", response_model=MedicationResponse, status_code=status.HTTP_201_CREATED)
@@ -274,6 +207,10 @@ async def add_inventory(
 
 # ==================== Prescriptions ====================
 
+class PrescriptionResponse:
+    pass
+
+
 @router.get("/prescriptions", response_model=List[PrescriptionResponse])
 async def get_prescriptions(
     patient_id: Optional[str] = Query(None),
@@ -310,6 +247,10 @@ async def get_prescriptions(
             updated_at=p.updated_at.isoformat() if p.updated_at else None
         ) for p in prescriptions
     ]
+
+
+class PrescriptionCreate:
+    pass
 
 
 @router.post("/prescriptions", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
