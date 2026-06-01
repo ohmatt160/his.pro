@@ -85,6 +85,4 @@ node_modules/
 dist/
 resources/
 AI.py
-.dockerignore
-.env.production.example
 temp_req.txt

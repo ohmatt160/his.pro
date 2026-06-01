@@ -1,0 +1,21 @@
+.git
+.gitignore
+.venv
+venv
+env
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.*
+uploads
+instance
+app/templates/*/node_modules
+app/templates/*/dist
+app/templates/healthsuite-pro copy
+tests
+*.log
