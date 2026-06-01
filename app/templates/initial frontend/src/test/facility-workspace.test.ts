@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveFacilityWorkspace } from "../lib/facility-workspace";
+import {
+  getFacilityPlatformLink,
+  saveFacilityWorkspace,
+} from "../lib/facility-workspace";
+import { getFacilityLoginPath } from "../lib/facility-staff";
 
 const fetchMock = () => fetch as unknown as ReturnType<typeof vi.fn>;
 
@@ -14,7 +18,7 @@ describe("facility workspace API", () => {
     window.localStorage.clear();
   });
 
-  it("ensures an admin session, creates a facility, and caches the workspace", async () => {
+  it("ensures an admin, creates a facility, caches the workspace, and leaves login required", async () => {
     fetchMock()
       .mockResolvedValueOnce(
         new Response(
@@ -64,7 +68,6 @@ describe("facility workspace API", () => {
         role: "ADMIN",
         first_name: "Dr.",
         last_name: "Amina Yusuf",
-        facility_slug: "sunrise-medical-centre",
       })
     );
     expect(fetchMock().mock.calls[1][0]).toBe("/api/v1/facilities/ensure");
@@ -85,11 +88,19 @@ describe("facility workspace API", () => {
       })
     );
     expect(workspace.facilitySlug).toBe("sunrise-medical-centre");
-    expect(window.localStorage.getItem("hispro.auth.token")).toBe("access-token");
-    expect(JSON.parse(window.localStorage.getItem("hispro.auth.user") || "{}")).toMatchObject({
-      facilitySlug: "sunrise-medical-centre",
-      loginId: "sunrise-medical-centre-admin",
-      role: "admin",
-    });
+    expect(fetchMock().mock.calls[1][1].headers.get("Authorization")).toBe(
+      "Bearer access-token"
+    );
+    expect(window.localStorage.getItem("hispro.auth.token")).toBeNull();
+    expect(window.localStorage.getItem("hispro.auth.user")).toBeNull();
+  });
+
+  it("generates the workspace URL as a login entry point", () => {
+    expect(getFacilityLoginPath("sunrise-medical-centre")).toBe(
+      "/sunrise-medical-centre"
+    );
+    expect(getFacilityPlatformLink("sunrise-medical-centre")).toBe(
+      "http://localhost:3000/sunrise-medical-centre"
+    );
   });
 });

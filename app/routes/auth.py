@@ -139,7 +139,7 @@ async def login_user(
     """
     try:
         # Sanitize input
-        data = login_data.dict()
+        data = login_data.model_dump()
         data['username'] = Validators.sanitize_string(data.get('username', ''))
         
         # Authenticate user

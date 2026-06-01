@@ -15,7 +15,7 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
+    username: str = Field(..., min_length=3, max_length=120)
     password: str = Field(..., min_length=8)
 
 

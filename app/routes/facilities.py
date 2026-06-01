@@ -4,6 +4,7 @@ Converted from Flask-RESTx facility_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -71,6 +72,20 @@ def create_facility_record(data: FacilityCreate) -> Facility:
     return facility
 
 
+def attach_user_to_facility(user: User, facility: Facility) -> None:
+    if user.facility_slug and user.facility_slug != facility.slug:
+        raise HTTPException(
+            status_code=409,
+            detail="User already belongs to another facility"
+        )
+
+    if user.facility_slug != facility.slug:
+        user.facility_slug = facility.slug
+        db_session.add(user)
+        db_session.commit()
+        db_session.refresh(user)
+
+
 @router.get("", response_model=List[FacilityResponse])
 async def get_facilities(
     search: Optional[str] = Query(None, max_length=100),
@@ -112,9 +127,12 @@ async def ensure_facility(
     slug = Validators.generate_slug(Validators.sanitize_string(data.name))
     existing = db_session.query(Facility).filter_by(slug=slug, is_active=True).first()
     if existing:
+        attach_user_to_facility(current_user, existing)
         return build_facility_response(existing)
 
-    return build_facility_response(create_facility_record(data))
+    facility = create_facility_record(data)
+    attach_user_to_facility(current_user, facility)
+    return build_facility_response(facility)
 
 
 @router.get("/{facility_id}", response_model=FacilityResponse)
@@ -123,8 +141,15 @@ async def get_facility(
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
-    """Get facility by ID (admin only)"""
-    facility = db_session.query(Facility).filter_by(id=facility_id, is_active=True).first()
+    """Get facility by ID or slug (admin only)"""
+    facility = (
+        db_session.query(Facility)
+        .filter(
+            Facility.is_active == True,
+            or_(Facility.id == facility_id, Facility.slug == facility_id),
+        )
+        .first()
+    )
     if not facility:
         raise HTTPException(status_code=404, detail="Facility not found")
 

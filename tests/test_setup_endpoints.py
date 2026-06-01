@@ -51,7 +51,6 @@ class SetupEndpointTest(unittest.TestCase):
                 "role": "ADMIN",
                 "first_name": "Dr.",
                 "last_name": "Amina Yusuf",
-                "facility_slug": "sunrise-medical-centre",
             }
 
             first_auth = await client.post("/api/v1/auth/ensure", json=auth_payload)
@@ -88,6 +87,35 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(second_facility.status_code, 200, second_facility.text)
             self.assertEqual(first_facility.json()["id"], second_facility.json()["id"])
             self.assertEqual(second_facility.json()["slug"], "sunrise-medical-centre")
+
+            cold_workspace_lookup = await client.get(
+                "/api/v1/facilities/sunrise-medical-centre",
+                headers={"Authorization": f"Bearer {second_auth.json()['access_token']}"},
+            )
+
+            self.assertEqual(cold_workspace_lookup.status_code, 200, cold_workspace_lookup.text)
+            self.assertEqual(cold_workspace_lookup.json()["slug"], "sunrise-medical-centre")
+
+            email_login = await client.post(
+                "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
+                json={
+                    "username": "admin@sunrise.example.com",
+                    "password": "Password1",
+                },
+            )
+
+            self.assertEqual(email_login.status_code, 200, email_login.text)
+            self.assertIn("access_token", email_login.json())
+
+            profile = await client.get(
+                "/api/v1/users/me",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(profile.status_code, 200, profile.text)
+            self.assertEqual(profile.json()["username"], "sunrise-medical-centre-admin")
+            self.assertEqual(profile.json()["role"], "ADMIN")
+            self.assertEqual(profile.json()["facility_slug"], "sunrise-medical-centre")
 
         asyncio.run(run_test())
 

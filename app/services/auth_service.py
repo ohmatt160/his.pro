@@ -1,6 +1,7 @@
 from app.models.user import User
 from app.extensions import db_session
 from app.utils.validators import Validators
+from sqlalchemy import or_
 
 class AuthService:
     """Authentication service class"""
@@ -43,7 +44,18 @@ class AuthService:
     def authenticate_user(username, password, session=None):
         """Authenticate user credentials"""
         session = session or db_session
-        user = session.query(User).filter_by(username=username, is_active=True).first()
+        normalized_login = username.strip()
+        user = (
+            session.query(User)
+            .filter(
+                User.is_active == True,
+                or_(
+                    User.username == normalized_login,
+                    User.email == normalized_login.lower(),
+                ),
+            )
+            .first()
+        )
         
         if not user:
             print(f"[AUTH] User not found: {username}")

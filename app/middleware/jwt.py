@@ -15,9 +15,9 @@ from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 # JWT Configuration
 DEFAULT_JWT_SECRET = 'your-secret-key-change-in-production'
 APP_ENV = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or DEFAULT_JWT_SECRET
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or os.getenv('SECRET_KEY') or DEFAULT_JWT_SECRET
 if APP_ENV == 'production' and JWT_SECRET_KEY == DEFAULT_JWT_SECRET:
-    raise RuntimeError("JWT_SECRET_KEY must be set in production")
+    raise RuntimeError("JWT_SECRET_KEY or SECRET_KEY must be set in production")
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour
 JWT_REFRESH_TOKEN_EXPIRES = 86400  # 24 hours

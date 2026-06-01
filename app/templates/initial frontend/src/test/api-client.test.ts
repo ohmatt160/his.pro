@@ -78,6 +78,24 @@ describe("api client", () => {
     expect(options.body).toBe(JSON.stringify({ facilityName: "Sunrise Clinic" }));
   });
 
+  it("can use a one-request auth token without persisting it", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ ok: true }), { status: 200 })
+    );
+
+    await request<{ ok: boolean }>("/facilities/ensure", {
+      method: "POST",
+      authToken: "setup-token",
+      body: { name: "Sunrise Clinic" },
+    });
+
+    const [, options] = getFetchCall();
+    const headers = options.headers as Headers;
+
+    expect(headers.get("Authorization")).toBe("Bearer setup-token");
+    expect(window.localStorage.getItem("hispro.auth.token")).toBeNull();
+  });
+
   it("keeps absolute request URLs untouched", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ ok: true }), { status: 200 })

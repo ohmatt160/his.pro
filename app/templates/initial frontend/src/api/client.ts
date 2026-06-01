@@ -26,6 +26,7 @@ const getApiBaseUrl = () => {
 
 type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
+  authToken?: string | null;
 };
 
 export const getToken = () => {
@@ -86,10 +87,10 @@ export const clearUser = () => {
   window.localStorage.removeItem(USER_STORAGE_KEY);
 };
 
-const toHeaders = (headers?: HeadersInit) => {
+const toHeaders = (headers?: HeadersInit, authToken?: string | null) => {
   const normalized = new Headers(headers);
 
-  const token = getToken();
+  const token = authToken === undefined ? getToken() : authToken;
   if (token) {
     normalized.set("Authorization", `Bearer ${token}`);
   }
@@ -168,7 +169,7 @@ const isJsonBody = (body: unknown) =>
   !(typeof ArrayBuffer !== "undefined" && body instanceof ArrayBuffer);
 
 const prepareRequest = (options: ApiRequestOptions) => {
-  const headers = toHeaders(options.headers);
+  const headers = toHeaders(options.headers, options.authToken);
   const body = options.body;
 
   if (isJsonBody(body)) {
@@ -194,7 +195,7 @@ export const request = async <T>(
 ): Promise<T> => {
   const url = buildUrl(path);
   const { headers, body } = prepareRequest(options);
-  const { body: _body, ...fetchOptions } = options;
+  const { authToken: _authToken, body: _body, ...fetchOptions } = options;
   const response = await fetch(url, {
     ...fetchOptions,
     headers,

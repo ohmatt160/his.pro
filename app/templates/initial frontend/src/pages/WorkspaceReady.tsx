@@ -14,7 +14,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { getFacilityLoginPath, getStaffAccessPath } from "@/lib/facility-staff";
 import {
-  getFacilityDashboardPath,
   getFacilityPlatformLink,
   getFacilityWorkspace,
   type SavedFacilityWorkspace,
@@ -60,7 +59,6 @@ const WorkspaceReady = () => {
     () => getFacilityPlatformLink(facilitySlug),
     [facilitySlug]
   );
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
   const staffAccessPath = getStaffAccessPath(facilitySlug);
   const facilityLoginPath = getFacilityLoginPath(facilitySlug);
 
@@ -220,8 +218,8 @@ const WorkspaceReady = () => {
                     </Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link to={dashboardPath} state={workspace}>
-                      Continue to dashboard
+                    <Link to={facilityLoginPath}>
+                      Open login page
                     </Link>
                   </Button>
                   <Button asChild variant="ghost">
