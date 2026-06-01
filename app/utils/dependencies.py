@@ -34,7 +34,7 @@ async def get_current_user(
     try:
         # Verify token
         token_data = verify_token(credentials.credentials)
-        user_id = int(token_data.get("sub"))
+        user_id = token_data.get("sub")
 
         # Get user from database
         user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
@@ -118,7 +118,7 @@ def optional_user(
             return None
 
         token_data = verify_token(token)
-        user_id = int(token_data.get("sub"))
+        user_id = token_data.get("sub")
         user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
         return user
     except Exception:

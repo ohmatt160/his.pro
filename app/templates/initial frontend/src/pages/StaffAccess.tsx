@@ -47,8 +47,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
 import {
-  clearStaffSession,
   createStaffAccount,
   getDefaultDepartmentForRole,
   getFacilityLoginLink,
@@ -125,7 +125,20 @@ const item = {
 const StaffAccess = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const workspace = facilitySlug ? getFacilityWorkspace(facilitySlug) : null;
+  const { logout } = useAuth();
+  const [workspace, setWorkspace] = useState<
+    | {
+        facilityName: string;
+        facilityType: string;
+        country: string;
+        fullName: string;
+        email: string;
+        phone: string;
+        selectedModules: string[];
+      }
+    | null
+    | undefined
+  >(undefined);
   const [staffList, setStaffList] = useState<FacilityStaffAccount[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -142,9 +155,12 @@ const StaffAccess = () => {
   });
 
   useEffect(() => {
-    if (facilitySlug) {
-      setStaffList(getFacilityStaff(facilitySlug));
+    if (!facilitySlug) {
+      return;
     }
+
+    getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
+    getFacilityStaff(facilitySlug).then(setStaffList).catch(() => setStaffList([]));
   }, [facilitySlug]);
 
   const rolesProvisioned = useMemo(
@@ -214,22 +230,23 @@ const StaffAccess = () => {
     }
   };
 
-  const handleAddStaff = () => {
+  const handleAddStaff = async () => {
     if (!newStaff.fullName.trim() || !newStaff.department.trim()) {
       return;
     }
 
-    const account = createStaffAccount({
+    const account = await createStaffAccount({
       facilitySlug,
       fullName: newStaff.fullName.trim(),
       role: newStaff.role,
       department: newStaff.department.trim(),
       email: newStaff.email.trim(),
       phone: newStaff.phone.trim(),
-      createdBy: workspace.fullName,
+      createdBy: workspace?.fullName,
     });
 
-    setStaffList(getFacilityStaff(facilitySlug));
+    const updatedStaff = await getFacilityStaff(facilitySlug);
+    setStaffList(updatedStaff);
     setJustCreated(account);
     setShowAddModal(false);
     setNewStaff({
@@ -242,7 +259,7 @@ const StaffAccess = () => {
   };
 
   const handleLogout = () => {
-    clearStaffSession();
+    logout();
     navigate(facilityLoginPath, { replace: true });
   };
 

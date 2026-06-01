@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -15,12 +15,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import logo from "@/lib/assets/logo.png";
+import { useAuth } from "@/context/AuthContext";
 import {
-  authenticateStaff,
   getFacilityLoginLink,
   getFacilityLoginPath,
   getStaffPortalPath,
-  saveStaffSession,
 } from "@/lib/facility-staff";
 import {
   createFacilitySlug,
@@ -37,14 +36,37 @@ const features = [
 const Login = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
+  const { user, login } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
-  const [login, setLogin] = useState("");
+  const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [workspace, setWorkspace] = useState<
+    | { facilityName: string; country: string; fullName: string; email: string; phone: string; selectedModules: string[] }
+    | null
+    | undefined
+  >(undefined);
 
-  const workspace = facilitySlug ? getFacilityWorkspace(facilitySlug) : null;
+  useEffect(() => {
+    if (!facilitySlug) {
+      return;
+    }
+
+    getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
+  }, [facilitySlug]);
+
+  useEffect(() => {
+    if (user && facilitySlug && user.facilitySlug === facilitySlug) {
+      if (user.role === "admin") {
+        navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
+      } else {
+        navigate(getStaffPortalPath(facilitySlug), { replace: true });
+      }
+    }
+  }, [facilitySlug, navigate, user]);
+
   const facilityLink = facilitySlug ? getFacilityLoginLink(facilitySlug) : "";
 
   const parsedSlug = useMemo(() => {
@@ -71,14 +93,14 @@ const Login = () => {
     navigate(getFacilityLoginPath(parsedSlug));
   };
 
-  const handleSignIn = (event: FormEvent<HTMLFormElement>) => {
+  const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!facilitySlug || !workspace) {
+    if (!facilitySlug || workspace === null) {
       return;
     }
 
-    if (!login.trim() || !password.trim()) {
+    if (!loginValue.trim() || !password.trim()) {
       setError("Please enter your login ID or email and password.");
       return;
     }
@@ -86,38 +108,24 @@ const Login = () => {
     setError("");
     setLoading(true);
 
-    window.setTimeout(() => {
-      const account = authenticateStaff({
+    try {
+      const account = await login({
         facilitySlug,
-        login,
+        login: loginValue,
         password,
       });
 
-      if (!account) {
-        setLoading(false);
-        setError("Invalid login ID, work email, or password.");
-        return;
-      }
-
-      saveStaffSession({
-        facilitySlug,
-        loginId: account.loginId,
-        role: account.role,
-      });
-
       if (account.role === "admin") {
-        navigate(getFacilityDashboardPath(facilitySlug), {
-          replace: true,
-          state: workspace,
-        });
+        navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
         return;
       }
 
-      navigate(getStaffPortalPath(facilitySlug), {
-        replace: true,
-        state: { loginId: account.loginId },
-      });
-    }, 450);
+      navigate(getStaffPortalPath(facilitySlug), { replace: true });
+    } catch {
+      setError("Invalid login ID, work email, or password.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -317,9 +325,9 @@ const Login = () => {
                   </Label>
                   <Input
                     placeholder="e.g. DOC-001 or doctor@facility.com"
-                    value={login}
+                    value={loginValue}
                     onChange={(event) => {
-                      setLogin(event.target.value);
+                      setLoginValue(event.target.value);
                       setError("");
                     }}
                     className="mt-1.5 h-11"

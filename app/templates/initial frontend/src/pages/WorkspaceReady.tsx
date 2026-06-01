@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -37,11 +37,24 @@ const WorkspaceReady = () => {
   const location = useLocation();
   const { facilitySlug = "" } = useParams();
   const routeState = (location.state as SavedFacilityWorkspace | null) || null;
-  const storedWorkspace = facilitySlug
-    ? getFacilityWorkspace(facilitySlug)
-    : null;
-  const workspace = routeState ?? storedWorkspace;
+  const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
+    routeState
+  );
+  const [isLoading, setIsLoading] = useState(!Boolean(routeState));
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!workspace && facilitySlug) {
+      setIsLoading(true);
+      getFacilityWorkspace(facilitySlug)
+        .then((result) => {
+          if (result) {
+            setWorkspace(result);
+          }
+        })
+        .finally(() => setIsLoading(false));
+    }
+  }, [facilitySlug, workspace]);
 
   const facilityLink = useMemo(
     () => getFacilityPlatformLink(facilitySlug),
@@ -50,6 +63,16 @@ const WorkspaceReady = () => {
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
   const staffAccessPath = getStaffAccessPath(facilitySlug);
   const facilityLoginPath = getFacilityLoginPath(facilitySlug);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-md text-center">
+          <p className="text-base font-medium text-muted-foreground">Loading workspace details…</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!workspace) {
     return (

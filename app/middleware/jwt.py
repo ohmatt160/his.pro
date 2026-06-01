@@ -13,7 +13,11 @@ from datetime import datetime, timedelta
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 # JWT Configuration
-JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or 'your-secret-key-change-in-production'
+DEFAULT_JWT_SECRET = 'your-secret-key-change-in-production'
+APP_ENV = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or DEFAULT_JWT_SECRET
+if APP_ENV == 'production' and JWT_SECRET_KEY == DEFAULT_JWT_SECRET:
+    raise RuntimeError("JWT_SECRET_KEY must be set in production")
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour
 JWT_REFRESH_TOKEN_EXPIRES = 86400  # 24 hours
@@ -87,6 +91,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
         self.exclude_paths = exclude_paths or [
             "/docs", "/redoc", "/openapi.json", 
             "/api/v1/auth/register", 
+            "/api/v1/auth/ensure",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
             "/health"
@@ -114,7 +119,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
             # Verify token
             payload = verify_token(token)
             # Attach user info to request state for use in route handlers
-            request.state.user_id = int(payload["sub"])
+            request.state.user_id = payload["sub"]
             request.state.user = payload
             
         except (ValueError, HTTPException):

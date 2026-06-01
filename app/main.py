@@ -39,6 +39,7 @@ from app.routes.files import router as files_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.jwt import JWTMiddleware
 from app.utils.error_handlers import register_error_handlers
+from app.utils.schema import ensure_sqlite_schema_current
 from app.services.email_service import EmailService
 from app.extensions import db_session
 
@@ -63,17 +64,12 @@ async def lifespan(app: FastAPI):
     static_folder = os.path.join(base_dir, 'app', 'static')
     STATIC_FOLDER = static_folder
     
-    # Initialize database using existing engine from extensions
-    # Create tables if they don't exist
+    # Initialize database using existing engine from extensions.
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_sqlite_schema_current(engine)
         print("[OK] Database tables initialized")
     except Exception as e:
-
-        print(f"[WARNING] Database init failed (will retry on first request): {e}")
-    
-    # Initialize Redis if available
-
         print(f"[WARNING] Database init failed: {e}")
 
     # Redis
@@ -116,19 +112,30 @@ def create_app() -> FastAPI:
     )
 
     # CORS
-    allowed_origins = os.getenv('ALLOWED_ORIGINS', '').split(',') if os.getenv('ALLOWED_ORIGINS') else []
+    allowed_origins = [
+        origin.strip().rstrip('/')
+        for origin in os.getenv('ALLOWED_ORIGINS', '').split(',')
+        if origin.strip()
+    ]
+    frontend_url = os.getenv('FRONTEND_URL', '').strip().rstrip('/')
+    if frontend_url and frontend_url not in allowed_origins:
+        allowed_origins.append(frontend_url)
+
     app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
     if app_env == 'production' and not allowed_origins:
         allowed_origins = ['https://his.pro', 'https://www.his.pro']
     elif not allowed_origins:
         allowed_origins = [
-            'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080',
-            'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:8080',
+            'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', "http://localhost:5175",
+            'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:8080', "http://127.0.0.1:5175",
+            "https://his-pro.vercel.app",
         ]
+    allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
         allow_headers=["Content-Type", "Authorization", "Accept"],

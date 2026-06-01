@@ -1,4 +1,4 @@
-import { useEffect, type ElementType } from "react";
+import { useEffect, useState, type ElementType } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -31,12 +31,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/context/AuthContext";
 import {
-  clearStaffSession,
   getFacilityLoginPath,
-  getStaffByLoginId,
   getStaffRoleLabel,
-  getStaffSession,
   type StaffRole,
 } from "@/lib/facility-staff";
 import {
@@ -101,6 +99,15 @@ type RoleConfig = {
   accessModules: string[];
   sidebarMain: NavItem[];
   sidebarTools: NavItem[];
+};
+
+type StaffPortalUser = {
+  role: Exclude<StaffRole, "admin">;
+  facilitySlug: string;
+  loginId: string;
+  fullName: string;
+  email: string;
+  department: string;
 };
 
 const container = {
@@ -826,36 +833,64 @@ const roleConfigs: Record<Exclude<StaffRole, "admin">, RoleConfig> = {
 const StaffPortal = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const workspace = facilitySlug ? getFacilityWorkspace(facilitySlug) : null;
-  const session = getStaffSession();
-  const staff =
-    facilitySlug && session?.facilitySlug === facilitySlug
-      ? getStaffByLoginId(facilitySlug, session.loginId)
-      : null;
+  const { user, logout } = useAuth();
+  const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!facilitySlug || !workspace) {
+    if (!facilitySlug) {
       navigate("/", { replace: true });
       return;
     }
 
-    if (!session || session.facilitySlug !== facilitySlug || !staff) {
+    setIsLoading(true);
+    getFacilityWorkspace(facilitySlug)
+      .then((result) => {
+        if (!result) {
+          navigate("/", { replace: true });
+        } else {
+          setWorkspace(result);
+        }
+      })
+      .finally(() => setIsLoading(false));
+  }, [facilitySlug, navigate]);
+
+  useEffect(() => {
+    if (isLoading) {
+      return;
+    }
+
+    if (!user || user.facilitySlug !== facilitySlug) {
       navigate(getFacilityLoginPath(facilitySlug), { replace: true });
       return;
     }
 
-    if (staff.role === "admin") {
+    if (user.role === "admin") {
       navigate(getFacilityDashboardPath(facilitySlug), {
         replace: true,
         state: workspace,
       });
     }
-  }, [facilitySlug, navigate, session, staff, workspace]);
+  }, [facilitySlug, isLoading, navigate, user, workspace]);
 
-  if (!workspace || !staff || staff.role === "admin") {
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <p className="text-base font-medium text-muted-foreground">
+          Loading portal…
+        </p>
+      </div>
+    );
+  }
+
+  if (!workspace || !user || user.role === "admin") {
     return null;
   }
 
+  const staff = {
+    department: "General",
+    ...user,
+  } as StaffPortalUser;
   const config = roleConfigs[staff.role];
   const firstName = staff.fullName.split(" ")[0] || staff.fullName;
   const initials = staff.fullName
@@ -874,7 +909,7 @@ const StaffPortal = () => {
   const PrimaryIcon = config.primaryAction.icon;
 
   const handleLogout = () => {
-    clearStaffSession();
+    logout();
     navigate(getFacilityLoginPath(facilitySlug), { replace: true });
   };
 

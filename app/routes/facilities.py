@@ -21,6 +21,55 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/facilities", tags=["facilities"])
 
 
+def build_facility_response(facility: Facility) -> FacilityResponse:
+    return FacilityResponse(
+        id=str(facility.id),
+        name=facility.name,
+        slug=facility.slug,
+        type=facility.type,
+        country=facility.country,
+        address=facility.address,
+        phone=facility.phone,
+        email=facility.email,
+        modules=facility.modules or [],
+        settings=facility.settings or {},
+        is_active=facility.is_active,
+        created_at=facility.created_at.isoformat() if facility.created_at else "",
+        updated_at=facility.updated_at.isoformat() if facility.updated_at else None
+    )
+
+
+def create_facility_record(data: FacilityCreate) -> Facility:
+    name = Validators.sanitize_string(data.name)
+    if not name:
+        raise HTTPException(status_code=400, detail="Facility name is required")
+    if not data.type:
+        raise HTTPException(status_code=400, detail="Facility type is required")
+
+    if data.type not in Facility.FACILITY_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid facility type. Must be one of: {', '.join(Facility.FACILITY_TYPES)}")
+
+    slug = Validators.generate_slug(name)
+    existing = db_session.query(Facility).filter_by(slug=slug).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A facility with similar name already exists")
+
+    facility = Facility(
+        name=name,
+        type=data.type,
+        slug=slug,
+        country=data.country or '',
+        address=data.address or '',
+        phone=data.phone or '',
+        email=data.email or '',
+        modules=data.modules or [],
+        settings=data.settings or {}
+    )
+    db_session.add(facility)
+    db_session.commit()
+    db_session.refresh(facility)
+    return facility
+
 
 @router.get("", response_model=List[FacilityResponse])
 async def get_facilities(
@@ -40,23 +89,7 @@ async def get_facilities(
     items = query.offset((page - 1) * per_page).limit(per_page).all()
     pages = (total + per_page - 1) // per_page
 
-    return [
-        FacilityResponse(
-            id=str(f.id),
-            name=f.name,
-            slug=f.slug,
-            type=f.type,
-            country=f.country,
-            address=f.address,
-            phone=f.phone,
-            email=f.email,
-            modules=f.modules or [],
-            settings=f.settings or {},
-            is_active=f.is_active,
-            created_at=f.created_at.isoformat() if f.created_at else "",
-            updated_at=f.updated_at.isoformat() if f.updated_at else None
-        ) for f in items
-    ]
+    return [build_facility_response(f) for f in items]
 
 
 @router.post("", response_model=FacilityResponse, status_code=status.HTTP_201_CREATED)
@@ -66,54 +99,22 @@ async def create_facility(
     db: Session = Depends(get_db)
 ):
     """Create a new facility (admin only)"""
-    name = Validators.sanitize_string(data.name)
-    if not name:
-        raise HTTPException(status_code=400, detail="Facility name is required")
-    if not data.type:
-        raise HTTPException(status_code=400, detail="Facility type is required")
+    return build_facility_response(create_facility_record(data))
 
-    # Validate facility type
-    if data.type not in Facility.FACILITY_TYPES:
-        raise HTTPException(status_code=400, detail=f"Invalid facility type. Must be one of: {', '.join(Facility.FACILITY_TYPES)}")
 
-    # Generate slug
-    slug = Validators.generate_slug(name)
-
-    # Check duplicate slug
-    existing = db_session.query(Facility).filter_by(slug=slug).first()
+@router.post("/ensure", response_model=FacilityResponse)
+async def ensure_facility(
+    data: FacilityCreate,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    """Create a facility once, or return the existing facility for setup retries."""
+    slug = Validators.generate_slug(Validators.sanitize_string(data.name))
+    existing = db_session.query(Facility).filter_by(slug=slug, is_active=True).first()
     if existing:
-        raise HTTPException(status_code=400, detail="A facility with similar name already exists")
+        return build_facility_response(existing)
 
-    facility = Facility(
-        name=name,
-        type=data.type,
-        slug=slug,
-        country=data.country or '',
-        address=data.address or '',
-        phone=data.phone or '',
-        email=data.email or '',
-        modules=data.modules or [],
-        settings=data.settings or {}
-    )
-    db_session.add(facility)
-    db_session.commit()
-    db_session.refresh(facility)
-
-    return FacilityResponse(
-        id=str(facility.id),
-        name=facility.name,
-        slug=facility.slug,
-        type=facility.type,
-        country=facility.country,
-        address=facility.address,
-        phone=facility.phone,
-        email=facility.email,
-        modules=facility.modules or [],
-        settings=facility.settings or {},
-        is_active=facility.is_active,
-        created_at=facility.created_at.isoformat() if facility.created_at else "",
-        updated_at=facility.updated_at.isoformat() if facility.updated_at else None
-    )
+    return build_facility_response(create_facility_record(data))
 
 
 @router.get("/{facility_id}", response_model=FacilityResponse)
@@ -127,21 +128,7 @@ async def get_facility(
     if not facility:
         raise HTTPException(status_code=404, detail="Facility not found")
 
-    return FacilityResponse(
-        id=str(facility.id),
-        name=facility.name,
-        slug=facility.slug,
-        type=facility.type,
-        country=facility.country,
-        address=facility.address,
-        phone=facility.phone,
-        email=facility.email,
-        modules=facility.modules or [],
-        settings=facility.settings or {},
-        is_active=facility.is_active,
-        created_at=facility.created_at.isoformat() if facility.created_at else "",
-        updated_at=facility.updated_at.isoformat() if facility.updated_at else None
-    )
+    return build_facility_response(facility)
 
 
 @router.put("/{facility_id}", response_model=FacilityResponse)
@@ -176,21 +163,7 @@ async def update_facility(
     facility.save()
     db_session.commit()
 
-    return FacilityResponse(
-        id=str(facility.id),
-        name=facility.name,
-        slug=facility.slug,
-        type=facility.type,
-        country=facility.country,
-        address=facility.address,
-        phone=facility.phone,
-        email=facility.email,
-        modules=facility.modules or [],
-        settings=facility.settings or {},
-        is_active=facility.is_active,
-        created_at=facility.created_at.isoformat() if facility.created_at else "",
-        updated_at=facility.updated_at.isoformat() if facility.updated_at else None
-    )
+    return build_facility_response(facility)
 
 
 @router.delete("/{facility_id}", response_model=MessageResponse)
@@ -238,18 +211,4 @@ async def update_facility_modules(
     facility.save()
     db_session.commit()
 
-    return FacilityResponse(
-        id=str(facility.id),
-        name=facility.name,
-        slug=facility.slug,
-        type=facility.type,
-        country=facility.country,
-        address=facility.address,
-        phone=facility.phone,
-        email=facility.email,
-        modules=facility.modules or [],
-        settings=facility.settings or {},
-        is_active=facility.is_active,
-        created_at=facility.created_at.isoformat() if facility.created_at else "",
-        updated_at=facility.updated_at.isoformat() if facility.updated_at else None
-    )
+    return build_facility_response(facility)

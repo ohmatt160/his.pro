@@ -15,7 +15,6 @@ import {
   getFacilityReadyPath,
   saveFacilityWorkspace,
 } from "@/lib/facility-workspace";
-import { ensureAdminStaffAccount } from "@/lib/facility-staff";
 
 const steps = [
   { icon: Database, label: "Setting up your database", sub: "Creating tables & schemas…" },
@@ -46,31 +45,32 @@ const SettingUp = () => {
       setActive((prev) => {
         if (prev >= steps.length - 1) {
           clearInterval(interval);
-          setTimeout(() => {
+
+          setTimeout(async () => {
             setDone(true);
-            const { adminPassword, ...workspaceInput } = setupData;
-            const workspace = saveFacilityWorkspace(workspaceInput);
 
-            ensureAdminStaffAccount({
-              facilitySlug: workspace.facilitySlug,
-              fullName: workspace.fullName,
-              email: workspace.email,
-              phone: workspace.phone,
-              password: adminPassword,
-            });
+            try {
+              const workspace = await saveFacilityWorkspace(setupData);
 
-            setTimeout(() => {
-              navigate(getFacilityReadyPath(workspace.facilitySlug), {
-                replace: true,
-                state: workspace,
-              });
-            }, 1600);
+              setTimeout(() => {
+                navigate(getFacilityReadyPath(workspace.facilitySlug), {
+                  replace: true,
+                  state: workspace,
+                });
+              }, 1600);
+            } catch (error) {
+              console.error("Workspace creation failed", error);
+              navigate("/get-started", { replace: true });
+            }
           }, 600);
+
           return prev;
         }
+
         return prev + 1;
       });
     }, 1200);
+
     return () => clearInterval(interval);
   }, [navigate, setupData]);
 

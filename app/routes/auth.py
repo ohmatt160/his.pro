@@ -24,6 +24,26 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 # Security scheme
 security = HTTPBearer()
 
+
+def build_token_response(user: User) -> TokenResponse:
+    from app.middleware.jwt import create_access_token, create_refresh_token
+
+    return TokenResponse(
+        access_token=create_access_token(identity=user.id),
+        refresh_token=create_refresh_token(identity=user.id),
+    )
+
+
+def sanitize_registration_data(user_data: UserRegister) -> dict:
+    data = user_data.model_dump()
+    data['username'] = Validators.sanitize_string(data.get('username', ''))
+    data['email'] = Validators.sanitize_string(data.get('email', ''))
+    if data.get('first_name'):
+        data['first_name'] = Validators.sanitize_string(data['first_name'])
+    if data.get('last_name'):
+        data['last_name'] = Validators.sanitize_string(data['last_name'])
+    return data
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserRegister,
@@ -35,13 +55,7 @@ async def register_user(
     """
     try:
         # Sanitize input fields
-        data = user_data.dict()
-        data['username'] = Validators.sanitize_string(data.get('username', ''))
-        data['email'] = Validators.sanitize_string(data.get('email', ''))
-        if data.get('first_name'):
-            data['first_name'] = Validators.sanitize_string(data['first_name'])
-        if data.get('last_name'):
-            data['last_name'] = Validators.sanitize_string(data['last_name'])
+        data = sanitize_registration_data(user_data)
         
         logger.info(f"[Register] Creating user with data: {data}")
         
@@ -75,6 +89,45 @@ async def register_user(
         raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
 
 
+@router.post("/ensure", response_model=TokenResponse)
+async def ensure_user(
+    user_data: UserRegister,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    """
+    Create a setup user if it does not exist, or authenticate the existing user.
+    """
+    try:
+        data = sanitize_registration_data(user_data)
+        existing_user = db.query(User).filter_by(username=data['username']).first()
+
+        if existing_user:
+            if not existing_user.is_active or not existing_user.check_password(data['password']):
+                raise HTTPException(status_code=401, detail="Invalid username or password")
+
+            if existing_user.email != data['email']:
+                raise HTTPException(status_code=409, detail="Username already belongs to another email")
+
+            logger.info(f"[Ensure] Existing user authenticated: {existing_user.username}")
+            return build_token_response(existing_user)
+
+        user, error = AuthService.register_user(data, db)
+
+        if error:
+            logger.warning(f"[Ensure] Error: {error}")
+            raise HTTPException(status_code=400, detail=error)
+
+        logger.info(f"[Ensure] User created and authenticated: {user.username}")
+        return build_token_response(user)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Ensure] Exception: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Setup authentication failed: {str(e)}")
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login_user(
     login_data: UserLogin,
@@ -102,31 +155,9 @@ async def login_user(
             logger.warning(f"[Login] User {user.username} tried to access wrong facility")
             raise HTTPException(status_code=401, detail="Invalid username or password")
         
-        # Create tokens
-        from app.middleware.jwt import create_access_token, create_refresh_token
-        access_token = create_access_token(identity=user.id)
-        refresh_token = create_refresh_token(identity=user.id)
-        
-        # Prepare user response
-        user_data = UserResponse(
-            id=user.id,
-            username=user.username,
-            email=user.email,
-            role=user.role,
-            first_name=user.first_name,
-            last_name=user.last_name,
-            facility_slug=user.facility_slug,
-            is_active=user.is_active,
-            created_at=user.created_at.isoformat() if user.created_at else "",
-            updated_at=user.updated_at.isoformat() if user.updated_at else None
-        )
-        
         logger.info(f"[Login] User {user.username} logged in successfully")
         
-        return TokenResponse(
-            access_token=access_token,
-            refresh_token=refresh_token
-        )
+        return build_token_response(user)
         
     except HTTPException:
         raise

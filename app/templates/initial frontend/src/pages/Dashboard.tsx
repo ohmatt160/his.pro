@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { useLocation, Link, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -29,11 +30,10 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useAuth } from "@/context/AuthContext";
 import {
-  clearStaffSession,
   getFacilityLoginPath,
   getStaffAccessPath,
-  getStaffSession,
 } from "@/lib/facility-staff";
 import {
   getFacilityWorkspace,
@@ -84,22 +84,48 @@ const item = {
 const Dashboard = () => {
   const navigate = useNavigate();
   const { facilitySlug } = useParams();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const routedData = (location.state as SavedFacilityWorkspace | null) || null;
-  const storedData = facilitySlug ? getFacilityWorkspace(facilitySlug) : null;
-  const data = routedData ?? storedData ?? {};
+  const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
+    routedData
+  );
+  const [isLoading, setIsLoading] = useState(!Boolean(routedData));
+
+  useEffect(() => {
+    if (!workspace && facilitySlug) {
+      setIsLoading(true);
+      getFacilityWorkspace(facilitySlug)
+        .then((result) => {
+          if (result) {
+            setWorkspace(result);
+          } else {
+            navigate(`/login/${facilitySlug}`, { replace: true });
+          }
+        })
+        .finally(() => setIsLoading(false));
+    }
+  }, [facilitySlug, workspace, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <p className="text-base font-medium text-muted-foreground">
+          Loading dashboard…
+        </p>
+      </div>
+    );
+  }
+
+  const data = workspace ?? {};
   const resolvedFacilitySlug =
-    facilitySlug ||
-    routedData?.facilitySlug ||
-    storedData?.facilitySlug ||
-    "";
+    facilitySlug || workspace?.facilitySlug || "";
   const staffAccessPath = resolvedFacilitySlug
     ? getStaffAccessPath(resolvedFacilitySlug)
     : "";
   const facilityLoginPath = resolvedFacilitySlug
     ? getFacilityLoginPath(resolvedFacilitySlug)
     : "/login";
-  const session = getStaffSession();
 
   const facilityName = (data.facilityName as string) || "My Facility";
   const facilityType = (data.facilityType as string) || "clinic";
@@ -122,8 +148,8 @@ const Dashboard = () => {
   );
 
   const handleLogout = () => {
-    clearStaffSession();
-    navigate(session ? facilityLoginPath : "/", { replace: true });
+    logout();
+    navigate(facilitySlug ? facilityLoginPath : "/", { replace: true });
   };
 
   return (
