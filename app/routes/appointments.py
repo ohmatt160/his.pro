@@ -91,7 +91,11 @@ async def create_appointment(
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
 
-        payload = data.dict()
+        doctor = db.query(User).filter_by(id=data.doctor_id, facility_slug=facility_slug, is_active=True).first()
+        if not doctor:
+            raise HTTPException(status_code=404, detail="Doctor or staff member not found")
+
+        payload = data.model_dump()
         payload['facility_slug'] = facility_slug
 
         # Sanitize
@@ -179,7 +183,7 @@ async def update_appointment(
         if appointment.facility_slug != facility_slug:
             raise HTTPException(status_code=404, detail="Appointment not found")
 
-        payload = data.dict(exclude_unset=True)
+        payload = data.model_dump(exclude_unset=True)
         if 'status' in payload:
             updated_appointment = AppointmentService.update_appointment_status(appointment, payload['status'])
         else:

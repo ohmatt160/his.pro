@@ -47,6 +47,7 @@ type BackendTokenResponse = {
 };
 
 type BackendUser = {
+  id?: string;
   username: string;
   email?: string;
   role: string;
@@ -125,6 +126,7 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
   const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
 
   return {
+    id: user.id,
     facilitySlug: user.facility_slug || "",
     loginId: user.username,
     role,
@@ -165,7 +167,6 @@ export const authenticateStaff = async ({
       password,
     }
   );
-  apiClient.setToken(auth.access_token);
   const user = await getProfile();
 
   return {
@@ -253,8 +254,8 @@ export const createStaffAccount = async ({
     fullName,
     role,
     department: department || getDefaultDepartmentForRole(role),
-    email: email.trim().toLowerCase(),
-    phone: phone?.trim() || "—",
+    email: email.trim() ? email.trim().toLowerCase() : undefined,
+    phone: phone?.trim() || undefined,
     password,
     createdBy,
   };

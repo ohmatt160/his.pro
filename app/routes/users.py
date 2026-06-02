@@ -16,6 +16,7 @@ from app.services.user_profile_service import UserProfileService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
+from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/users", tags=["users"])
@@ -52,12 +53,23 @@ async def update_current_user(
 ):
     """Update current user's profile"""
     # Sanitize fields
-    payload = data.dict(exclude_unset=True)
+    payload = data.model_dump(exclude_unset=True)
     for key, value in payload.items():
         if isinstance(value, str):
             payload[key] = Validators.sanitize_string(value)
 
-    updated_user = UserProfileService.update_profile(current_user, payload)
+    updated_user, error = UserProfileService.update_profile(current_user, payload)
+    if error:
+        raise HTTPException(status_code=409, detail=error)
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_PROFILE",
+        resource_type="user",
+        resource_id=current_user.id,
+        facility_slug=current_user.facility_slug,
+        details={"fields": sorted(payload.keys())},
+    )
 
     return UserResponse(
         id=str(updated_user.id),
@@ -87,6 +99,15 @@ async def change_password(
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="CHANGE_PASSWORD",
+        resource_type="user",
+        resource_id=current_user.id,
+        facility_slug=current_user.facility_slug,
+        details={},
+    )
+
     return MessageResponse(message=message)
 
 
@@ -97,7 +118,7 @@ async def get_user(
     db: Session = Depends(get_db)
 ):
     """Get user by ID (admin only)"""
-    user = db.query(User).filter_by(id=user_id).first()
+    user = db.query(User).filter_by(id=user_id, facility_slug=current_user.facility_slug).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -124,7 +145,7 @@ async def toggle_user_activation(
     db: Session = Depends(get_db)
 ):
     """Activate or deactivate a user (admin only)"""
-    user = db.query(User).filter_by(id=user_id).first()
+    user = db.query(User).filter_by(id=user_id, facility_slug=current_user.facility_slug).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

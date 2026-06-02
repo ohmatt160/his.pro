@@ -1,4 +1,5 @@
 export type AuthUser = {
+  id?: string;
   facilitySlug: string;
   loginId: string;
   role: string;
@@ -6,8 +7,8 @@ export type AuthUser = {
   email?: string;
 };
 
-const TOKEN_STORAGE_KEY = "hispro.auth.token";
 const USER_STORAGE_KEY = "hispro.auth.user";
+let inMemoryAuthToken: string | null = null;
 
 const getApiBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
@@ -30,27 +31,15 @@ type ApiRequestOptions = Omit<RequestInit, "body"> & {
 };
 
 export const getToken = () => {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  return inMemoryAuthToken;
 };
 
 export const setToken = (token: string) => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  inMemoryAuthToken = token;
 };
 
 export const clearToken = () => {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  inMemoryAuthToken = null;
 };
 
 export const getUser = (): AuthUser | null => {
@@ -200,6 +189,7 @@ export const request = async <T>(
     ...fetchOptions,
     headers,
     body,
+    credentials: fetchOptions.credentials ?? "include",
   });
 
   return parseResponse<T>(response);

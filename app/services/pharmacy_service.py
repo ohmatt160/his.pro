@@ -1,9 +1,19 @@
-from datetime import datetime
+from datetime import date, datetime
 from app.models.pharmacy import Medication, PharmacyInventory, Prescription, PrescriptionItem
 from app.extensions import db
 
 class PharmacyService:
     """Pharmacy service class"""
+
+    @staticmethod
+    def _parse_date(value):
+        if not value:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        return datetime.fromisoformat(str(value)).date()
     
     # ==================== Medications ====================
     
@@ -22,7 +32,8 @@ class PharmacyService:
             unit=data.get('unit'),
             strength=data.get('strength'),
             price=data.get('price', 0),
-            reorder_level=data.get('reorder_level', 10)
+            reorder_level=data.get('reorder_level', 10),
+            facility_slug=data.get('facility_slug')
         )
         medication.save()
         return medication, None
@@ -41,14 +52,6 @@ class PharmacyService:
     def get_medication_by_id(medication_id):
         """Get medication by ID"""
         return Medication.query.get(medication_id)
-    
-    @staticmethod
-    def get_all_medications(active_only=True):
-        """Get all medications"""
-        query = Medication.query
-        if active_only:
-            query = query.filter_by(is_active=True)
-        return query.order_by(Medication.name).all()
     
     @staticmethod
     def update_medication(medication, data):
@@ -75,7 +78,7 @@ class PharmacyService:
         if inventory:
             # Update existing inventory
             inventory.quantity += data.get('quantity', 0)
-            inventory.expiry_date = data.get('expiry_date', inventory.expiry_date)
+            inventory.expiry_date = PharmacyService._parse_date(data.get('expiry_date')) or inventory.expiry_date
             inventory.batch_number = data.get('batch_number', inventory.batch_number)
             inventory.location = data.get('location', inventory.location)
             inventory.save()
@@ -85,7 +88,7 @@ class PharmacyService:
         inventory = PharmacyInventory(
             medication_id=medication_id,
             quantity=data.get('quantity', 0),
-            expiry_date=data.get('expiry_date'),
+            expiry_date=PharmacyService._parse_date(data.get('expiry_date')),
             batch_number=data.get('batch_number'),
             location=data.get('location')
         )
@@ -126,6 +129,7 @@ class PharmacyService:
         prescription = Prescription(
             patient_id=data['patient_id'],
             prescribed_by=prescribed_by_id,
+            facility_slug=data.get('facility_slug'),
             notes=data.get('notes'),
             prescription_date=datetime.utcnow()
         )
@@ -166,10 +170,13 @@ class PharmacyService:
         return query.order_by(Prescription.prescription_date).all()
     
     @staticmethod
-    def dispense_prescription(prescription_id, dispensed_by_id):
+    def dispense_prescription(prescription_id, dispensed_by_id, facility_slug=None):
         """Dispense a prescription"""
         prescription = Prescription.query.get(prescription_id)
         if not prescription:
+            return None, "Prescription not found"
+
+        if facility_slug and prescription.facility_slug != facility_slug:
             return None, "Prescription not found"
         
         if prescription.status != 'PENDING':

@@ -29,6 +29,7 @@ from app.routes.password_reset import router as password_reset_router
 from app.routes.facilities import router as facilities_router
 from app.routes.radiology import router as radiology_router
 from app.routes.inventory import router as inventory_router
+from app.routes.suppliers import router as suppliers_router
 from app.routes.queue import router as queue_router
 from app.routes.alerts import router as alerts_router
 from app.routes.dashboard import router as dashboard_router
@@ -38,10 +39,12 @@ from app.routes.files import router as files_router
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.jwt import JWTMiddleware
+from app.middleware.security import InputValidationMiddleware, SecurityHeadersMiddleware
 from app.utils.error_handlers import register_error_handlers
 from app.utils.schema import ensure_sqlite_schema_current
 from app.services.email_service import EmailService
 from app.extensions import db_session
+from app.models import UserSession
 
 # Static paths
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -130,6 +133,8 @@ def create_app() -> FastAPI:
             'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:8080', "http://127.0.0.1:5175",
             "https://his-pro.vercel.app",
         ]
+    if app_env == 'production' and "*" in allowed_origins:
+        raise RuntimeError("Wildcard CORS origins are not allowed in production")
     allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None
 
     app.add_middleware(
@@ -156,6 +161,8 @@ def create_app() -> FastAPI:
             db_session.remove()
 
     app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(InputValidationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(JWTMiddleware)
     register_error_handlers(app)
 
@@ -193,6 +200,7 @@ def create_app() -> FastAPI:
     app.include_router(facilities_router, prefix="/api/v1")
     app.include_router(radiology_router, prefix="/api/v1")
     app.include_router(inventory_router, prefix="/api/v1")
+    app.include_router(suppliers_router, prefix="/api/v1")
     app.include_router(queue_router, prefix="/api/v1")
     app.include_router(alerts_router, prefix="/api/v1")
     app.include_router(dashboard_router, prefix="/api/v1")

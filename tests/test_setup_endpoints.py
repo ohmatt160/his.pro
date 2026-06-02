@@ -17,6 +17,7 @@ class SetupEndpointTest(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.database_path = os.path.join(cls.temp_dir.name, "setup-test.db")
         os.environ["DATABASE_URL"] = f"sqlite:///{cls.database_path}"
+        os.environ["RATE_LIMIT_NAMESPACE"] = f"setup-test-{os.path.basename(cls.temp_dir.name)}"
 
         import httpx
 
@@ -47,7 +48,7 @@ class SetupEndpointTest(unittest.TestCase):
             auth_payload = {
                 "username": "sunrise-medical-centre-admin",
                 "email": "admin@sunrise.example.com",
-                "password": "Password1",
+                "password": "Sunrise2026",
                 "role": "ADMIN",
                 "first_name": "Dr.",
                 "last_name": "Amina Yusuf",
@@ -100,7 +101,7 @@ class SetupEndpointTest(unittest.TestCase):
                 "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
                 json={
                     "username": "admin@sunrise.example.com",
-                    "password": "Password1",
+                    "password": "Sunrise2026",
                 },
             )
 
@@ -116,6 +117,669 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(profile.json()["username"], "sunrise-medical-centre-admin")
             self.assertEqual(profile.json()["role"], "ADMIN")
             self.assertEqual(profile.json()["facility_slug"], "sunrise-medical-centre")
+
+            facility_update = await client.put(
+                "/api/v1/facilities/sunrise-medical-centre",
+                json={
+                    "phone": "+234 800 999 0000",
+                    "address": "Updated Hospital Road",
+                    "settings": {"timezone": "Africa/Lagos"},
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(facility_update.status_code, 200, facility_update.text)
+            self.assertEqual(facility_update.json()["slug"], "sunrise-medical-centre")
+            self.assertEqual(facility_update.json()["phone"], "+234 800 999 0000")
+            self.assertEqual(facility_update.json()["settings"]["timezone"], "Africa/Lagos")
+
+            profile_update = await client.put(
+                "/api/v1/users/me",
+                json={
+                    "first_name": "Dr",
+                    "last_name": "Amina Yusuf",
+                    "phone": "+234 800 999 1111",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(profile_update.status_code, 200, profile_update.text)
+            self.assertEqual(profile_update.json()["phone"], "+234 800 999 1111")
+
+            staff_payload = {
+                "fullName": "Nurse Ada Okafor",
+                "role": "nurse",
+                "department": "Nursing",
+                "email": "ada.okafor@sunrise.example.com",
+                "phone": "+234 800 111 2222",
+                "createdBy": "Dr. Amina Yusuf",
+            }
+            staff_create = await client.post(
+                "/api/v1/facilities/sunrise-medical-centre/staff",
+                json=staff_payload,
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_create.status_code, 201, staff_create.text)
+            self.assertEqual(staff_create.json()["loginId"], "NUR-001")
+            self.assertEqual(staff_create.json()["role"], "nurse")
+            self.assertTrue(staff_create.json()["temporaryPassword"])
+
+            staff_list = await client.get(
+                "/api/v1/facilities/sunrise-medical-centre/staff",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_list.status_code, 200, staff_list.text)
+            self.assertEqual(
+                [member["loginId"] for member in staff_list.json()],
+                ["sunrise-medical-centre-admin", "NUR-001"],
+            )
+
+            staff_lookup = await client.get(
+                "/api/v1/facilities/sunrise-medical-centre/staff/NUR-001",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_lookup.status_code, 200, staff_lookup.text)
+            self.assertEqual(staff_lookup.json()["fullName"], "Nurse Ada Okafor")
+
+            staff_login = await client.post(
+                "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
+                json={
+                    "username": "NUR-001",
+                    "password": staff_create.json()["temporaryPassword"],
+                },
+            )
+
+            self.assertEqual(staff_login.status_code, 200, staff_login.text)
+
+            staff_profile = await client.get(
+                "/api/v1/users/me",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_profile.status_code, 200, staff_profile.text)
+            self.assertEqual(staff_profile.json()["role"], "NURSE")
+            self.assertEqual(staff_profile.json()["facility_slug"], "sunrise-medical-centre")
+
+            facility_alert = await client.post(
+                "/api/v1/alerts",
+                json={
+                    "alert_type": "warning",
+                    "title": "Stock review",
+                    "message": "Review low-stock supplies before evening handover.",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(facility_alert.status_code, 201, facility_alert.text)
+            self.assertIsNone(facility_alert.json()["recipient_id"])
+
+            staff_alert = await client.post(
+                "/api/v1/alerts",
+                json={
+                    "alert_type": "critical",
+                    "title": "Ward escalation",
+                    "message": "Please review the observation ward immediately.",
+                    "recipient_id": staff_profile.json()["id"],
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_alert.status_code, 201, staff_alert.text)
+            self.assertEqual(staff_alert.json()["recipient_id"], staff_profile.json()["id"])
+
+            admin_alert_list = await client.get(
+                "/api/v1/alerts?per_page=100",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(admin_alert_list.status_code, 200, admin_alert_list.text)
+            self.assertEqual(
+                [alert["title"] for alert in admin_alert_list.json()],
+                ["Stock review"],
+            )
+
+            admin_staff_alert_lookup = await client.get(
+                f"/api/v1/alerts/{staff_alert.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(admin_staff_alert_lookup.status_code, 404, admin_staff_alert_lookup.text)
+
+            staff_alert_list = await client.get(
+                "/api/v1/alerts?per_page=100",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_alert_list.status_code, 200, staff_alert_list.text)
+            self.assertEqual(
+                sorted(alert["title"] for alert in staff_alert_list.json()),
+                ["Stock review", "Ward escalation"],
+            )
+
+            staff_alert_read = await client.put(
+                f"/api/v1/alerts/{staff_alert.json()['id']}/read",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_alert_read.status_code, 200, staff_alert_read.text)
+            self.assertTrue(staff_alert_read.json()["is_read"])
+
+            audit_log_list = await client.get(
+                "/api/v1/audit-logs?action=CREATE_ALERT&limit=20",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(audit_log_list.status_code, 200, audit_log_list.text)
+            self.assertEqual(len(audit_log_list.json()), 2)
+            self.assertEqual(
+                {entry["facility_slug"] for entry in audit_log_list.json()},
+                {"sunrise-medical-centre"},
+            )
+            self.assertEqual(
+                {entry["details"]["title"] for entry in audit_log_list.json()},
+                {"Stock review", "Ward escalation"},
+            )
+
+            settings_audit_log_list = await client.get(
+                "/api/v1/audit-logs?limit=20",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(settings_audit_log_list.status_code, 200, settings_audit_log_list.text)
+            self.assertIn(
+                "UPDATE_FACILITY",
+                {entry["action"] for entry in settings_audit_log_list.json()},
+            )
+            self.assertIn(
+                "UPDATE_PROFILE",
+                {entry["action"] for entry in settings_audit_log_list.json()},
+            )
+
+            staff_audit_denied = await client.get(
+                "/api/v1/audit-logs?limit=20",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_audit_denied.status_code, 403, staff_audit_denied.text)
+
+            patient_payload = {
+                "first_name": "Musa",
+                "last_name": "Bello",
+                "date_of_birth": "1990-04-12",
+                "gender": "MALE",
+                "phone": "+234 800 333 4444",
+                "email": "musa.bello@example.com",
+                "address": "12 Hospital Road",
+                "blood_type": "O+",
+                "medical_history": {},
+                "emergency_contact_name": "Aisha Bello",
+                "emergency_contact_phone": "+234 800 555 6666",
+            }
+            patient_create = await client.post(
+                "/api/v1/patients",
+                json=patient_payload,
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(patient_create.status_code, 201, patient_create.text)
+            self.assertEqual(patient_create.json()["full_name"], "Musa Bello")
+            self.assertEqual(patient_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            patient_list = await client.get(
+                "/api/v1/patients?search=Musa",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(patient_list.status_code, 200, patient_list.text)
+            self.assertEqual(patient_list.json()["total"], 1)
+            self.assertEqual(patient_list.json()["patients"][0]["full_name"], "Musa Bello")
+
+            medical_record_create = await client.post(
+                "/api/v1/emr",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "chief_complaint": "Fever and cough",
+                    "vital_signs": {
+                        "temperature": "38.2",
+                        "blood_pressure": "120/80",
+                        "pulse": "88",
+                    },
+                    "symptoms": ["fever", "cough"],
+                    "diagnosis": ["Upper respiratory tract infection"],
+                    "treatment_plan": "Hydration and symptomatic management",
+                    "follow_up_date": "2026-06-08",
+                    "notes": "Return if symptoms worsen",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(medical_record_create.status_code, 201, medical_record_create.text)
+            self.assertEqual(medical_record_create.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(medical_record_create.json()["chief_complaint"], "Fever and cough")
+            self.assertEqual(
+                medical_record_create.json()["diagnosis"],
+                ["Upper respiratory tract infection"],
+            )
+
+            medical_record_list = await client.get(
+                f"/api/v1/emr?patient_id={patient_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(medical_record_list.status_code, 200, medical_record_list.text)
+            self.assertEqual(len(medical_record_list.json()), 1)
+
+            medical_record_update = await client.put(
+                f"/api/v1/emr/{medical_record_create.json()['id']}",
+                json={"notes": "Improving after treatment"},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(medical_record_update.status_code, 200, medical_record_update.text)
+            self.assertEqual(medical_record_update.json()["notes"], "Improving after treatment")
+
+            appointment_create = await client.post(
+                "/api/v1/appointments",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "doctor_id": profile.json()["id"],
+                    "appointment_date": "2026-06-01T10:30:00",
+                    "duration_minutes": 30,
+                    "reason": "Initial consultation",
+                    "notes": "First scheduled visit",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(appointment_create.status_code, 201, appointment_create.text)
+            self.assertEqual(appointment_create.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(appointment_create.json()["duration_minutes"], 30)
+
+            appointment_list = await client.get(
+                "/api/v1/appointments",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(appointment_list.status_code, 200, appointment_list.text)
+            self.assertEqual(len(appointment_list.json()), 1)
+
+            queue_create = await client.post(
+                "/api/v1/queue",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "appointment_id": appointment_create.json()["id"],
+                    "department": "Front Desk",
+                    "priority": "normal",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(queue_create.status_code, 201, queue_create.text)
+            self.assertEqual(queue_create.json()["queue_number"], 1)
+            self.assertEqual(queue_create.json()["patient_name"], "Musa Bello")
+
+            queue_list = await client.get(
+                "/api/v1/queue",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(queue_list.status_code, 200, queue_list.text)
+            self.assertEqual(queue_list.json()["total"], 1)
+
+            invoice_create = await client.post(
+                "/api/v1/billing/invoices",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "amount": 25000,
+                    "due_date": "2026-06-08",
+                    "notes": "Initial consultation and registration",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(invoice_create.status_code, 201, invoice_create.text)
+            self.assertEqual(invoice_create.json()["amount"], 25000)
+            self.assertEqual(invoice_create.json()["paid_amount"], 0)
+            self.assertEqual(invoice_create.json()["balance"], 25000)
+            self.assertEqual(invoice_create.json()["status"], "PENDING")
+            self.assertEqual(invoice_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            payment_create = await client.post(
+                f"/api/v1/billing/invoices/{invoice_create.json()['id']}/payments",
+                json={
+                    "amount": 10000,
+                    "payment_method": "CASH",
+                    "reference": "RCPT-001",
+                    "notes": "Deposit",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(payment_create.status_code, 201, payment_create.text)
+            self.assertEqual(payment_create.json()["amount"], 10000)
+            self.assertEqual(payment_create.json()["reference"], "RCPT-001")
+
+            invoice_list = await client.get(
+                "/api/v1/billing/invoices",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(invoice_list.status_code, 200, invoice_list.text)
+            self.assertEqual(len(invoice_list.json()), 1)
+            self.assertEqual(invoice_list.json()[0]["paid_amount"], 10000)
+            self.assertEqual(invoice_list.json()[0]["balance"], 15000)
+            self.assertEqual(invoice_list.json()[0]["status"], "PARTIAL")
+
+            lab_test_create = await client.post(
+                "/api/v1/laboratory/tests",
+                json={
+                    "name": "Full Blood Count",
+                    "code": "FBC",
+                    "category": "Haematology",
+                    "unit": "cells/L",
+                    "reference_range": "4.0-11.0",
+                    "price": 7500,
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_test_create.status_code, 201, lab_test_create.text)
+            self.assertEqual(lab_test_create.json()["code"], "FBC")
+
+            lab_tests = await client.get(
+                "/api/v1/laboratory/tests",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_tests.status_code, 200, lab_tests.text)
+            self.assertEqual(lab_tests.json()[0]["name"], "Full Blood Count")
+
+            lab_order_create = await client.post(
+                "/api/v1/laboratory/orders",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "test_id": lab_test_create.json()["id"],
+                    "priority": "URGENT",
+                    "notes": "Fever workup",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_order_create.status_code, 201, lab_order_create.text)
+            self.assertEqual(lab_order_create.json()["status"], "PENDING")
+            self.assertEqual(lab_order_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            lab_order_list = await client.get(
+                "/api/v1/laboratory/orders",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_order_list.status_code, 200, lab_order_list.text)
+            self.assertEqual(len(lab_order_list.json()), 1)
+
+            lab_order_update = await client.put(
+                f"/api/v1/laboratory/orders/{lab_order_create.json()['id']}",
+                json={"status": "COLLECTED"},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_order_update.status_code, 200, lab_order_update.text)
+            self.assertEqual(lab_order_update.json()["status"], "COLLECTED")
+
+            lab_result_create = await client.post(
+                f"/api/v1/laboratory/results/{lab_order_create.json()['id']}",
+                json={
+                    "value": "13.4",
+                    "is_abnormal": False,
+                    "notes": "Within reference range",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_result_create.status_code, 201, lab_result_create.text)
+            self.assertEqual(lab_result_create.json()["value"], "13.4")
+
+            lab_result_lookup = await client.get(
+                f"/api/v1/laboratory/results/{lab_order_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_result_lookup.status_code, 200, lab_result_lookup.text)
+            self.assertEqual(lab_result_lookup.json()["notes"], "Within reference range")
+
+            radiology_create = await client.post(
+                "/api/v1/radiology",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "facility_slug": "attacker-supplied-facility",
+                    "modality": "X-ray",
+                    "body_part": "Chest",
+                    "clinical_notes": "Cough and fever",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_create.status_code, 201, radiology_create.text)
+            self.assertEqual(radiology_create.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(radiology_create.json()["status"], "pending")
+
+            radiology_list = await client.get(
+                "/api/v1/radiology?per_page=100",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_list.status_code, 200, radiology_list.text)
+            self.assertEqual(len(radiology_list.json()), 1)
+            self.assertEqual(radiology_list.json()[0]["patient_name"], "Musa Bello")
+
+            radiology_update = await client.put(
+                f"/api/v1/radiology/{radiology_create.json()['id']}",
+                json={"status": "ordered"},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_update.status_code, 200, radiology_update.text)
+            self.assertEqual(radiology_update.json()["status"], "ordered")
+
+            radiology_report = await client.put(
+                f"/api/v1/radiology/{radiology_create.json()['id']}/report",
+                json={"report": "No acute cardiopulmonary abnormality."},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_report.status_code, 200, radiology_report.text)
+            self.assertEqual(radiology_report.json()["status"], "completed")
+            self.assertEqual(
+                radiology_report.json()["report"],
+                "No acute cardiopulmonary abnormality.",
+            )
+
+            medication_create = await client.post(
+                "/api/v1/pharmacy/medications",
+                json={
+                    "name": "Paracetamol",
+                    "code": "PCM-500",
+                    "generic_name": "Acetaminophen",
+                    "category": "Analgesic",
+                    "unit": "tablet",
+                    "strength": "500mg",
+                    "price": 150,
+                    "reorder_level": 20,
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(medication_create.status_code, 201, medication_create.text)
+            self.assertEqual(medication_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            medication_list = await client.get(
+                "/api/v1/pharmacy/medications",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(medication_list.status_code, 200, medication_list.text)
+            self.assertEqual(len(medication_list.json()), 1)
+
+            inventory_create = await client.post(
+                f"/api/v1/pharmacy/inventory/{medication_create.json()['id']}",
+                json={
+                    "quantity": 50,
+                    "expiry_date": "2027-01-31",
+                    "batch_number": "BATCH-001",
+                    "location": "Main shelf",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_create.status_code, 201, inventory_create.text)
+            self.assertEqual(inventory_create.json()["quantity"], 50)
+
+            prescription_create = await client.post(
+                "/api/v1/pharmacy/prescriptions",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "items": [
+                        {
+                            "medication_id": medication_create.json()["id"],
+                            "quantity": 10,
+                            "dosage": "1 tablet twice daily",
+                            "instructions": "After meals",
+                        }
+                    ],
+                    "notes": "Fever management",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(prescription_create.status_code, 201, prescription_create.text)
+            self.assertEqual(prescription_create.json()["status"], "PENDING")
+            self.assertEqual(prescription_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            prescription_dispense = await client.post(
+                f"/api/v1/pharmacy/prescriptions/{prescription_create.json()['id']}/dispense",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(prescription_dispense.status_code, 200, prescription_dispense.text)
+            self.assertEqual(prescription_dispense.json()["status"], "DISPENSED")
+
+            inventory_after_dispense = await client.get(
+                f"/api/v1/pharmacy/inventory/{medication_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_after_dispense.status_code, 200, inventory_after_dispense.text)
+            self.assertEqual(inventory_after_dispense.json()["quantity"], 40)
+
+            supplier_create = await client.post(
+                "/api/v1/suppliers",
+                json={
+                    "name": "MedSupply Nigeria",
+                    "contact_person": "Kemi Ade",
+                    "email": "orders@medsupply.example.com",
+                    "phone": "+234 800 777 8888",
+                    "address": "Supplier Avenue",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(supplier_create.status_code, 201, supplier_create.text)
+            self.assertEqual(supplier_create.json()["facility_slug"], "sunrise-medical-centre")
+
+            supplier_list = await client.get(
+                "/api/v1/suppliers",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(supplier_list.status_code, 200, supplier_list.text)
+            self.assertEqual(len(supplier_list.json()), 1)
+
+            inventory_item_create = await client.post(
+                "/api/v1/inventory",
+                json={
+                    "facility_slug": "attacker-supplied-facility",
+                    "name": "Sterile Gloves",
+                    "sku": "GLV-001",
+                    "category": "supplies",
+                    "unit": "box",
+                    "reorder_level": 10,
+                    "reorder_quantity": 25,
+                    "current_stock": 8,
+                    "supplier_id": supplier_create.json()["id"],
+                    "unit_cost": 3500,
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_item_create.status_code, 201, inventory_item_create.text)
+            self.assertEqual(inventory_item_create.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(inventory_item_create.json()["supplier_name"], "MedSupply Nigeria")
+            self.assertTrue(inventory_item_create.json()["needs_reorder"])
+
+            inventory_list = await client.get(
+                "/api/v1/inventory?per_page=100",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_list.status_code, 200, inventory_list.text)
+            self.assertEqual(len(inventory_list.json()), 1)
+
+            low_stock = await client.get(
+                "/api/v1/inventory/low-stock",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(low_stock.status_code, 200, low_stock.text)
+            self.assertEqual(low_stock.json()[0]["medication_name"], "Sterile Gloves")
+
+            inventory_stock_update = await client.put(
+                f"/api/v1/inventory/{inventory_item_create.json()['id']}/stock",
+                json={"adjustment_type": "addition", "current_stock": 10},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_stock_update.status_code, 200, inventory_stock_update.text)
+            self.assertEqual(inventory_stock_update.json()["current_stock"], 18)
+            self.assertFalse(inventory_stock_update.json()["needs_reorder"])
+
+            supplier_deactivate = await client.delete(
+                f"/api/v1/suppliers/{supplier_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(supplier_deactivate.status_code, 200, supplier_deactivate.text)
+
+            supplier_list_after_deactivate = await client.get(
+                "/api/v1/suppliers",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(supplier_list_after_deactivate.status_code, 200, supplier_list_after_deactivate.text)
+            self.assertEqual(supplier_list_after_deactivate.json(), [])
+
+            password_change = await client.post(
+                "/api/v1/users/me/change-password",
+                json={
+                    "current_password": "Sunrise2026",
+                    "new_password": "Sunrise2027",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(password_change.status_code, 200, password_change.text)
+
+            changed_password_login = await client.post(
+                "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
+                json={
+                    "username": "admin@sunrise.example.com",
+                    "password": "Sunrise2027",
+                },
+            )
+
+            self.assertEqual(changed_password_login.status_code, 200, changed_password_login.text)
 
         asyncio.run(run_test())
 

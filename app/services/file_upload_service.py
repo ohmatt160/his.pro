@@ -6,7 +6,6 @@ Converted from Flask-based service to framework-agnostic
 import os
 import uuid
 from datetime import datetime
-from werkzeug.utils import secure_filename
 from pathlib import Path
 
 # Use absolute path based on current file location
@@ -16,11 +15,20 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent  # goes to workspace ro
 class FileUploadService:
     """File upload service class"""
 
+    MAX_FILE_SIZE = 5 * 1024 * 1024
+    IMAGE_SIGNATURES = {
+        "png": (b"\x89PNG\r\n\x1a\n",),
+        "jpg": (b"\xff\xd8\xff",),
+        "jpeg": (b"\xff\xd8\xff",),
+        "gif": (b"GIF87a", b"GIF89a"),
+        "webp": (b"RIFF",),
+    }
+
     # Default allowed extensions
     DEFAULT_ALLOWED_EXTENSIONS = {
         'images': {'png', 'jpg', 'jpeg', 'gif', 'webp'},
         'documents': {'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'},
-        'all': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt'}
+        'all': {'png', 'jpg', 'jpeg', 'gif', 'webp'}
     }
 
     @staticmethod
@@ -43,16 +51,53 @@ class FileUploadService:
     def generate_unique_filename(filename):
         """Generate unique filename"""
         ext = filename.rsplit('.', 1)[1].lower()
-        unique_id = str(uuid.uuid4())[:8]
+        unique_id = uuid.uuid4().hex
         timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
         return f"{timestamp}_{unique_id}.{ext}"
 
     @staticmethod
     def get_upload_folder(folder='uploads'):
         """Get upload folder path"""
+        try:
+            folder = FileUploadService.sanitize_folder(folder)
+        except ValueError as exc:
+            return False, str(exc)
         upload_folder = BASE_DIR / 'app' / 'static' / folder
         upload_folder.mkdir(parents=True, exist_ok=True)
         return str(upload_folder)
+
+    @staticmethod
+    def sanitize_folder(folder='uploads'):
+        folder = (folder or 'uploads').strip().replace('\\', '/')
+        parts = [part for part in folder.split('/') if part]
+        if any(part in {'.', '..'} for part in parts):
+            raise ValueError("Invalid upload folder")
+        safe = [part for part in parts if part.replace('-', '').replace('_', '').isalnum()]
+        return '/'.join(safe) if safe else 'uploads'
+
+    @staticmethod
+    def _extension(filename):
+        return filename.rsplit('.', 1)[1].lower() if filename and '.' in filename else ''
+
+    @staticmethod
+    def _looks_like_image(ext, content):
+        signatures = FileUploadService.IMAGE_SIGNATURES.get(ext)
+        if not signatures:
+            return False
+        if ext == "webp":
+            return content.startswith(b"RIFF") and content[8:12] == b"WEBP"
+        return any(content.startswith(signature) for signature in signatures)
+
+    @staticmethod
+    def scan_for_malware(content):
+        """Hook for malware scanning; detects EICAR locally and can require a scanner in prod."""
+        if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in content:
+            return False, "Malware signature detected"
+
+        if os.getenv("MALWARE_SCAN_REQUIRED", "").lower() == "true":
+            return False, "Malware scanner is not configured"
+
+        return True, None
 
     @staticmethod
     def upload_file(file, folder='uploads', allowed_extensions=None):
@@ -60,8 +105,25 @@ class FileUploadService:
         if not file or file.filename == '':
             return False, "No file provided"
 
+        allowed_extensions = allowed_extensions or FileUploadService.DEFAULT_ALLOWED_EXTENSIONS['images']
         if not FileUploadService.allowed_file(file.filename, allowed_extensions):
             return False, "File type not allowed"
+
+        try:
+            folder = FileUploadService.sanitize_folder(folder)
+        except ValueError as exc:
+            return False, str(exc)
+        ext = FileUploadService._extension(file.filename)
+        content = file.file.read()
+        if len(content) > FileUploadService.MAX_FILE_SIZE:
+            return False, "File is too large"
+
+        if not FileUploadService._looks_like_image(ext, content):
+            return False, "File content is not a valid image"
+
+        clean, scan_error = FileUploadService.scan_for_malware(content)
+        if not clean:
+            return False, scan_error
 
         # Generate unique filename
         filename = FileUploadService.generate_unique_filename(file.filename)
@@ -71,7 +133,6 @@ class FileUploadService:
         filepath = os.path.join(upload_folder, filename)
 
         # Save file
-        content = file.read()
         with open(filepath, "wb") as buffer:
             buffer.write(content)
 

@@ -53,13 +53,18 @@ class LabService:
     @staticmethod
     def create_lab_order(data, ordered_by_id):
         """Create a new lab order"""
+        order_date = data.get('order_date') or datetime.utcnow()
+        if isinstance(order_date, str):
+            order_date = datetime.fromisoformat(order_date)
+
         order = LabOrder(
             patient_id=data['patient_id'],
             test_id=data['test_id'],
+            facility_slug=data.get('facility_slug'),
             ordered_by=ordered_by_id,
             priority=data.get('priority', 'ROUTINE'),
             notes=data.get('notes'),
-            order_date=data.get('order_date', datetime.utcnow())
+            order_date=order_date
         )
         order.save()
         return order

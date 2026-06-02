@@ -103,7 +103,7 @@ async def create_patient(
     """
     try:
         # Sanitize string fields
-        data = patient_data.dict()
+        data = patient_data.model_dump()
         if 'first_name' in data:
             data['first_name'] = Validators.sanitize_string(data['first_name'])
         if 'last_name' in data:
@@ -233,7 +233,7 @@ async def update_patient(
             raise HTTPException(status_code=404, detail="Patient not found")
 
         # Sanitize fields
-        data = patient_data.dict(exclude_unset=True)
+        data = patient_data.model_dump(exclude_unset=True)
         for key, value in data.items():
             if isinstance(value, str):
                 data[key] = Validators.sanitize_string(value)

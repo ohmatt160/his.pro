@@ -10,8 +10,14 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
-from app.schemas.inventory import InventoryResponse, InventoryCreate
-from app.schemas.pharmacy import MedicationResponse, PrescriptionCreate, PrescriptionResponse, MedicationCreate
+from app.schemas.pharmacy import (
+    InventoryCreate,
+    InventoryResponse,
+    MedicationResponse,
+    PrescriptionCreate,
+    PrescriptionResponse,
+    MedicationCreate,
+)
 from app.schemas.users import MessageResponse
 from app.services.pharmacy_service import PharmacyService
 from app.utils.dependencies import get_current_user, role_required
@@ -21,6 +27,52 @@ from app.models.facility import Facility
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pharmacy", tags=["pharmacy"])
+
+
+def _medication_response(medication) -> MedicationResponse:
+    return MedicationResponse(
+        id=str(medication.id),
+        name=medication.name,
+        code=medication.code,
+        generic_name=medication.generic_name,
+        description=medication.description,
+        category=medication.category,
+        unit=medication.unit,
+        strength=medication.strength,
+        price=float(medication.price) if medication.price is not None else None,
+        reorder_level=medication.reorder_level,
+        is_active=medication.is_active,
+        facility_slug=medication.facility_slug,
+        created_at=medication.created_at.isoformat() if medication.created_at else "",
+        updated_at=medication.updated_at.isoformat() if medication.updated_at else None
+    )
+
+
+def _inventory_response(inventory) -> InventoryResponse:
+    return InventoryResponse(
+        id=str(inventory.id),
+        medication_id=str(inventory.medication_id),
+        quantity=inventory.quantity,
+        expiry_date=inventory.expiry_date.isoformat() if inventory.expiry_date else None,
+        batch_number=inventory.batch_number,
+        location=inventory.location,
+        last_updated=inventory.updated_at.isoformat() if inventory.updated_at else ""
+    )
+
+
+def _prescription_response(prescription) -> PrescriptionResponse:
+    return PrescriptionResponse(
+        id=str(prescription.id),
+        patient_id=str(prescription.patient_id),
+        prescribed_by=str(prescription.prescribed_by),
+        status=prescription.status,
+        notes=prescription.notes,
+        filled_by=str(prescription.dispensed_by) if prescription.dispensed_by else None,
+        filled_at=prescription.dispensed_date.isoformat() if prescription.dispensed_date else None,
+        facility_slug=prescription.facility_slug,
+        created_at=prescription.created_at.isoformat() if prescription.created_at else "",
+        updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
+    )
 
 
 # ==================== Medications ====================
@@ -36,24 +88,7 @@ async def get_medications(
     facility_slug = current_user.facility_slug
     medications = PharmacyService.get_all_medications(facility_slug=facility_slug, active_only=active_only)
 
-    return [
-        MedicationResponse(
-            id=str(m.id),
-            name=m.name,
-            code=m.code,
-            generic_name=m.generic_name,
-            description=m.description,
-            category=m.category,
-            unit=m.unit,
-            strength=m.strength,
-            price=m.price,
-            reorder_level=m.reorder_level,
-            is_active=m.is_active,
-            facility_slug=m.facility_slug,
-            created_at=m.created_at.isoformat() if m.created_at else "",
-            updated_at=m.updated_at.isoformat() if m.updated_at else None
-        ) for m in medications
-    ]
+    return [_medication_response(m) for m in medications]
 
 
 
@@ -64,29 +99,14 @@ async def create_medication(
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    payload = data.dict()
+    payload = data.model_dump()
     payload['facility_slug'] = facility_slug
 
     medication, error = PharmacyService.create_medication(payload)
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    return MedicationResponse(
-        id=str(medication.id),
-        name=medication.name,
-        code=medication.code,
-        generic_name=medication.generic_name,
-        description=medication.description,
-        category=medication.category,
-        unit=medication.unit,
-        strength=medication.strength,
-        price=medication.price,
-        reorder_level=medication.reorder_level,
-        is_active=medication.is_active,
-        facility_slug=medication.facility_slug,
-        created_at=medication.created_at.isoformat() if medication.created_at else "",
-        updated_at=medication.updated_at.isoformat() if medication.updated_at else None
-    )
+    return _medication_response(medication)
 
 
 @router.get("/medications/{medication_id}", response_model=MedicationResponse)
@@ -102,22 +122,7 @@ async def get_medication(
     if medication.facility_slug != current_user.facility_slug:
         raise HTTPException(status_code=404, detail="Medication not found")
 
-    return MedicationResponse(
-        id=str(medication.id),
-        name=medication.name,
-        code=medication.code,
-        generic_name=medication.generic_name,
-        description=medication.description,
-        category=medication.category,
-        unit=medication.unit,
-        strength=medication.strength,
-        price=medication.price,
-        reorder_level=medication.reorder_level,
-        is_active=medication.is_active,
-        facility_slug=medication.facility_slug,
-        created_at=medication.created_at.isoformat() if medication.created_at else "",
-        updated_at=medication.updated_at.isoformat() if medication.updated_at else None
-    )
+    return _medication_response(medication)
 
 
 @router.put("/medications/{medication_id}", response_model=MedicationResponse)
@@ -134,24 +139,9 @@ async def update_medication(
     if medication.facility_slug != current_user.facility_slug:
         raise HTTPException(status_code=404, detail="Medication not found")
 
-    updated_medication = PharmacyService.update_medication(medication, data.dict(exclude_unset=True))
+    updated_medication = PharmacyService.update_medication(medication, data.model_dump(exclude_unset=True))
 
-    return MedicationResponse(
-        id=str(updated_medication.id),
-        name=updated_medication.name,
-        code=updated_medication.code,
-        generic_name=updated_medication.generic_name,
-        description=updated_medication.description,
-        category=updated_medication.category,
-        unit=updated_medication.unit,
-        strength=updated_medication.strength,
-        price=updated_medication.price,
-        reorder_level=updated_medication.reorder_level,
-        is_active=updated_medication.is_active,
-        facility_slug=updated_medication.facility_slug,
-        created_at=updated_medication.created_at.isoformat() if updated_medication.created_at else "",
-        updated_at=updated_medication.updated_at.isoformat() if updated_medication.updated_at else None
-    )
+    return _medication_response(updated_medication)
 
 
 # ==================== Inventory ====================
@@ -168,15 +158,7 @@ async def get_inventory(
     if not inventory:
         raise HTTPException(status_code=404, detail="Inventory not found")
 
-    return InventoryResponse(
-        id=str(inventory.id),
-        medication_id=str(inventory.medication_id),
-        quantity=inventory.quantity,
-        expiry_date=inventory.expiry_date.isoformat() if inventory.expiry_date else None,
-        batch_number=inventory.batch_number,
-        location=inventory.location,
-        last_updated=inventory.last_updated.isoformat() if inventory.last_updated else ""
-    )
+    return _inventory_response(inventory)
 
 
 @router.post("/inventory/{medication_id}", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)
@@ -187,19 +169,11 @@ async def add_inventory(
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    inventory, error = PharmacyService.add_inventory(medication_id, facility_slug, data.dict())
+    inventory, error = PharmacyService.add_inventory(medication_id, facility_slug, data.model_dump())
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    return InventoryResponse(
-        id=str(inventory.id),
-        medication_id=str(inventory.medication_id),
-        quantity=inventory.quantity,
-        expiry_date=inventory.expiry_date.isoformat() if inventory.expiry_date else None,
-        batch_number=inventory.batch_number,
-        location=inventory.location,
-        last_updated=inventory.last_updated.isoformat() if inventory.last_updated else ""
-    )
+    return _inventory_response(inventory)
 
 
 # ==================== Prescriptions ====================
@@ -226,20 +200,7 @@ async def get_prescriptions(
         from app.models.pharmacy import Prescription
         prescriptions = db.query(Prescription).filter_by(facility_slug=facility_slug).order_by(Prescription.created_at.desc()).all()
 
-    return [
-        PrescriptionResponse(
-            id=str(p.id),
-            patient_id=str(p.patient_id),
-            prescribed_by=str(p.prescribed_by),
-            status=p.status,
-            notes=p.notes,
-            filled_by=str(p.filled_by) if p.filled_by else None,
-            filled_at=p.filled_at.isoformat() if p.filled_at else None,
-            facility_slug=p.facility_slug,
-            created_at=p.created_at.isoformat() if p.created_at else "",
-            updated_at=p.updated_at.isoformat() if p.updated_at else None
-        ) for p in prescriptions
-    ]
+    return [_prescription_response(p) for p in prescriptions]
 
 
 
@@ -258,23 +219,17 @@ async def create_prescription(
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    payload = data.dict()
+    for item in data.items:
+        medication = PharmacyService.get_medication_by_id(item.medication_id)
+        if not medication or medication.facility_slug != facility_slug:
+            raise HTTPException(status_code=404, detail="Medication not found")
+
+    payload = data.model_dump()
     payload['facility_slug'] = facility_slug
 
     prescription = PharmacyService.create_prescription(payload, current_user.id)
 
-    return PrescriptionResponse(
-        id=str(prescription.id),
-        patient_id=str(prescription.patient_id),
-        prescribed_by=str(prescription.prescribed_by),
-        status=prescription.status,
-        notes=prescription.notes,
-        filled_by=str(prescription.filled_by) if prescription.filled_by else None,
-        filled_at=prescription.filled_at.isoformat() if prescription.filled_at else None,
-        facility_slug=prescription.facility_slug,
-        created_at=prescription.created_at.isoformat() if prescription.created_at else "",
-        updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
-    )
+    return _prescription_response(prescription)
 
 
 @router.get("/prescriptions/{prescription_id}", response_model=PrescriptionResponse)
@@ -289,18 +244,7 @@ async def get_prescription(
     if not prescription or prescription.facility_slug != facility_slug:
         raise HTTPException(status_code=404, detail="Prescription not found")
 
-    return PrescriptionResponse(
-        id=str(prescription.id),
-        patient_id=str(prescription.patient_id),
-        prescribed_by=str(prescription.prescribed_by),
-        status=prescription.status,
-        notes=prescription.notes,
-        filled_by=str(prescription.filled_by) if prescription.filled_by else None,
-        filled_at=prescription.filled_at.isoformat() if prescription.filled_at else None,
-        facility_slug=prescription.facility_slug,
-        created_at=prescription.created_at.isoformat() if prescription.created_at else "",
-        updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
-    )
+    return _prescription_response(prescription)
 
 
 @router.post("/prescriptions/{prescription_id}/dispense", response_model=PrescriptionResponse)
@@ -310,26 +254,16 @@ async def dispense_prescription(
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    prescription, error = PharmacyService.dispense_prescription(prescription_id, current_user.id)
+    prescription, error = PharmacyService.dispense_prescription(
+        prescription_id,
+        current_user.id,
+        facility_slug=facility_slug,
+    )
 
     if error:
         raise HTTPException(status_code=400, detail=error)
 
-    if not prescription or prescription.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Prescription not found")
-
-    return PrescriptionResponse(
-        id=str(prescription.id),
-        patient_id=str(prescription.patient_id),
-        prescribed_by=str(prescription.prescribed_by),
-        status=prescription.status,
-        notes=prescription.notes,
-        filled_by=str(prescription.filled_by) if prescription.filled_by else None,
-        filled_at=prescription.filled_at.isoformat() if prescription.filled_at else None,
-        facility_slug=prescription.facility_slug,
-        created_at=prescription.created_at.isoformat() if prescription.created_at else "",
-        updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
-    )
+    return _prescription_response(prescription)
 
 
 @router.delete("/prescriptions/{prescription_id}", response_model=MessageResponse)

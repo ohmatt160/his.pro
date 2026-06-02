@@ -6,12 +6,15 @@ class AppointmentCreate(BaseModel):
     patient_id: str = Field(...)
     doctor_id: str = Field(...)
     appointment_date: str = Field(...)
+    duration_minutes: int = Field(30, ge=5, le=480)
     reason: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
 
 
 class AppointmentUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(SCHEDULED|CONFIRMED|IN_PROGRESS|COMPLETED|CANCELLED|NO_SHOW)$")
+    appointment_date: Optional[str] = Field(None)
+    duration_minutes: Optional[int] = Field(None, ge=5, le=480)
     reason: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
 

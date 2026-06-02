@@ -17,6 +17,7 @@ from app.routes.patients import router as patients_router
 from app.routes.pharmacy import router as pharmacy_router
 from app.routes.queue import router as queue_router
 from app.routes.radiology import router as radiology_router
+from app.routes.suppliers import router as suppliers_router
 from app.routes.users import router as users_router
 
 
@@ -38,4 +39,5 @@ api_router.include_router(patients_router)
 api_router.include_router(pharmacy_router)
 api_router.include_router(queue_router)
 api_router.include_router(radiology_router)
+api_router.include_router(suppliers_router)
 api_router.include_router(users_router)

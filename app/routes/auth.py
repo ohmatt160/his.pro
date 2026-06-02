@@ -3,15 +3,18 @@ Authentication Routes - FastAPI Version
 Converted from Flask-RESTx auth_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 import logging
+import os
+import uuid
 
 from app.schemas.users import UserResponse, UserRegister, TokenResponse, UserLogin, MessageResponse
 from app.services.auth_service import AuthService
+from app.services.session_service import SessionService
 from app.utils.validators import Validators
-from app.middleware.jwt import verify_token
+from app.middleware.jwt import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES, verify_token
 from app.models.user import User
 from app.extensions import get_db
 
@@ -22,15 +25,61 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Security scheme
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
-def build_token_response(user: User) -> TokenResponse:
+def _cookie_secure() -> bool:
+    return os.getenv("APP_ENV") == "production" or os.getenv("COOKIE_SECURE", "").lower() == "true"
+
+
+def _set_auth_cookies(response: Response, token_response: TokenResponse) -> None:
+    secure = _cookie_secure()
+    same_site = "none" if secure else "lax"
+    response.set_cookie(
+        "hispro_access_token",
+        token_response.access_token,
+        max_age=JWT_ACCESS_TOKEN_EXPIRES,
+        httponly=True,
+        secure=secure,
+        samesite=same_site,
+        path="/",
+    )
+    response.set_cookie(
+        "hispro_refresh_token",
+        token_response.refresh_token,
+        max_age=JWT_REFRESH_TOKEN_EXPIRES,
+        httponly=True,
+        secure=secure,
+        samesite=same_site,
+        path="/",
+    )
+
+
+def _clear_auth_cookies(response: Response) -> None:
+    secure = _cookie_secure()
+    same_site = "none" if secure else "lax"
+    for cookie_name in ("hispro_access_token", "hispro_refresh_token"):
+        response.delete_cookie(cookie_name, path="/", secure=secure, samesite=same_site)
+
+
+def _get_token_from_request(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    cookie_name: str,
+) -> str | None:
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    return request.cookies.get(cookie_name)
+
+
+def build_token_response(user: User, request: Request | None = None) -> TokenResponse:
     from app.middleware.jwt import create_access_token, create_refresh_token
 
+    refresh_jti = str(uuid.uuid4())
+    session = SessionService.create_session(str(user.id), refresh_jti, request)
     return TokenResponse(
-        access_token=create_access_token(identity=user.id),
-        refresh_token=create_refresh_token(identity=user.id),
+        access_token=create_access_token(identity=user.id, session_id=session.id),
+        refresh_token=create_refresh_token(identity=user.id, session_id=session.id, jti=refresh_jti),
     )
 
 
@@ -48,6 +97,7 @@ def sanitize_registration_data(user_data: UserRegister) -> dict:
 async def register_user(
     user_data: UserRegister,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """
@@ -57,7 +107,7 @@ async def register_user(
         # Sanitize input fields
         data = sanitize_registration_data(user_data)
         
-        logger.info(f"[Register] Creating user with data: {data}")
+        logger.info("[Register] Creating user %s", data.get("username"))
         
         # Create user
         user, error = AuthService.register_user(data, db)
@@ -85,14 +135,15 @@ async def register_user(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Register] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+        logger.error("[Register] Exception: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Registration failed")
 
 
 @router.post("/ensure", response_model=TokenResponse)
 async def ensure_user(
     user_data: UserRegister,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """
@@ -104,13 +155,15 @@ async def ensure_user(
 
         if existing_user:
             if not existing_user.is_active or not existing_user.check_password(data['password']):
-                raise HTTPException(status_code=401, detail="Invalid username or password")
+                raise HTTPException(status_code=401, detail="Invalid credentials")
 
             if existing_user.email != data['email']:
                 raise HTTPException(status_code=409, detail="Username already belongs to another email")
 
             logger.info(f"[Ensure] Existing user authenticated: {existing_user.username}")
-            return build_token_response(existing_user)
+            token_response = build_token_response(existing_user, request)
+            _set_auth_cookies(response, token_response)
+            return token_response
 
         user, error = AuthService.register_user(data, db)
 
@@ -119,19 +172,22 @@ async def ensure_user(
             raise HTTPException(status_code=400, detail=error)
 
         logger.info(f"[Ensure] User created and authenticated: {user.username}")
-        return build_token_response(user)
+        token_response = build_token_response(user, request)
+        _set_auth_cookies(response, token_response)
+        return token_response
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Ensure] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Setup authentication failed: {str(e)}")
+        logger.error("[Ensure] Exception: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Setup authentication failed")
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login_user(
     login_data: UserLogin,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """
@@ -147,36 +203,43 @@ async def login_user(
         
         if error:
             logger.warning(f"[Login] Authentication failed for user: {data['username']}")
-            raise HTTPException(status_code=401, detail="Invalid username or password")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Validate facility access if requested
         requested_facility = request.query_params.get('facility_slug')
         if requested_facility and user.facility_slug != requested_facility:
             logger.warning(f"[Login] User {user.username} tried to access wrong facility")
-            raise HTTPException(status_code=401, detail="Invalid username or password")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
         
         logger.info(f"[Login] User {user.username} logged in successfully")
         
-        return build_token_response(user)
+        token_response = build_token_response(user, request)
+        _set_auth_cookies(response, token_response)
+        return token_response
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Login] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+        logger.error("[Login] Exception: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Login failed")
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
     Refresh access token using refresh token
     """
     try:
-        # Verify the refresh token
-        token_data = verify_token(credentials.credentials, token_type="refresh")
+        refresh_token_value = _get_token_from_request(request, credentials, "hispro_refresh_token")
+        if not refresh_token_value:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+        token_data = verify_token(refresh_token_value, token_type="refresh")
         user_id = token_data.get("sub")
         
         if not user_id:
@@ -185,16 +248,18 @@ async def refresh_token(
         # Verify user exists and is active
         user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
         if not user:
-            raise HTTPException(status_code=401, detail="User not found or inactive")
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
         
-        # Create new access token
-        from app.middleware.jwt import create_access_token
-        new_access_token = create_access_token(identity=user.id)
-        
-        return TokenResponse(
-            access_token=new_access_token,
-            refresh_token=credentials.credentials  # Return same refresh token
+        from app.middleware.jwt import create_access_token, create_refresh_token
+        new_refresh_jti = str(uuid.uuid4())
+        SessionService.rotate_refresh_token(token_data.get("sid"), user_id, new_refresh_jti)
+        token_response = TokenResponse(
+            access_token=create_access_token(identity=user.id, session_id=token_data.get("sid")),
+            refresh_token=create_refresh_token(identity=user.id, session_id=token_data.get("sid"), jti=new_refresh_jti),
         )
+        _set_auth_cookies(response, token_response)
+        
+        return token_response
         
     except HTTPException:
         raise
@@ -205,15 +270,20 @@ async def refresh_token(
 
 @router.post("/logout", response_model=MessageResponse)
 async def logout_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db)
 ):
     """
     Logout user by adding token to blocklist
     """
     try:
-        # Verify the access token
-        token_data = verify_token(credentials.credentials, token_type="access")
+        access_token_value = _get_token_from_request(request, credentials, "hispro_access_token")
+        if not access_token_value:
+            raise HTTPException(status_code=401, detail="Invalid token")
+
+        token_data = verify_token(access_token_value, token_type="access")
         jti = token_data.get("jti")
         user_id = token_data.get("sub")
         
@@ -223,11 +293,58 @@ async def logout_user(
         # Add token to blocklist (Redis or in-memory)
         from app import jwt_blocklist
         jwt_blocklist.add(jti)
+        SessionService.revoke_session_by_id(token_data.get("sid"), user_id)
+        _clear_auth_cookies(response)
         
         return MessageResponse(message="Logout successful")
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[Logout] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Logout failed: {str(e)}")
+        logger.error("[Logout] Exception: %s", str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail="Logout failed")
+
+
+@router.post("/logout-everywhere", response_model=MessageResponse)
+async def logout_everywhere(
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+):
+    access_token_value = _get_token_from_request(request, credentials, "hispro_access_token")
+    if not access_token_value:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    token_data = verify_token(access_token_value, token_type="access")
+    revoked = SessionService.revoke_all_for_user(token_data.get("sub"))
+    _clear_auth_cookies(response)
+    return MessageResponse(message=f"Logged out {revoked} active session(s)")
+
+
+@router.post("/verify", response_model=UserResponse)
+async def verify_current_session(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+):
+    access_token_value = _get_token_from_request(request, credentials, "hispro_access_token")
+    if not access_token_value:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    token_data = verify_token(access_token_value, token_type="access")
+    user = db.query(User).filter(User.id == token_data.get("sub"), User.is_active == True).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        role=user.role,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        facility_slug=user.facility_slug,
+        is_active=user.is_active,
+        created_at=user.created_at.isoformat() if user.created_at else "",
+        updated_at=user.updated_at.isoformat() if user.updated_at else None,
+    )

@@ -11,13 +11,13 @@ import {
   Activity,
   Users,
   CalendarDays,
-  TrendingUp,
   Bell,
   ShieldCheck,
   Settings,
   LogOut,
   Search,
   LayoutDashboard,
+  ClipboardList,
   Stethoscope,
   FlaskConical,
   Pill,
@@ -25,6 +25,7 @@ import {
   FileHeart,
   ScanLine,
   Package,
+  Truck,
   BedDouble,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +40,7 @@ import {
   getFacilityWorkspace,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
+import { apiClient } from "@/api/client";
 
 const moduleIcons: Record<string, React.ElementType> = {
   reception: Users,
@@ -64,12 +66,15 @@ const moduleLabels: Record<string, string> = {
   inventory: "Inventory & Stores",
 };
 
-const statsCards = [
-  { label: "Total Patients", value: "0", icon: Users, change: "New system" },
-  { label: "Appointments Today", value: "0", icon: CalendarDays, change: "No appointments yet" },
-  { label: "Active Modules", value: "—", icon: Layers, change: "Configured" },
-  { label: "System Health", value: "100%", icon: TrendingUp, change: "All systems go" },
-];
+type DashboardStats = {
+  patient_count: number;
+  today_appointments: number;
+  pending_lab_orders: number;
+  pending_radiology_orders: number;
+  low_inventory_items: number;
+  active_alerts: number;
+  active_queue_count: number;
+};
 
 const container = {
   hidden: {},
@@ -91,6 +96,9 @@ const Dashboard = () => {
     routedData
   );
   const [isLoading, setIsLoading] = useState(!Boolean(routedData));
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(
+    null
+  );
 
   useEffect(() => {
     if (!workspace && facilitySlug) {
@@ -107,6 +115,19 @@ const Dashboard = () => {
     }
   }, [facilitySlug, workspace, navigate]);
 
+  useEffect(() => {
+    if (!facilitySlug || !user) {
+      return;
+    }
+
+    apiClient
+      .get<DashboardStats>(
+        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}`
+      )
+      .then(setDashboardStats)
+      .catch(() => setDashboardStats(null));
+  }, [facilitySlug, user]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -122,6 +143,42 @@ const Dashboard = () => {
     facilitySlug || workspace?.facilitySlug || "";
   const staffAccessPath = resolvedFacilitySlug
     ? getStaffAccessPath(resolvedFacilitySlug)
+    : "";
+  const patientsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/patients`
+    : "";
+  const appointmentsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/appointments`
+    : "";
+  const billingPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/billing`
+    : "";
+  const laboratoryPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/laboratory`
+    : "";
+  const pharmacyPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/pharmacy`
+    : "";
+  const radiologyPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/radiology`
+    : "";
+  const inventoryPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/inventory`
+    : "";
+  const recordsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/records`
+    : "";
+  const alertsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/alerts`
+    : "";
+  const auditLogsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/audit-logs`
+    : "";
+  const settingsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/settings`
+    : "";
+  const suppliersPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/suppliers`
     : "";
   const facilityLoginPath = resolvedFacilitySlug
     ? getFacilityLoginPath(resolvedFacilitySlug)
@@ -143,9 +200,32 @@ const Dashboard = () => {
       "billing",
     ];
 
-  const updatedStats = statsCards.map((s) =>
-    s.label === "Active Modules" ? { ...s, value: String(selectedModules.length) } : s
-  );
+  const updatedStats = [
+    {
+      label: "Total Patients",
+      value: String(dashboardStats?.patient_count ?? 0),
+      icon: Users,
+      change: "Live count",
+    },
+    {
+      label: "Appointments Today",
+      value: String(dashboardStats?.today_appointments ?? 0),
+      icon: CalendarDays,
+      change: "Today",
+    },
+    {
+      label: "Active Queue",
+      value: String(dashboardStats?.active_queue_count ?? 0),
+      icon: Activity,
+      change: "Waiting + in care",
+    },
+    {
+      label: "Active Modules",
+      value: String(selectedModules.length),
+      icon: Layers,
+      change: "Configured",
+    },
+  ];
 
   const handleLogout = () => {
     logout();
@@ -174,9 +254,18 @@ const Dashboard = () => {
           {staffAccessPath && (
             <SidebarLink icon={ShieldCheck} label="Staff & Access" to={staffAccessPath} />
           )}
+          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} />}
+          {auditLogsPath && <SidebarLink icon={ClipboardList} label="Audit Logs" to={auditLogsPath} />}
           <SidebarLink icon={Activity} label="Analytics" />
-          <SidebarLink icon={Users} label="Patients" />
-          <SidebarLink icon={CalendarDays} label="Appointments" />
+          {patientsPath && <SidebarLink icon={Users} label="Patients" to={patientsPath} />}
+          {recordsPath && <SidebarLink icon={FileHeart} label="Medical Records" to={recordsPath} />}
+          {appointmentsPath && <SidebarLink icon={CalendarDays} label="Appointments" to={appointmentsPath} />}
+          {billingPath && <SidebarLink icon={Receipt} label="Billing" to={billingPath} />}
+          {laboratoryPath && <SidebarLink icon={FlaskConical} label="Laboratory" to={laboratoryPath} />}
+          {pharmacyPath && <SidebarLink icon={Pill} label="Pharmacy" to={pharmacyPath} />}
+          {radiologyPath && <SidebarLink icon={ScanLine} label="Radiology" to={radiologyPath} />}
+          {inventoryPath && <SidebarLink icon={Package} label="Inventory" to={inventoryPath} />}
+          {suppliersPath && <SidebarLink icon={Truck} label="Suppliers" to={suppliersPath} />}
           <div className="pt-3 pb-1 px-3">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Modules</p>
           </div>
@@ -187,7 +276,7 @@ const Dashboard = () => {
         </nav>
 
         <div className="p-3 border-t border-border space-y-1">
-          <SidebarLink icon={Settings} label="Settings" />
+          {settingsPath && <SidebarLink icon={Settings} label="Settings" to={settingsPath} />}
           <SidebarLink icon={LogOut} label="Log Out" onClick={handleLogout} />
         </div>
       </motion.aside>
@@ -337,9 +426,83 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  <Button variant="outline" className="gap-2">
-                    <CalendarDays className="h-4 w-4" /> Schedule Appointment
-                  </Button>
+                  {appointmentsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={appointmentsPath}>
+                        <CalendarDays className="h-4 w-4" /> Schedule Appointment
+                      </Link>
+                    </Button>
+                  )}
+                  {patientsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={patientsPath}>
+                        <Users className="h-4 w-4" /> Patient Registry
+                      </Link>
+                    </Button>
+                  )}
+                  {recordsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={recordsPath}>
+                        <FileHeart className="h-4 w-4" /> Medical Records
+                      </Link>
+                    </Button>
+                  )}
+                  {billingPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={billingPath}>
+                        <Receipt className="h-4 w-4" /> Billing
+                      </Link>
+                    </Button>
+                  )}
+                  {laboratoryPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={laboratoryPath}>
+                        <FlaskConical className="h-4 w-4" /> Laboratory
+                      </Link>
+                    </Button>
+                  )}
+                  {pharmacyPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={pharmacyPath}>
+                        <Pill className="h-4 w-4" /> Pharmacy
+                      </Link>
+                    </Button>
+                  )}
+                  {radiologyPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={radiologyPath}>
+                        <ScanLine className="h-4 w-4" /> Radiology
+                      </Link>
+                    </Button>
+                  )}
+                  {inventoryPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={inventoryPath}>
+                        <Package className="h-4 w-4" /> Inventory
+                      </Link>
+                    </Button>
+                  )}
+                  {suppliersPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={suppliersPath}>
+                        <Truck className="h-4 w-4" /> Suppliers
+                      </Link>
+                    </Button>
+                  )}
+                  {resolvedFacilitySlug && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={alertsPath}>
+                        <Bell className="h-4 w-4" /> Alerts
+                      </Link>
+                    </Button>
+                  )}
+                  {auditLogsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={auditLogsPath}>
+                        <ClipboardList className="h-4 w-4" /> Audit Logs
+                      </Link>
+                    </Button>
+                  )}
                   {resolvedFacilitySlug && (
                     <Button asChild variant="outline" className="gap-2">
                       <Link to={facilityLoginPath}>
@@ -347,8 +510,10 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  <Button variant="outline" className="gap-2">
-                    <Settings className="h-4 w-4" /> System Settings
+                  <Button asChild variant="outline" className="gap-2">
+                    <Link to={settingsPath} className="inline-flex items-center gap-2">
+                      <Settings className="h-4 w-4" /> System Settings
+                    </Link>
                   </Button>
                 </CardContent>
               </Card>

@@ -1,5 +1,5 @@
 from app.models.user import User
-from app.extensions import db
+from app.extensions import db, db_session
 
 class UserProfileService:
     """User profile service class"""
@@ -36,11 +36,27 @@ class UserProfileService:
     @staticmethod
     def update_profile(user, data):
         """Update user profile"""
+        if "username" in data and data["username"] != user.username:
+            existing = db_session.query(User).filter(
+                User.username == data["username"],
+                User.id != user.id,
+            ).first()
+            if existing:
+                return None, "Username already exists"
+
+        if "email" in data and data["email"] != user.email:
+            existing = db_session.query(User).filter(
+                User.email == data["email"],
+                User.id != user.id,
+            ).first()
+            if existing:
+                return None, "Email already exists"
+
         for key, value in data.items():
             if hasattr(user, key) and value is not None:
                 setattr(user, key, value)
         user.save()
-        return user
+        return user, None
     
     @staticmethod
     def change_password(user, current_password, new_password):

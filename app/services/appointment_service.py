@@ -9,10 +9,17 @@ class AppointmentService:
     @staticmethod
     def create_appointment(data):
         """Create a new appointment"""
+        appointment_date = data['appointment_date']
+        if isinstance(appointment_date, str):
+            appointment_date = datetime.fromisoformat(appointment_date)
+
         appointment = Appointment(
             patient_id=data['patient_id'],
             doctor_id=data['doctor_id'],
-            appointment_date=data['appointment_date'],
+            facility_slug=data.get('facility_slug'),
+            appointment_date=appointment_date,
+            scheduled_time=appointment_date,
+            duration_minutes=data.get('duration_minutes', 30),
             reason=data.get('reason'),
             notes=data.get('notes')
         )
@@ -53,6 +60,9 @@ class AppointmentService:
     def update_appointment(appointment, data):
         """Update appointment fields"""
         for key, value in data.items():
+            if key == 'appointment_date' and isinstance(value, str):
+                value = datetime.fromisoformat(value)
+                appointment.scheduled_time = value
             if hasattr(appointment, key) and value is not None:
                 setattr(appointment, key, value)
         appointment.save()

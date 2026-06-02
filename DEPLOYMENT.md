@@ -18,6 +18,8 @@ WEB_CONCURRENCY=1
 JWT_SECRET_KEY=<long-random-secret>
 SECRET_KEY=<long-random-secret>
 FRONTEND_URL=https://your-vercel-project.vercel.app
+ALLOWED_ORIGINS=https://your-vercel-project.vercel.app
+COOKIE_SECURE=true
 DATABASE_URL=sqlite:////data/hispro.db
 ```
 
@@ -50,6 +52,10 @@ Set this Vercel environment variable:
 ```env
 VITE_API_BASE_URL=https://your-huggingface-space.hf.space/api/v1
 ```
+
+The frontend and backend are cross-origin in production. Keep the backend URL
+HTTPS, keep `COOKIE_SECURE=true`, and set `ALLOWED_ORIGINS` to the exact Vercel
+domain so HttpOnly auth cookies work with CORS credentials.
 
 The included `vercel.json` handles Vite SPA rewrites so routes like
 `/login/my-facility` and `/dashboard/my-facility` load correctly on refresh.

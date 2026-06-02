@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class RadiologyCreate(BaseModel):
     patient_id: str = Field(...)
-    facility_slug: str = Field(...)
+    facility_slug: Optional[str] = Field(None)
     modality: str = Field(..., pattern="^(X-ray|CT|MRI|Ultrasound)$")
     body_part: str = Field(..., max_length=100)
     clinical_notes: Optional[str] = Field(None)

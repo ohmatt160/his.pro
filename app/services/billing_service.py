@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from app.models.billing import Invoice, InvoiceItem, Payment, InsuranceProvider, InsuranceClaim
 from app.extensions import db
 
@@ -17,26 +18,53 @@ class BillingService:
         """Generate unique claim number"""
         timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
         return f"CLM-{timestamp}-{uuid.uuid4().hex[:6].upper()}"
+
+    @staticmethod
+    def _parse_date(value):
+        if not value:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        return datetime.fromisoformat(str(value)).date()
+
+    @staticmethod
+    def _parse_datetime(value):
+        if not value:
+            return datetime.utcnow()
+        if isinstance(value, datetime):
+            return value
+        return datetime.fromisoformat(str(value))
     
     # ==================== Invoices ====================
     
     @staticmethod
     def create_invoice(data, facility_slug=None):
-        """Create a new invoice with items"""
+        """Create a new invoice with optional line items."""
+        amount = Decimal(str(data.get('amount', 0)))
         invoice = Invoice(
             patient_id=data['patient_id'],
             invoice_number=BillingService.generate_invoice_number(),
             tax=data.get('tax', 0),
             discount=data.get('discount', 0),
             notes=data.get('notes'),
-            due_date=data.get('due_date'),
-            invoice_date=data.get('invoice_date', datetime.utcnow()),
+            due_date=BillingService._parse_date(data.get('due_date')),
+            invoice_date=BillingService._parse_datetime(data.get('invoice_date')),
             facility_slug=facility_slug
         )
         invoice.save()
         
         # Add invoice items
-        for item_data in data.get('items', []):
+        items = data.get('items') or []
+        if not items and amount > 0:
+            items = [{
+                'description': data.get('description') or 'Clinical services',
+                'quantity': 1,
+                'unit_price': amount,
+            }]
+
+        for item_data in items:
             item = InvoiceItem(
                 invoice_id=invoice.id,
                 description=item_data['description'],
@@ -70,6 +98,9 @@ class BillingService:
     @staticmethod
     def update_invoice(invoice, data):
         """Update invoice"""
+        if 'due_date' in data:
+            data['due_date'] = BillingService._parse_date(data['due_date'])
+
         for key, value in data.items():
             if hasattr(invoice, key) and value is not None and key not in ['items', 'invoice_number']:
                 setattr(invoice, key, value)
@@ -94,24 +125,26 @@ class BillingService:
     # ==================== Payments ====================
     
     @staticmethod
-    def create_payment(invoice_id, data):
+    def create_payment(invoice_id, data, facility_slug=None):
         """Create a payment for an invoice"""
         invoice = Invoice.query.get(invoice_id)
         if not invoice:
+            return None, "Invoice not found"
+        if facility_slug and invoice.facility_slug != facility_slug:
             return None, "Invoice not found"
         
         payment = Payment(
             invoice_id=invoice_id,
             amount=data['amount'],
             payment_method=data['payment_method'],
-            reference_number=data.get('reference_number'),
+            reference_number=data.get('reference_number') or data.get('reference'),
             notes=data.get('notes'),
-            payment_date=data.get('payment_date', datetime.utcnow())
+            payment_date=BillingService._parse_datetime(data.get('payment_date'))
         )
         payment.save()
         
         # Update invoice status
-        total_paid = sum(p.amount for p in invoice.payments)
+        total_paid = sum((p.amount for p in invoice.payments), Decimal("0"))
         
         if total_paid >= invoice.total:
             invoice.status = 'PAID'

@@ -19,13 +19,18 @@ JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY') or os.getenv('SECRET_KEY') or DEFAU
 if APP_ENV == 'production' and JWT_SECRET_KEY == DEFAULT_JWT_SECRET:
     raise RuntimeError("JWT_SECRET_KEY or SECRET_KEY must be set in production")
 JWT_ALGORITHM = "HS256"
-JWT_ACCESS_TOKEN_EXPIRES = 3600  # 1 hour
-JWT_REFRESH_TOKEN_EXPIRES = 86400  # 24 hours
+JWT_ACCESS_TOKEN_EXPIRES = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES", "1800"))
+JWT_REFRESH_TOKEN_EXPIRES = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES", str(7 * 24 * 3600)))
 
 security = HTTPBearer()
 
 
-def create_access_token(identity: int | str, expires_delta: timedelta = None) -> str:
+def create_access_token(
+    identity: int | str,
+    expires_delta: timedelta = None,
+    session_id: str | None = None,
+    jti: str | None = None,
+) -> str:
     """
     Create a JWT access token
     """
@@ -38,14 +43,20 @@ def create_access_token(identity: int | str, expires_delta: timedelta = None) ->
         "exp": expire,
         "iat": datetime.utcnow(),
         "sub": str(identity),
-        "jti": str(uuid.uuid4()),
+        "jti": jti or str(uuid.uuid4()),
         "type": "access"
     }
+    if session_id:
+        to_encode["sid"] = session_id
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
 
-def create_refresh_token(identity: int | str) -> str:
+def create_refresh_token(
+    identity: int | str,
+    session_id: str | None = None,
+    jti: str | None = None,
+) -> str:
     """
     Create a JWT refresh token
     """
@@ -54,9 +65,11 @@ def create_refresh_token(identity: int | str) -> str:
         "exp": expire,
         "iat": datetime.utcnow(),
         "sub": str(identity),
-        "jti": str(uuid.uuid4()),
+        "jti": jti or str(uuid.uuid4()),
         "type": "refresh"
     }
+    if session_id:
+        to_encode["sid"] = session_id
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
@@ -74,6 +87,14 @@ def verify_token(token: str, token_type: str = "access") -> dict:
             from app import jwt_blocklist
             if jwt_blocklist.is_blocklisted(jti):
                 raise HTTPException(status_code=401, detail="Token has been revoked")
+        if payload.get("sid"):
+            from app.services.session_service import SessionService
+            SessionService.validate_session(
+                payload.get("sid"),
+                payload.get("sub"),
+                token_type,
+                refresh_jti=jti if token_type == "refresh" else None,
+            )
         return payload
     except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
@@ -108,8 +129,12 @@ class JWTMiddleware(BaseHTTPMiddleware):
         
         # Check for Authorization header
         authorization: str = request.headers.get("Authorization")
+        cookie_token = request.cookies.get("hispro_access_token")
         if not authorization:
-            return await call_next(request)  # Let route handlers deal with missing auth
+            if cookie_token:
+                authorization = f"Bearer {cookie_token}"
+            else:
+                return await call_next(request)  # Let route handlers deal with missing auth
         
         try:
             scheme, token = authorization.split()

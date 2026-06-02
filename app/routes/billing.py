@@ -20,6 +20,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
+def _invoice_response(invoice) -> InvoiceResponse:
+    paid_amount = sum(float(payment.amount or 0) for payment in invoice.payments)
+    amount = float(invoice.total or 0)
+    balance = max(amount - paid_amount, 0)
+
+    return InvoiceResponse(
+        id=str(invoice.id),
+        patient_id=str(invoice.patient_id),
+        invoice_number=invoice.invoice_number,
+        amount=amount,
+        paid_amount=paid_amount,
+        balance=balance,
+        status=invoice.status,
+        due_date=invoice.due_date.isoformat() if invoice.due_date else "",
+        paid_date=invoice.paid_date.isoformat() if invoice.paid_date else None,
+        notes=invoice.notes,
+        facility_slug=invoice.facility_slug,
+        created_at=invoice.created_at.isoformat() if invoice.created_at else "",
+        updated_at=invoice.updated_at.isoformat() if invoice.updated_at else None
+    )
+
+
+def _payment_response(payment) -> PaymentResponse:
+    return PaymentResponse(
+        id=str(payment.id),
+        invoice_id=str(payment.invoice_id),
+        amount=float(payment.amount or 0),
+        payment_method=payment.payment_method,
+        reference=payment.reference_number,
+        notes=payment.notes,
+        processed_by=None,
+        created_at=payment.payment_date.isoformat() if payment.payment_date else ""
+    )
+
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
 async def get_invoices(
@@ -46,23 +80,7 @@ async def get_invoices(
 
     invoices = query.order_by(Invoice.invoice_date.desc()).all()
 
-    return [
-        InvoiceResponse(
-            id=str(i.id),
-            patient_id=str(i.patient_id),
-            invoice_number=i.invoice_number,
-            amount=float(i.amount) if i.amount else 0.0,
-            paid_amount=float(i.paid_amount) if i.paid_amount else 0.0,
-            balance=float(i.balance) if i.balance else 0.0,
-            status=i.status,
-            due_date=i.due_date.isoformat() if i.due_date else "",
-            paid_date=i.paid_date.isoformat() if i.paid_date else None,
-            notes=i.notes,
-            facility_slug=i.facility_slug,
-            created_at=i.created_at.isoformat() if i.created_at else "",
-            updated_at=i.updated_at.isoformat() if i.updated_at else None
-        ) for i in invoices
-    ]
+    return [_invoice_response(i) for i in invoices]
 
 
 @router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
@@ -80,23 +98,9 @@ async def create_invoice(
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
-    invoice = BillingService.create_invoice(data.dict(), facility_slug=facility_slug)
+    invoice = BillingService.create_invoice(data.model_dump(), facility_slug=facility_slug)
 
-    return InvoiceResponse(
-        id=str(invoice.id),
-        patient_id=str(invoice.patient_id),
-        invoice_number=invoice.invoice_number,
-        amount=invoice.amount,
-        paid_amount=invoice.paid_amount,
-        balance=invoice.balance,
-        status=invoice.status,
-        due_date=invoice.due_date.isoformat() if invoice.due_date else "",
-        paid_date=invoice.paid_date.isoformat() if invoice.paid_date else None,
-        notes=invoice.notes,
-        facility_slug=invoice.facility_slug,
-        created_at=invoice.created_at.isoformat() if invoice.created_at else "",
-        updated_at=invoice.updated_at.isoformat() if invoice.updated_at else None
-    )
+    return _invoice_response(invoice)
 
 
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
@@ -111,21 +115,7 @@ async def get_invoice(
     if not invoice or invoice.facility_slug != facility_slug:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    return InvoiceResponse(
-        id=str(invoice.id),
-        patient_id=str(invoice.patient_id),
-        invoice_number=invoice.invoice_number,
-        amount=invoice.amount,
-        paid_amount=invoice.paid_amount,
-        balance=invoice.balance,
-        status=invoice.status,
-        due_date=invoice.due_date.isoformat() if invoice.due_date else "",
-        paid_date=invoice.paid_date.isoformat() if invoice.paid_date else None,
-        notes=invoice.notes,
-        facility_slug=invoice.facility_slug,
-        created_at=invoice.created_at.isoformat() if invoice.created_at else "",
-        updated_at=invoice.updated_at.isoformat() if invoice.updated_at else None
-    )
+    return _invoice_response(invoice)
 
 
 @router.post("/invoices/{invoice_id}/payments", response_model=PaymentResponse, status_code=status.HTTP_201_CREATED)
@@ -136,21 +126,16 @@ async def add_payment(
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    payment = BillingService.add_payment(invoice_id, data.dict(), current_user.id, facility_slug)
+    payment, error = BillingService.create_payment(
+        invoice_id,
+        data.model_dump(),
+        facility_slug=facility_slug,
+    )
 
     if not payment:
-        raise HTTPException(status_code=404, detail="Invoice not found or payment error")
+        raise HTTPException(status_code=404, detail=error or "Invoice not found or payment error")
 
-    return PaymentResponse(
-        id=str(payment.id),
-        invoice_id=str(payment.invoice_id),
-        amount=payment.amount,
-        payment_method=payment.payment_method,
-        reference=payment.reference,
-        notes=payment.notes,
-        processed_by=str(payment.processed_by) if payment.processed_by else None,
-        created_at=payment.created_at.isoformat() if payment.created_at else ""
-    )
+    return _payment_response(payment)
 
 
 @router.put("/invoices/{invoice_id}", response_model=InvoiceResponse)
@@ -166,20 +151,6 @@ async def update_invoice(
     if not invoice or invoice.facility_slug != facility_slug:
         raise HTTPException(status_code=404, detail="Invoice not found")
 
-    updated_invoice = BillingService.update_invoice(invoice, data.dict(exclude_unset=True))
+    updated_invoice = BillingService.update_invoice(invoice, data.model_dump(exclude_unset=True))
 
-    return InvoiceResponse(
-        id=str(updated_invoice.id),
-        patient_id=str(updated_invoice.patient_id),
-        invoice_number=updated_invoice.invoice_number,
-        amount=updated_invoice.amount,
-        paid_amount=updated_invoice.paid_amount,
-        balance=updated_invoice.balance,
-        status=updated_invoice.status,
-        due_date=updated_invoice.due_date.isoformat() if updated_invoice.due_date else "",
-        paid_date=updated_invoice.paid_date.isoformat() if updated_invoice.paid_date else None,
-        notes=updated_invoice.notes,
-        facility_slug=updated_invoice.facility_slug,
-        created_at=updated_invoice.created_at.isoformat() if updated_invoice.created_at else "",
-        updated_at=updated_invoice.updated_at.isoformat() if updated_invoice.updated_at else None
-    )
+    return _invoice_response(updated_invoice)

@@ -12,6 +12,8 @@ class Appointment(BaseModel):
     doctor_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     appointment_date = Column(DateTime, nullable=False)
+    scheduled_time = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, default=30)
     status = Column(String(50), default='SCHEDULED')
     reason = Column(Text)
     notes = Column(Text)

@@ -25,161 +25,22 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
 
-@router.get("", response_model=List[InventoryResponse])
-async def get_inventory_items(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-    facility_slug: Optional[str] = Query(None),
-    category: Optional[str] = Query(None, pattern="^(medication|supplies|equipment)$"),
-    search: Optional[str] = Query(None, max_length=100),
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER', 'DOCTOR', 'NURSE')),
-    db: Session = Depends(get_db)
-):
-    """Paginated list of inventory items"""
-    query = db_session.query(Inventory).filter_by(is_active=True)
-
-    # Facility filter
-    if current_user.role != 'ADMIN' and current_user.facility_slug:
-        query = query.filter_by(facility_slug=current_user.facility_slug)
-    elif facility_slug:
-        query = query.filter_by(facility_slug=facility_slug)
-
-    # Category filter
-    if category:
-        query = query.filter_by(category=category)
-
-    # Search filter
-    if search:
-        query = query.filter(
-            Inventory.name.ilike(f'%{search}%') |
-            Inventory.sku.ilike(f'%{search}%')
-        )
-
-    # Order
-    query = query.order_by(Inventory.name)
-
-    # Pagination
-    total = query.count()
-    items = query.offset((page - 1) * per_page).limit(per_page).all()
-    pages = (total + per_page - 1) // per_page
-
-    # Build response
-    results = []
-    for item in items:
-        results.append(InventoryResponse(
-            id=str(item.id),
-            facility_slug=item.facility_slug,
-            name=item.name,
-            sku=item.sku,
-            category=item.category,
-            unit=item.unit,
-            reorder_level=item.reorder_level or 0,
-            reorder_quantity=item.reorder_quantity or 0,
-            current_stock=item.current_stock or 0,
-            expiry_date=item.expiry_date.isoformat() if item.expiry_date else None,
-            supplier_id=str(item.supplier_id) if item.supplier_id else None,
-            unit_cost=float(item.unit_cost) if item.unit_cost else 0.0,
-            is_active=item.is_active,
-            needs_reorder=item.needs_reorder,
-            supplier_name=item.supplier.name if item.supplier else None,
-            created_at=item.created_at.isoformat() if item.created_at else "",
-            updated_at=item.updated_at.isoformat() if item.updated_at else None
-        ))
-
-    return results
+def _require_facility(current_user: User) -> str:
+    if not current_user.facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    return current_user.facility_slug
 
 
-@router.post("", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)
-async def create_inventory_item(
-    data: InventoryCreate,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
-    db: Session = Depends(get_db)
-):
-    """Create a new inventory item"""
-    # Validate required fields
-    if not data.facility_slug or not data.name or not data.sku or not data.category or not data.unit:
-        raise HTTPException(status_code=400, detail="Missing required fields")
-
-    # Facility access for non-ADMIN
-    if current_user.role != 'ADMIN' and current_user.facility_slug != data.facility_slug:
-        raise HTTPException(status_code=403, detail="Cannot create items for other facilities")
-
-    # Check for duplicate SKU in same facility and active
-    existing = db_session.query(Inventory).filter_by(
-        facility_slug=data.facility_slug,
-        sku=data.sku,
-        is_active=True
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="An item with this SKU already exists in this facility")
-
-    # Validate supplier if provided
-    if data.supplier_id:
-        supplier = db_session.query(Supplier).filter_by(id=data.supplier_id).first()
-        if not supplier:
-            raise HTTPException(status_code=404, detail="Supplier not found")
-
-    # Parse expiry_date
-    expiry_date = None
-    if data.expiry_date:
-        try:
-            expiry_date = datetime.strptime(data.expiry_date, '%Y-%m-%d').date()
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid expiry_date format. Use YYYY-MM-DD")
-
-    # Create inventory item
-    inventory = Inventory(
-        facility_slug=data.facility_slug,
-        name=data.name,
-        sku=data.sku,
-        category=data.category,
-        unit=data.unit,
-        reorder_level=data.reorder_level or 0,
-        reorder_quantity=data.reorder_quantity or 0,
-        current_stock=data.current_stock or 0,
-        expiry_date=expiry_date,
-        supplier_id=data.supplier_id,
-        unit_cost=Decimal(str(data.unit_cost or 0))
-    )
-    inventory.save()
-
-    return InventoryResponse(
-        id=str(inventory.id),
-        facility_slug=inventory.facility_slug,
-        name=inventory.name,
-        sku=inventory.sku,
-        category=inventory.category,
-        unit=inventory.unit,
-        reorder_level=inventory.reorder_level or 0,
-        reorder_quantity=inventory.reorder_quantity or 0,
-        current_stock=inventory.current_stock or 0,
-        expiry_date=inventory.expiry_date.isoformat() if inventory.expiry_date else None,
-        supplier_id=str(inventory.supplier_id) if inventory.supplier_id else None,
-        unit_cost=float(inventory.unit_cost) if inventory.unit_cost else 0.0,
-        is_active=inventory.is_active,
-        needs_reorder=inventory.needs_reorder,
-        supplier_name=inventory.supplier.name if inventory.supplier else None,
-        created_at=inventory.created_at.isoformat() if inventory.created_at else "",
-        updated_at=inventory.updated_at.isoformat() if inventory.updated_at else None
-    )
+def _parse_expiry_date(value: Optional[str]):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid expiry_date format. Use YYYY-MM-DD")
 
 
-@router.get("/{item_id}", response_model=InventoryResponse)
-async def get_inventory_item(
-    item_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER', 'DOCTOR', 'NURSE')),
-    db: Session = Depends(get_db)
-):
-    """Get inventory item by ID"""
-    # Filter by facility if not admin
-    if current_user.role != 'ADMIN' and current_user.facility_slug:
-        item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=current_user.facility_slug).first()
-    else:
-        item = db_session.query(Inventory).filter_by(id=item_id).first()
-
-    if not item or not item.is_active:
-        raise HTTPException(status_code=404, detail="Inventory item not found")
-
+def _inventory_response(item: Inventory) -> InventoryResponse:
     return InventoryResponse(
         id=str(item.id),
         facility_slug=item.facility_slug,
@@ -201,6 +62,157 @@ async def get_inventory_item(
     )
 
 
+@router.get("", response_model=List[InventoryResponse])
+async def get_inventory_items(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    facility_slug: Optional[str] = Query(None),
+    category: Optional[str] = Query(None, pattern="^(medication|supplies|equipment)$"),
+    search: Optional[str] = Query(None, max_length=100),
+    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER', 'DOCTOR', 'NURSE')),
+    db: Session = Depends(get_db)
+):
+    """Paginated list of inventory items"""
+    facility = _require_facility(current_user)
+    query = db_session.query(Inventory).filter_by(is_active=True, facility_slug=facility)
+
+    # Category filter
+    if category:
+        query = query.filter_by(category=category)
+
+    # Search filter
+    if search:
+        query = query.filter(
+            Inventory.name.ilike(f'%{search}%') |
+            Inventory.sku.ilike(f'%{search}%')
+        )
+
+    # Order
+    query = query.order_by(Inventory.name)
+
+    # Pagination
+    total = query.count()
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+    pages = (total + per_page - 1) // per_page
+
+    return [_inventory_response(item) for item in items]
+
+
+@router.post("", response_model=InventoryResponse, status_code=status.HTTP_201_CREATED)
+async def create_inventory_item(
+    data: InventoryCreate,
+    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
+    db: Session = Depends(get_db)
+):
+    """Create a new inventory item"""
+    facility = _require_facility(current_user)
+
+    if not data.name or not data.sku or not data.category or not data.unit:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    # Check for duplicate SKU in same facility and active
+    existing = db_session.query(Inventory).filter_by(
+        facility_slug=facility,
+        sku=data.sku,
+        is_active=True
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="An item with this SKU already exists in this facility")
+
+    # Validate supplier if provided
+    if data.supplier_id:
+        supplier = db_session.query(Supplier).filter_by(
+            id=data.supplier_id,
+            facility_slug=facility,
+            is_active=True,
+        ).first()
+        if not supplier:
+            raise HTTPException(status_code=404, detail="Supplier not found")
+
+    expiry_date = _parse_expiry_date(data.expiry_date)
+
+    # Create inventory item
+    inventory = Inventory(
+        facility_slug=facility,
+        name=data.name,
+        sku=data.sku,
+        category=data.category,
+        unit=data.unit,
+        reorder_level=data.reorder_level or 0,
+        reorder_quantity=data.reorder_quantity or 0,
+        current_stock=data.current_stock or 0,
+        expiry_date=expiry_date,
+        supplier_id=data.supplier_id,
+        unit_cost=Decimal(str(data.unit_cost or 0))
+    )
+    inventory.save()
+
+    return _inventory_response(inventory)
+
+
+@router.get("/low-stock", response_model=List[LowStockItemResponse])
+async def get_low_stock(
+    facility_slug: Optional[str] = Query(None),
+    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
+    db: Session = Depends(get_db)
+):
+    """Get items that are below reorder level"""
+    facility = _require_facility(current_user)
+    items = db_session.query(Inventory).filter(
+        Inventory.is_active == True,
+        Inventory.facility_slug == facility,
+        Inventory.current_stock <= Inventory.reorder_level,
+    ).order_by(Inventory.current_stock).all()
+
+    return [
+        LowStockItemResponse(
+            id=str(item.id),
+            medication_id=str(item.id),
+            medication_name=item.name,
+            quantity=item.current_stock or 0,
+            reorder_level=item.reorder_level or 0,
+            facility_slug=item.facility_slug
+        )
+        for item in items
+    ]
+
+
+@router.post("/reorder", response_model=MessageResponse)
+async def create_reorder_requests(
+    data: ReorderRequest,
+    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
+    db: Session = Depends(get_db)
+):
+    """Create reorder requests for low stock items (placeholder)"""
+    facility = _require_facility(current_user)
+    items = db_session.query(Inventory).filter(
+        Inventory.id.in_(data.item_ids),
+        Inventory.facility_slug == facility,
+        Inventory.is_active == True
+    ).all()
+
+    if not items:
+        raise HTTPException(status_code=404, detail="No valid inventory items found")
+
+    return MessageResponse(message=f"Created {len(items)} reorder request(s)")
+
+
+@router.get("/{item_id}", response_model=InventoryResponse)
+async def get_inventory_item(
+    item_id: str,
+    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER', 'DOCTOR', 'NURSE')),
+    db: Session = Depends(get_db)
+):
+    """Get inventory item by ID"""
+    facility = _require_facility(current_user)
+    item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=facility).first()
+
+    if not item or not item.is_active:
+        raise HTTPException(status_code=404, detail="Inventory item not found")
+
+    return _inventory_response(item)
+
+
 @router.put("/{item_id}", response_model=InventoryResponse)
 async def update_inventory_item(
     item_id: str,
@@ -209,11 +221,8 @@ async def update_inventory_item(
     db: Session = Depends(get_db)
 ):
     """Update inventory item"""
-    # Get item with facility check
-    if current_user.role != 'ADMIN':
-        item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=current_user.facility_slug).first()
-    else:
-        item = db_session.query(Inventory).filter_by(id=item_id).first()
+    facility = _require_facility(current_user)
+    item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=facility).first()
 
     if not item or not item.is_active:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -244,7 +253,11 @@ async def update_inventory_item(
         item.reorder_quantity = data.reorder_quantity
     if data.supplier_id is not None:
         if data.supplier_id:
-            supplier = db_session.query(Supplier).filter_by(id=data.supplier_id).first()
+            supplier = db_session.query(Supplier).filter_by(
+                id=data.supplier_id,
+                facility_slug=facility,
+                is_active=True,
+            ).first()
             if not supplier:
                 raise HTTPException(status_code=404, detail="Supplier not found")
         item.supplier_id = data.supplier_id
@@ -253,34 +266,16 @@ async def update_inventory_item(
     if data.expiry_date is not None:
         if data.expiry_date:
             try:
-                item.expiry_date = datetime.strptime(data.expiry_date, '%Y-%m-%d').date()
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid expiry_date format. Use YYYY-MM-DD")
+                item.expiry_date = _parse_expiry_date(data.expiry_date)
+            except HTTPException:
+                raise
         else:
             item.expiry_date = None
 
     item.save()
     db_session.commit()
 
-    return InventoryResponse(
-        id=str(item.id),
-        facility_slug=item.facility_slug,
-        name=item.name,
-        sku=item.sku,
-        category=item.category,
-        unit=item.unit,
-        reorder_level=item.reorder_level or 0,
-        reorder_quantity=item.reorder_quantity or 0,
-        current_stock=item.current_stock or 0,
-        expiry_date=item.expiry_date.isoformat() if item.expiry_date else None,
-        supplier_id=str(item.supplier_id) if item.supplier_id else None,
-        unit_cost=float(item.unit_cost) if item.unit_cost else 0.0,
-        is_active=item.is_active,
-        needs_reorder=item.needs_reorder,
-        supplier_name=item.supplier.name if item.supplier else None,
-        created_at=item.created_at.isoformat() if item.created_at else "",
-        updated_at=item.updated_at.isoformat() if item.updated_at else None
-    )
+    return _inventory_response(item)
 
 
 @router.delete("/{item_id}", response_model=MessageResponse)
@@ -290,7 +285,8 @@ async def deactivate_inventory_item(
     db: Session = Depends(get_db)
 ):
     """Deactivate inventory item (soft delete)"""
-    item = db_session.query(Inventory).filter_by(id=item_id).first()
+    facility = _require_facility(current_user)
+    item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=facility).first()
     if not item:
         raise HTTPException(status_code=404, detail="Inventory item not found")
 
@@ -312,10 +308,8 @@ async def update_stock(
     db: Session = Depends(get_db)
 ):
     """Update stock level"""
-    if current_user.role != 'ADMIN':
-        item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=current_user.facility_slug).first()
-    else:
-        item = db_session.query(Inventory).filter_by(id=item_id).first()
+    facility = _require_facility(current_user)
+    item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=facility).first()
 
     if not item or not item.is_active:
         raise HTTPException(status_code=404, detail="Inventory item not found")
@@ -335,76 +329,4 @@ async def update_stock(
     item.save()
     db_session.commit()
 
-    return InventoryResponse(
-        id=str(item.id),
-        facility_slug=item.facility_slug,
-        name=item.name,
-        sku=item.sku,
-        category=item.category,
-        unit=item.unit,
-        reorder_level=item.reorder_level or 0,
-        reorder_quantity=item.reorder_quantity or 0,
-        current_stock=item.current_stock or 0,
-        expiry_date=item.expiry_date.isoformat() if item.expiry_date else None,
-        supplier_id=str(item.supplier_id) if item.supplier_id else None,
-        unit_cost=float(item.unit_cost) if item.unit_cost else 0.0,
-        is_active=item.is_active,
-        needs_reorder=item.needs_reorder,
-        supplier_name=item.supplier.name if item.supplier else None,
-        created_at=item.created_at.isoformat() if item.created_at else "",
-        updated_at=item.updated_at.isoformat() if item.updated_at else None
-    )
-
-
-@router.get("/low-stock", response_model=List[LowStockItemResponse])
-async def get_low_stock(
-    facility_slug: Optional[str] = Query(None),
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
-    db: Session = Depends(get_db)
-):
-    """Get items that are below reorder level"""
-    query = db_session.query(Inventory).filter_by(is_active=True)
-
-    # Facility filter
-    if current_user.role != 'ADMIN' and current_user.facility_slug:
-        query = query.filter_by(facility_slug=current_user.facility_slug)
-    elif facility_slug:
-        query = query.filter_by(facility_slug=facility_slug)
-
-    # Items needing reorder
-    query = query.filter(Inventory.current_stock <= Inventory.reorder_level)
-
-    items = query.order_by(Inventory.current_stock).all()
-
-    results = []
-    for item in items:
-        results.append(LowStockItemResponse(
-            id=str(item.id),
-            medication_id=str(item.id),  # using same id for now
-            medication_name=item.name,
-            quantity=item.current_stock or 0,
-            reorder_level=item.reorder_level or 0,
-            facility_slug=item.facility_slug
-        ))
-    return results
-
-
-@router.post("/reorder", response_model=MessageResponse)
-async def create_reorder_requests(
-        data: ReorderRequest,
-        current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
-        db: Session = Depends(get_db)
-):
-    """Create reorder requests for low stock items (placeholder)"""
-    # Validate items exist
-    items = db_session.query(Inventory).filter(
-        Inventory.id.in_(data.item_ids),
-        Inventory.is_active == True
-    ).all()
-
-    if not items:
-        raise HTTPException(status_code=404, detail="No valid inventory items found")
-
-    # In a full implementation, this would create PurchaseOrder or similar
-    count = len(items)
-    return MessageResponse(message=f"Created {count} reorder request(s)")
+    return _inventory_response(item)

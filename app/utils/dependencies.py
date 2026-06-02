@@ -17,12 +17,22 @@ from app import jwt_blocklist
 logger = logging.getLogger(__name__)
 
 # Security scheme
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
+
+def _token_from_request(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+    cookie_name: str,
+) -> str | None:
+    if credentials and credentials.credentials:
+        return credentials.credentials
+    return request.cookies.get(cookie_name)
 
 
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db)
 ) -> User:
     """
@@ -32,8 +42,14 @@ async def get_current_user(
         HTTPException: 401 if token is invalid or user not found
     """
     try:
-        # Verify token
-        token_data = verify_token(credentials.credentials)
+        token = _token_from_request(request, credentials, "hispro_access_token")
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials"
+            )
+
+        token_data = verify_token(token)
         user_id = token_data.get("sub")
 
         # Get user from database
@@ -82,7 +98,8 @@ def role_required(*roles: List[str]):
 
 
 async def verify_refresh_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security)
 ) -> dict:
     """
     Verify a refresh token and return its payload
@@ -94,7 +111,10 @@ async def verify_refresh_token(
         HTTPException: 401 if token is invalid
     """
     try:
-        token_data = verify_token(credentials.credentials, token_type="refresh")
+        token = _token_from_request(request, credentials, "hispro_refresh_token")
+        if not token:
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        token_data = verify_token(token, token_type="refresh")
         return token_data
     except HTTPException:
         raise
@@ -109,13 +129,17 @@ def optional_user(
     Optional authentication - returns user if token is valid, otherwise None
     """
     authorization = request.headers.get("Authorization")
-    if not authorization:
+    cookie_token = request.cookies.get("hispro_access_token")
+    if not authorization and not cookie_token:
         return None
 
     try:
-        scheme, token = authorization.split()
-        if scheme.lower() != "bearer":
-            return None
+        if authorization:
+            scheme, token = authorization.split()
+            if scheme.lower() != "bearer":
+                return None
+        else:
+            token = cookie_token
 
         token_data = verify_token(token)
         user_id = token_data.get("sub")

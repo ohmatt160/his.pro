@@ -11,7 +11,7 @@ const ProtectedRoute = ({
   children,
   requireAdmin = false,
 }: ProtectedRouteProps) => {
-  const { token, user, loading } = useAuth();
+  const { user, loading } = useAuth();
   const location = useLocation();
   const params = useParams();
   const facilitySlug = params.facilitySlug ?? "";
@@ -20,7 +20,7 @@ const ProtectedRoute = ({
     return null;
   }
 
-  if (!token || !user) {
+  if (!user) {
     return (
       <Navigate
         to={`/login/${facilitySlug}`}

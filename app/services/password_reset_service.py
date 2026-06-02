@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from app.models.user import User
 from app.extensions import db
 from app.services.email_service import EmailService
+from app.utils.validators import Validators
 
 class PasswordResetService:
     """Password reset service class"""
@@ -70,11 +71,12 @@ class PasswordResetService:
         
         if not user:
             del PasswordResetService.reset_tokens[token]
-            return False, "User not found"
+            return False, "Invalid or expired reset token"
         
         # Validate password
-        if len(new_password) < 6:
-            return False, "Password must be at least 6 characters"
+        is_valid, error = Validators.validate_password(new_password)
+        if not is_valid:
+            return False, error
         
         # Update password
         user.set_password(new_password)

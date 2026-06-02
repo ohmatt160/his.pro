@@ -19,6 +19,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/audit-logs", tags=["audit-logs"])
 
 
+def _audit_log_response(log) -> AuditLogResponse:
+    return AuditLogResponse(
+        id=str(log.id),
+        user_id=str(log.user_id) if log.user_id else None,
+        action=log.action,
+        resource_type=log.resource_type,
+        resource_id=str(log.resource_id) if log.resource_id else None,
+        details=log.details or {},
+        ip_address=log.ip_address,
+        user_agent=log.user_agent,
+        facility_slug=log.facility_slug,
+        created_at=log.created_at.isoformat() if log.created_at else ""
+    )
+
+
 
 
 @router.get("", response_model=List[AuditLogResponse])
@@ -34,6 +49,9 @@ async def get_audit_logs(
 ):
     """Get audit logs (admin only)"""
     facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
     result = AuditLogService.get_logs(
         facility_slug=facility_slug,
         action=action,
@@ -45,20 +63,7 @@ async def get_audit_logs(
     )
 
     logs = result['items']
-    return [
-        AuditLogResponse(
-            id=str(l.id),
-            user_id=str(l.user_id) if l.user_id else None,
-            action=l.action,
-            resource_type=l.resource_type,
-            resource_id=str(l.resource_id) if l.resource_id else None,
-            details=l.details,
-            ip_address=l.ip_address,
-            user_agent=l.user_agent,
-            facility_slug=l.facility_slug,
-            created_at=l.created_at.isoformat() if l.created_at else ""
-        ) for l in logs
-    ]
+    return [_audit_log_response(log) for log in logs]
 
 
 @router.get("/{log_id}", response_model=AuditLogResponse)
@@ -69,20 +74,12 @@ async def get_audit_log(
 ):
     """Get single audit log entry (admin only)"""
     facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
     log = AuditLogService.get_log_by_id(log_id, facility_slug)
 
     if not log:
         raise HTTPException(status_code=404, detail="Audit log not found")
 
-    return AuditLogResponse(
-        id=str(log.id),
-        user_id=str(log.user_id) if log.user_id else None,
-        action=log.action,
-        resource_type=log.resource_type,
-        resource_id=str(log.resource_id) if log.resource_id else None,
-        details=log.details,
-        ip_address=log.ip_address,
-        user_agent=log.user_agent,
-        facility_slug=log.facility_slug,
-        created_at=log.created_at.isoformat() if log.created_at else ""
-    )
+    return _audit_log_response(log)

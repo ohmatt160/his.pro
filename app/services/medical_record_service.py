@@ -1,17 +1,30 @@
+from datetime import date, datetime
+
 from app.models.medical_record import MedicalRecord, ClinicalNote
 from app.extensions import db
 
 class MedicalRecordService:
     """Medical Records service class"""
+
+    @staticmethod
+    def _parse_date(value):
+        if not value:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        return datetime.fromisoformat(str(value)).date()
     
     # ==================== Medical Records ====================
     
     @staticmethod
-    def create_medical_record(data, created_by_id):
+    def create_medical_record(data, created_by_id, facility_slug):
         """Create a new medical record"""
         record = MedicalRecord(
             patient_id=data['patient_id'],
             appointment_id=data.get('appointment_id'),
+            facility_slug=facility_slug,
             created_by=created_by_id,
             chief_complaint=data.get('chief_complaint'),
             vital_signs=data.get('vital_signs', {}),
@@ -20,7 +33,7 @@ class MedicalRecordService:
             treatment_plan=data.get('treatment_plan'),
             prescriptions=data.get('prescriptions', []),
             lab_orders=data.get('lab_orders', []),
-            follow_up_date=data.get('follow_up_date'),
+            follow_up_date=MedicalRecordService._parse_date(data.get('follow_up_date')),
             notes=data.get('notes')
         )
         record.save()
@@ -32,18 +45,36 @@ class MedicalRecordService:
         return MedicalRecord.query.get(record_id)
     
     @staticmethod
-    def get_medical_records_by_patient(patient_id):
+    def get_medical_records_by_patient(patient_id, facility_slug):
         """Get all medical records for a patient"""
-        return MedicalRecord.query.filter_by(patient_id=patient_id).order_by(MedicalRecord.created_at.desc()).all()
+        return MedicalRecord.query.filter_by(
+            patient_id=patient_id,
+            facility_slug=facility_slug,
+        ).order_by(MedicalRecord.created_at.desc()).all()
+
+    @staticmethod
+    def get_medical_records_by_facility(facility_slug):
+        """Get all medical records for a facility"""
+        return MedicalRecord.query.filter_by(
+            facility_slug=facility_slug,
+        ).order_by(MedicalRecord.created_at.desc()).all()
     
     @staticmethod
     def update_medical_record(record, data):
         """Update medical record"""
+        if 'follow_up_date' in data:
+            data['follow_up_date'] = MedicalRecordService._parse_date(data['follow_up_date'])
+
         for key, value in data.items():
             if hasattr(record, key) and value is not None:
                 setattr(record, key, value)
         record.save()
         return record
+
+    @staticmethod
+    def delete_medical_record(record):
+        """Delete a medical record"""
+        record.delete()
     
     # ==================== Clinical Notes ====================
     

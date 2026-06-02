@@ -10,7 +10,8 @@ class InvoiceCreate(BaseModel):
 
 
 class InvoiceUpdate(BaseModel):
-    status: Optional[str] = Field(None, pattern="^(DRAFT|ISSUED|PAID|OVERDUE|CANCELLED)$")
+    status: Optional[str] = Field(None, pattern="^(PENDING|PARTIAL|PAID|CANCELLED)$")
+    due_date: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
 
 

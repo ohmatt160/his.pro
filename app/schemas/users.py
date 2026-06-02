@@ -47,3 +47,30 @@ class UserUpdate(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class FacilityStaffCreate(BaseModel):
+    fullName: str = Field(..., min_length=2, max_length=200)
+    role: str = Field(..., pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    department: str = Field(..., min_length=2, max_length=100)
+    email: Optional[EmailStr] = Field(None)
+    phone: Optional[str] = Field(None, max_length=20)
+    password: Optional[str] = Field(None, min_length=8)
+    createdBy: Optional[str] = Field(None, max_length=200)
+
+
+class FacilityStaffResponse(BaseModel):
+    staffRecordId: str
+    facilitySlug: str
+    fullName: str
+    role: str
+    department: str
+    email: str
+    phone: str
+    loginId: str
+    password: str = ""
+    temporaryPassword: str = ""
+    mustChangePassword: bool
+    status: str
+    createdAt: str
+    createdBy: Optional[str] = None

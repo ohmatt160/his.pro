@@ -7,6 +7,28 @@ from datetime import datetime, date
 from typing import Optional, Tuple, Any
 from marshmallow import ValidationError
 
+
+COMMON_PASSWORDS = {
+    "password",
+    "password1",
+    "password123",
+    "admin123",
+    "admin1234",
+    "qwerty123",
+    "letmein1",
+    "welcome1",
+    "changeme1",
+    "hispro123",
+}
+
+SUSPICIOUS_INPUT_PATTERNS = (
+    r"(?i)(?:^|[\s'\"])(?:or|and)\s+['\"]?\d+['\"]?\s*=\s*['\"]?\d+",
+    r"(?i);\s*(?:drop|delete|truncate|alter|insert|update)\s+",
+    r"(?i)--",
+    r"(?i)/\*|\*/",
+    r"(?i)\bunion\s+select\b",
+)
+
 class Validators:
     """Comprehensive validation utilities"""
     
@@ -77,6 +99,10 @@ class Validators:
         
         if len(password) > 128:
             return False, "Password is too long"
+
+        normalized = re.sub(r"[^a-z0-9]", "", password.lower())
+        if normalized in COMMON_PASSWORDS:
+            return False, "Password is too common"
         
         if not re.search(r'[A-Z]', password):
             return False, "Password must contain at least one uppercase letter"
@@ -87,10 +113,15 @@ class Validators:
         if not re.search(r'\d', password):
             return False, "Password must contain at least one digit"
         
-        if not re.search(r'[!@#$%^&*(),.?":{}|<>]', password):
-            return False, "Password must contain at least one special character"
-        
         return True, None
+
+    @staticmethod
+    def contains_suspicious_input(value: str) -> bool:
+        """Detect obvious SQL/script injection probes in free-text inputs."""
+        if not value:
+            return False
+
+        return any(re.search(pattern, value) for pattern in SUSPICIOUS_INPUT_PATTERNS)
     
     @staticmethod
     def validate_date(date_str: str, format: str = '%Y-%m-%d') -> Tuple[bool, Optional[str], Optional[date]]:

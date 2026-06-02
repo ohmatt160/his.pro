@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class InventoryCreate(BaseModel):
-    facility_slug: str = Field(...)
+    facility_slug: Optional[str] = Field(None)
     name: str = Field(..., max_length=200)
     sku: str = Field(..., max_length=100)
     category: str = Field(..., pattern="^(medication|supplies|equipment)$")

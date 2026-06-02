@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from app.models.audit_log import AuditLog
 from app.extensions import db
 
@@ -6,7 +8,16 @@ class AuditLogService:
     """Service for audit logging operations"""
 
     @staticmethod
-    def log_action(user_id, action, resource_type=None, resource_id=None, details=None, ip_address=None, user_agent=None):
+    def log_action(
+        user_id,
+        action,
+        resource_type=None,
+        resource_id=None,
+        details=None,
+        ip_address=None,
+        user_agent=None,
+        facility_slug=None,
+    ):
         """Log a user action"""
         try:
             audit_log = AuditLog(
@@ -14,6 +25,7 @@ class AuditLogService:
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
+                facility_slug=facility_slug,
                 details=details or {},
                 ip_address=ip_address,
                 user_agent=user_agent
@@ -27,7 +39,17 @@ class AuditLogService:
             return None
 
     @staticmethod
-    def get_logs(page=1, per_page=50, user_id=None, action=None, resource_type=None, facility_slug=None):
+    def get_logs(
+        page=1,
+        per_page=50,
+        user_id=None,
+        action=None,
+        resource_type=None,
+        facility_slug=None,
+        start_date=None,
+        end_date=None,
+        limit=None,
+    ):
         """Get audit logs with filtering"""
         query = AuditLog.query
 
@@ -39,10 +61,16 @@ class AuditLogService:
             query = query.filter(AuditLog.resource_type == resource_type)
         if facility_slug:
             query = query.filter(AuditLog.facility_slug == facility_slug)
+        if start_date:
+            query = query.filter(AuditLog.created_at >= datetime.fromisoformat(str(start_date)))
+        if end_date:
+            query = query.filter(AuditLog.created_at <= datetime.fromisoformat(str(end_date)))
 
         query = query.order_by(AuditLog.created_at.desc())
 
         # Manual pagination for SQLAlchemy 2.0
+        if limit is not None:
+            per_page = limit
         total = query.count()
         items = query.offset((page - 1) * per_page).limit(per_page).all()
         pages = (total + per_page - 1) // per_page

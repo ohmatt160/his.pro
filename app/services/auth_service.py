@@ -17,6 +17,10 @@ class AuthService:
         allowed_roles = User.get_roles()
         if data.get('role') not in allowed_roles:
             return None, f"Invalid role. Allowed roles: {', '.join(allowed_roles)}"
+
+        is_valid_password, password_error = Validators.validate_password(data.get('password', ''))
+        if not is_valid_password:
+            return None, password_error
         
         # Check if user exists
         if session.query(User).filter_by(username=data['username']).first():
@@ -58,14 +62,11 @@ class AuthService:
         )
         
         if not user:
-            print(f"[AUTH] User not found: {username}")
             return None, "Invalid username or password"
         
         if not user.check_password(password):
-            print(f"[AUTH] Password check failed for: {username}")
             return None, "Invalid username or password"
         
-        print(f"[AUTH] Login successful for: {username}, role: {user.role}")
         return user, None
     
     @staticmethod

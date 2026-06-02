@@ -1,5 +1,6 @@
 from app.models.patient import Patient
 from app.extensions import db
+from datetime import date
 
 class PatientService:
     """Patient service class with business logic"""
@@ -7,10 +8,14 @@ class PatientService:
     @staticmethod
     def create_patient(data, user_id, facility_slug=None):
         """Create a new patient"""
+        date_of_birth = data['date_of_birth']
+        if isinstance(date_of_birth, str):
+            date_of_birth = date.fromisoformat(date_of_birth)
+
         patient = Patient(
             first_name=data['first_name'],
             last_name=data['last_name'],
-            date_of_birth=data['date_of_birth'],
+            date_of_birth=date_of_birth,
             gender=data.get('gender'),
             phone=data.get('phone'),
             email=data.get('email'),
@@ -41,7 +46,9 @@ class PatientService:
 
         # Filter by facility_slug for multi-tenant isolation
         if facility_slug:
-            query = query.filter_by(facility_slug=facility_slug)
+            query = query.filter_by(facility_slug=facility_slug, is_active=True)
+        else:
+            query = query.filter_by(is_active=True)
 
         if search:
             query = query.filter(
@@ -66,6 +73,8 @@ class PatientService:
     def update_patient(patient, data):
         """Update patient information"""
         for key, value in data.items():
+            if key == 'date_of_birth' and isinstance(value, str):
+                value = date.fromisoformat(value)
             if hasattr(patient, key) and value is not None:
                 setattr(patient, key, value)
         patient.save()
@@ -74,5 +83,6 @@ class PatientService:
     @staticmethod
     def delete_patient(patient):
         """Soft delete patient"""
-        patient.delete()
+        patient.is_active = False
+        patient.save()
         return True

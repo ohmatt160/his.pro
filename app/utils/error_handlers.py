@@ -11,8 +11,10 @@ from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 import logging
+import os
 
 logger = logging.getLogger(__name__)
+APP_ENV = os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")
 
 # Custom error codes
 class ErrorCodes:
@@ -198,14 +200,14 @@ def register_error_handlers(app):
     @app.exception_handler(IntegrityError)
     async def handle_integrity_error(request: Request, exc: IntegrityError):
         """Handle database integrity errors"""
+        logger.warning("Database integrity error on %s: %s", request.url.path, exc, exc_info=True)
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
             content={
                 'error': {
-                    'message': 'Database integrity error',
+                    'message': 'Resource conflict',
                     'code': ErrorCodes.DATABASE_INTEGRITY_ERROR,
                     'status': 409,
-                    'details': str(exc.orig)
                 }
             }
         )
@@ -213,6 +215,7 @@ def register_error_handlers(app):
     @app.exception_handler(SQLAlchemyError)
     async def handle_database_error(request: Request, exc: SQLAlchemyError):
         """Handle database errors"""
+        logger.error("Database error on %s: %s", request.url.path, exc, exc_info=True)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -220,7 +223,6 @@ def register_error_handlers(app):
                     'message': 'Database error',
                     'code': ErrorCodes.DATABASE_ERROR,
                     'status': 500,
-                    'details': str(exc)
                 }
             }
         )

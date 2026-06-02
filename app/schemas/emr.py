@@ -5,28 +5,43 @@ from pydantic import BaseModel, Field
 
 class MedicalRecordCreate(BaseModel):
     patient_id: str = Field(...)
-    record_type: str = Field(..., pattern="^(CONSULTATION|LAB_RESULT|IMAGING|PRESCRIPTION|PROCEDURE|NOTE|VACCINATION)$")
-    title: str = Field(..., max_length=200)
-    description: Optional[str] = Field(None)
-    data: Optional[dict] = Field(default_factory=dict)
-    attachments: Optional[List[str]] = Field(default_factory=list)
+    appointment_id: Optional[str] = Field(None)
+    chief_complaint: Optional[str] = Field(None)
+    vital_signs: Optional[dict] = Field(default_factory=dict)
+    symptoms: Optional[List[str]] = Field(default_factory=list)
+    diagnosis: Optional[List[str]] = Field(default_factory=list)
+    treatment_plan: Optional[str] = Field(None)
+    prescriptions: Optional[List[dict]] = Field(default_factory=list)
+    lab_orders: Optional[List[dict]] = Field(default_factory=list)
+    follow_up_date: Optional[str] = Field(None)
+    notes: Optional[str] = Field(None)
 
 
 class MedicalRecordUpdate(BaseModel):
-    title: Optional[str] = Field(None, max_length=200)
-    description: Optional[str] = Field(None)
-    data: Optional[dict] = None
-    attachments: Optional[List[str]] = None
+    chief_complaint: Optional[str] = Field(None)
+    vital_signs: Optional[dict] = None
+    symptoms: Optional[List[str]] = None
+    diagnosis: Optional[List[str]] = None
+    treatment_plan: Optional[str] = Field(None)
+    prescriptions: Optional[List[dict]] = None
+    lab_orders: Optional[List[dict]] = None
+    follow_up_date: Optional[str] = Field(None)
+    notes: Optional[str] = Field(None)
 
 
 class MedicalRecordResponse(BaseModel):
     id: str
     patient_id: str
-    record_type: str
-    title: str
-    description: Optional[str]
-    data: Optional[dict]
-    attachments: Optional[List[str]]
+    appointment_id: Optional[str]
+    chief_complaint: Optional[str]
+    vital_signs: Optional[dict]
+    symptoms: Optional[List[str]]
+    diagnosis: Optional[List[str]]
+    treatment_plan: Optional[str]
+    prescriptions: Optional[List[dict]]
+    lab_orders: Optional[List[dict]]
+    follow_up_date: Optional[str]
+    notes: Optional[str]
     created_by: str
     facility_slug: Optional[str]
     created_at: str

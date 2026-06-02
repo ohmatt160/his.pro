@@ -14,6 +14,7 @@ from app.models.supplier import Supplier
 from app.models.patient_queue import PatientQueue
 from app.models.alert import Alert
 from app.models.audit_log import AuditLog
+from app.models.user_session import UserSession
 
 # Export all models
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     'PatientQueue',
     'Alert',
     'AuditLog',
+    'UserSession',
 ]

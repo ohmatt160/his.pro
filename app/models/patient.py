@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, Text, JSON, ForeignKey
+from sqlalchemy import Column, String, Date, Text, JSON, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -18,6 +18,7 @@ class Patient(BaseModel):
     medical_history = Column(JSON, default=dict)
     emergency_contact_name = Column(String(100))
     emergency_contact_phone = Column(String(20))
+    is_active = Column(Boolean, default=True)
     created_by = Column(String(36), ForeignKey('users.id'), index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
 

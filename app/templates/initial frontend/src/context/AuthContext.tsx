@@ -34,10 +34,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!token || user) {
-      return;
-    }
-
     setLoading(true);
     getProfile()
       .then((profile) => {
@@ -51,7 +47,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUserState(null);
       })
       .finally(() => setLoading(false));
-  }, [token, user]);
+  }, []);
 
   const login = async ({ facilitySlug, login, password }: LoginCredentials) => {
     setLoading(true);
@@ -63,9 +59,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         password,
       });
 
-      apiClient.setToken(response.access_token);
       apiClient.setUser(response.user);
-      setTokenState(response.access_token);
+      setTokenState(null);
       setUserState(response.user);
 
       return response.user;
@@ -75,6 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = () => {
+    apiClient.post("/auth/logout").catch(() => undefined);
     apiClient.clearToken();
     apiClient.clearUser();
     setTokenState(null);
