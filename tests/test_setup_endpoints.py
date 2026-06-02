@@ -118,6 +118,15 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(profile.json()["role"], "ADMIN")
             self.assertEqual(profile.json()["facility_slug"], "sunrise-medical-centre")
 
+            active_sessions = await client.get(
+                "/api/v1/auth/sessions",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(active_sessions.status_code, 200, active_sessions.text)
+            self.assertGreaterEqual(len(active_sessions.json()), 1)
+            self.assertTrue(any(session["is_current"] for session in active_sessions.json()))
+
             facility_update = await client.put(
                 "/api/v1/facilities/sunrise-medical-centre",
                 json={
@@ -406,6 +415,59 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(appointment_list.status_code, 200, appointment_list.text)
             self.assertEqual(len(appointment_list.json()), 1)
 
+            consultation_start = await client.post(
+                "/api/v1/consultations/start",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "appointment_id": appointment_create.json()["id"],
+                    "chief_complaint": "Fever, cough, and malaise",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_start.status_code, 201, consultation_start.text)
+            self.assertEqual(consultation_start.json()["patient_name"], "Musa Bello")
+            self.assertEqual(consultation_start.json()["appointment_status"], "IN_PROGRESS")
+
+            consultation_update = await client.put(
+                f"/api/v1/consultations/{consultation_start.json()['id']}",
+                json={
+                    "vital_signs": {"temperature": "38.1", "pulse": "92"},
+                    "symptoms": ["Fever", "Cough"],
+                    "diagnosis": ["Upper respiratory tract infection"],
+                    "treatment_plan": "Oral medication, fluids, and review in 3 days.",
+                    "prescriptions": [
+                        {"medication": "Paracetamol", "dose": "500mg", "frequency": "TDS"}
+                    ],
+                    "lab_orders": [{"test": "Full Blood Count"}],
+                    "radiology_orders": [{"study": "Chest X-ray"}],
+                    "follow_up_date": "2026-06-04",
+                    "notes": "Patient stable for outpatient management.",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_update.status_code, 200, consultation_update.text)
+            self.assertEqual(consultation_update.json()["status"], "in_progress")
+            self.assertEqual(consultation_update.json()["radiology_orders"][0]["type"], "radiology")
+
+            consultation_complete = await client.post(
+                f"/api/v1/consultations/{consultation_start.json()['id']}/complete",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_complete.status_code, 200, consultation_complete.text)
+            self.assertEqual(consultation_complete.json()["status"], "completed")
+            self.assertEqual(consultation_complete.json()["appointment_status"], "COMPLETED")
+
+            consultation_list = await client.get(
+                f"/api/v1/consultations?patient_id={patient_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_list.status_code, 200, consultation_list.text)
+            self.assertGreaterEqual(len(consultation_list.json()), 1)
+
             queue_create = await client.post(
                 "/api/v1/queue",
                 json={
@@ -428,6 +490,75 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(queue_list.status_code, 200, queue_list.text)
             self.assertEqual(queue_list.json()["total"], 1)
+
+            ward_bed_create = await client.post(
+                "/api/v1/wards/beds",
+                json={
+                    "ward_name": "Observation Ward",
+                    "bed_number": "OBS-01",
+                    "notes": "Near nurses station",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(ward_bed_create.status_code, 201, ward_bed_create.text)
+            self.assertEqual(ward_bed_create.json()["status"], "AVAILABLE")
+            self.assertEqual(ward_bed_create.json()["bed_number"], "OBS-01")
+
+            ward_admission_create = await client.post(
+                "/api/v1/wards/admissions",
+                json={
+                    "patient_id": patient_create.json()["id"],
+                    "bed_id": ward_bed_create.json()["id"],
+                    "ward_name": "Observation Ward",
+                    "reason": "Short stay clinical observation",
+                    "acuity": "urgent",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(ward_admission_create.status_code, 201, ward_admission_create.text)
+            self.assertEqual(ward_admission_create.json()["patient_name"], "Musa Bello")
+            self.assertEqual(ward_admission_create.json()["bed_number"], "OBS-01")
+            self.assertEqual(ward_admission_create.json()["status"], "ACTIVE")
+
+            ward_observation = await client.post(
+                f"/api/v1/wards/admissions/{ward_admission_create.json()['id']}/observations",
+                json={
+                    "vital_signs": {"temperature": "37.8", "blood_pressure": "118/76"},
+                    "note": "Patient settled in bed and tolerating oral fluids.",
+                    "medication_round": "Paracetamol administered",
+                },
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(ward_observation.status_code, 200, ward_observation.text)
+            self.assertEqual(len(ward_observation.json()["observations"]), 1)
+            self.assertEqual(len(ward_observation.json()["nursing_notes"]), 1)
+
+            active_admissions = await client.get(
+                "/api/v1/wards/admissions?status=ACTIVE",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(active_admissions.status_code, 200, active_admissions.text)
+            self.assertEqual(len(active_admissions.json()), 1)
+
+            ward_discharge = await client.post(
+                f"/api/v1/wards/admissions/{ward_admission_create.json()['id']}/discharge",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(ward_discharge.status_code, 200, ward_discharge.text)
+            self.assertEqual(ward_discharge.json()["status"], "DISCHARGED")
+
+            ward_beds_after_discharge = await client.get(
+                "/api/v1/wards/beds?status=AVAILABLE",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(ward_beds_after_discharge.status_code, 200, ward_beds_after_discharge.text)
+            self.assertEqual(ward_beds_after_discharge.json()[0]["bed_number"], "OBS-01")
 
             invoice_create = await client.post(
                 "/api/v1/billing/invoices",
@@ -472,6 +603,21 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(invoice_list.json()[0]["paid_amount"], 10000)
             self.assertEqual(invoice_list.json()[0]["balance"], 15000)
             self.assertEqual(invoice_list.json()[0]["status"], "PARTIAL")
+
+            report_summary = await client.get(
+                "/api/v1/reports/summary?date_from=2026-01-01&date_to=2026-12-31",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(report_summary.status_code, 200, report_summary.text)
+            self.assertEqual(report_summary.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(report_summary.json()["patients"]["total"], 1)
+            self.assertGreaterEqual(report_summary.json()["consultations"]["total"], 2)
+            self.assertEqual(report_summary.json()["queue"]["by_status"]["waiting"], 1)
+            self.assertEqual(report_summary.json()["admissions"]["by_status"]["DISCHARGED"], 1)
+            self.assertEqual(report_summary.json()["billing"]["invoice_count"], 1)
+            self.assertEqual(report_summary.json()["billing"]["payments_total"], 10000)
+            self.assertEqual(report_summary.json()["billing"]["outstanding_total"], 15000)
 
             lab_test_create = await client.post(
                 "/api/v1/laboratory/tests",

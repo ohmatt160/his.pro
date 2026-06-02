@@ -165,6 +165,18 @@ const Dashboard = () => {
   const inventoryPath = resolvedFacilitySlug
     ? `/dashboard/${resolvedFacilitySlug}/inventory`
     : "";
+  const queuePath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/queue`
+    : "";
+  const consultationsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/consultations`
+    : "";
+  const wardsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/wards`
+    : "";
+  const reportsPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}/reports`
+    : "";
   const recordsPath = resolvedFacilitySlug
     ? `/dashboard/${resolvedFacilitySlug}/records`
     : "";
@@ -183,6 +195,20 @@ const Dashboard = () => {
   const facilityLoginPath = resolvedFacilitySlug
     ? getFacilityLoginPath(resolvedFacilitySlug)
     : "/login";
+  const dashboardPath = resolvedFacilitySlug
+    ? `/dashboard/${resolvedFacilitySlug}`
+    : "";
+  const modulePaths: Record<string, string> = {
+    reception: queuePath,
+    records: recordsPath,
+    consultations: consultationsPath,
+    nursing: wardsPath,
+    lab: laboratoryPath,
+    pharmacy: pharmacyPath,
+    billing: billingPath,
+    radiology: radiologyPath,
+    inventory: inventoryPath,
+  };
 
   const facilityName = (data.facilityName as string) || "My Facility";
   const facilityType = (data.facilityType as string) || "clinic";
@@ -250,28 +276,32 @@ const Dashboard = () => {
         </div>
 
         <nav className="flex-1 p-3 space-y-1">
-          <SidebarLink icon={LayoutDashboard} label="Dashboard" active />
+          <SidebarLink icon={LayoutDashboard} label="Dashboard" to={dashboardPath} active={location.pathname === dashboardPath} />
           {staffAccessPath && (
-            <SidebarLink icon={ShieldCheck} label="Staff & Access" to={staffAccessPath} />
+            <SidebarLink icon={ShieldCheck} label="Staff & Access" to={staffAccessPath} active={location.pathname === staffAccessPath} />
           )}
-          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} />}
-          {auditLogsPath && <SidebarLink icon={ClipboardList} label="Audit Logs" to={auditLogsPath} />}
-          <SidebarLink icon={Activity} label="Analytics" />
-          {patientsPath && <SidebarLink icon={Users} label="Patients" to={patientsPath} />}
-          {recordsPath && <SidebarLink icon={FileHeart} label="Medical Records" to={recordsPath} />}
-          {appointmentsPath && <SidebarLink icon={CalendarDays} label="Appointments" to={appointmentsPath} />}
-          {billingPath && <SidebarLink icon={Receipt} label="Billing" to={billingPath} />}
-          {laboratoryPath && <SidebarLink icon={FlaskConical} label="Laboratory" to={laboratoryPath} />}
-          {pharmacyPath && <SidebarLink icon={Pill} label="Pharmacy" to={pharmacyPath} />}
-          {radiologyPath && <SidebarLink icon={ScanLine} label="Radiology" to={radiologyPath} />}
-          {inventoryPath && <SidebarLink icon={Package} label="Inventory" to={inventoryPath} />}
-          {suppliersPath && <SidebarLink icon={Truck} label="Suppliers" to={suppliersPath} />}
+          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} active={location.pathname === alertsPath} />}
+          {auditLogsPath && <SidebarLink icon={ClipboardList} label="Audit Logs" to={auditLogsPath} active={location.pathname === auditLogsPath} />}
+          {reportsPath && <SidebarLink icon={Activity} label="Reports" to={reportsPath} active={location.pathname === reportsPath} />}
+          {patientsPath && <SidebarLink icon={Users} label="Patients" to={patientsPath} active={location.pathname === patientsPath} />}
+          {queuePath && <SidebarLink icon={ClipboardList} label="Reception Queue" to={queuePath} active={location.pathname === queuePath} />}
+          {consultationsPath && <SidebarLink icon={Stethoscope} label="Consultations" to={consultationsPath} active={location.pathname === consultationsPath} />}
+          {wardsPath && <SidebarLink icon={BedDouble} label="Wards" to={wardsPath} active={location.pathname === wardsPath} />}
+          {recordsPath && <SidebarLink icon={FileHeart} label="Medical Records" to={recordsPath} active={location.pathname === recordsPath} />}
+          {appointmentsPath && <SidebarLink icon={CalendarDays} label="Appointments" to={appointmentsPath} active={location.pathname === appointmentsPath} />}
+          {billingPath && <SidebarLink icon={Receipt} label="Billing" to={billingPath} active={location.pathname === billingPath} />}
+          {laboratoryPath && <SidebarLink icon={FlaskConical} label="Laboratory" to={laboratoryPath} active={location.pathname === laboratoryPath} />}
+          {pharmacyPath && <SidebarLink icon={Pill} label="Pharmacy" to={pharmacyPath} active={location.pathname === pharmacyPath} />}
+          {radiologyPath && <SidebarLink icon={ScanLine} label="Radiology" to={radiologyPath} active={location.pathname === radiologyPath} />}
+          {inventoryPath && <SidebarLink icon={Package} label="Inventory" to={inventoryPath} active={location.pathname === inventoryPath} />}
+          {suppliersPath && <SidebarLink icon={Truck} label="Suppliers" to={suppliersPath} active={location.pathname === suppliersPath} />}
           <div className="pt-3 pb-1 px-3">
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Modules</p>
           </div>
           {selectedModules.map((id) => {
             const Icon = moduleIcons[id] || Layers;
-            return <SidebarLink key={id} icon={Icon} label={moduleLabels[id] || id} />;
+            const to = modulePaths[id];
+            return <SidebarLink key={id} icon={Icon} label={moduleLabels[id] || id} to={to} active={Boolean(to && location.pathname === to)} />;
           })}
         </nav>
 
@@ -395,6 +425,12 @@ const Dashboard = () => {
                             animate={{ opacity: 1, scale: 1 }}
                             transition={{ delay: 0.3 + i * 0.08 }}
                             className="glass-card rounded-xl p-4 flex items-center gap-3 border border-primary/10 hover:border-primary/30 transition-colors cursor-pointer group"
+                            onClick={() => {
+                              const modulePath = modulePaths[id];
+                              if (modulePath) {
+                                navigate(modulePath);
+                              }
+                            }}
                           >
                             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
                               <Icon className="h-5 w-5 text-primary" />
@@ -486,6 +522,34 @@ const Dashboard = () => {
                     <Button asChild variant="outline" className="gap-2">
                       <Link to={suppliersPath}>
                         <Truck className="h-4 w-4" /> Suppliers
+                      </Link>
+                    </Button>
+                  )}
+                  {resolvedFacilitySlug && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={queuePath}>
+                        <ClipboardList className="h-4 w-4" /> Reception Queue
+                      </Link>
+                    </Button>
+                  )}
+                  {consultationsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={consultationsPath}>
+                        <Stethoscope className="h-4 w-4" /> Consultations
+                      </Link>
+                    </Button>
+                  )}
+                  {wardsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={wardsPath}>
+                        <BedDouble className="h-4 w-4" /> Wards
+                      </Link>
+                    </Button>
+                  )}
+                  {reportsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={reportsPath}>
+                        <Activity className="h-4 w-4" /> Reports
                       </Link>
                     </Button>
                   )}

@@ -25,6 +25,7 @@ class MedicalRecord(BaseModel):
 
     # Relationships
     patient = relationship('Patient', backref='medical_records')
+    appointment = relationship('Appointment', backref='medical_records')
 
     def to_dict(self):
         data = super().to_dict()

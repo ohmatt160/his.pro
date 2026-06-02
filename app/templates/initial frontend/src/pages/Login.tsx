@@ -36,7 +36,7 @@ const features = [
 const Login = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const { user, login } = useAuth();
+  const { user, login, sessionMessage, clearSessionMessage } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
@@ -329,6 +329,7 @@ const Login = () => {
                     onChange={(event) => {
                       setLoginValue(event.target.value);
                       setError("");
+                      clearSessionMessage();
                     }}
                     className="mt-1.5 h-11"
                     autoComplete="username"
@@ -347,6 +348,7 @@ const Login = () => {
                       onChange={(event) => {
                         setPassword(event.target.value);
                         setError("");
+                        clearSessionMessage();
                       }}
                       className="h-11 pr-11"
                       autoComplete="current-password"
@@ -365,13 +367,17 @@ const Login = () => {
                   </div>
                 </div>
 
-                {error && (
+                {(error || sessionMessage) && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2.5 text-sm text-destructive"
+                    className={`rounded-lg border px-3 py-2.5 text-sm ${
+                      error
+                        ? "border-destructive/20 bg-destructive/10 text-destructive"
+                        : "border-amber-500/20 bg-amber-500/10 text-amber-700"
+                    }`}
                   >
-                    {error}
+                    {error || sessionMessage}
                   </motion.div>
                 )}
 

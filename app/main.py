@@ -23,6 +23,8 @@ from app.routes.appointments import router as appointments_router
 from app.routes.laboratory import router as laboratory_router
 from app.routes.pharmacy import router as pharmacy_router
 from app.routes.billing import router as billing_router
+from app.routes.consultations import router as consultations_router
+from app.routes.wards import router as wards_router
 from app.routes.emr import router as emr_router
 from app.routes.users import router as users_router
 from app.routes.password_reset import router as password_reset_router
@@ -30,6 +32,7 @@ from app.routes.facilities import router as facilities_router
 from app.routes.radiology import router as radiology_router
 from app.routes.inventory import router as inventory_router
 from app.routes.suppliers import router as suppliers_router
+from app.routes.reports import router as reports_router
 from app.routes.queue import router as queue_router
 from app.routes.alerts import router as alerts_router
 from app.routes.dashboard import router as dashboard_router
@@ -194,6 +197,8 @@ def create_app() -> FastAPI:
     app.include_router(laboratory_router, prefix="/api/v1")
     app.include_router(pharmacy_router, prefix="/api/v1")
     app.include_router(billing_router, prefix="/api/v1")
+    app.include_router(consultations_router, prefix="/api/v1")
+    app.include_router(wards_router, prefix="/api/v1")
     app.include_router(emr_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(password_reset_router, prefix="/api/v1")
@@ -201,6 +206,7 @@ def create_app() -> FastAPI:
     app.include_router(radiology_router, prefix="/api/v1")
     app.include_router(inventory_router, prefix="/api/v1")
     app.include_router(suppliers_router, prefix="/api/v1")
+    app.include_router(reports_router, prefix="/api/v1")
     app.include_router(queue_router, prefix="/api/v1")
     app.include_router(alerts_router, prefix="/api/v1")
     app.include_router(dashboard_router, prefix="/api/v1")

@@ -6,10 +6,10 @@ import {
   useState,
 } from "react";
 import { apiClient, type AuthUser } from "@/api/client";
+import { refreshProfile } from "@/lib/auth-session";
 import {
   authenticateStaff,
   getProfile,
-  type StaffRole,
 } from "@/lib/facility-staff";
 
 type LoginCredentials = {
@@ -22,8 +22,11 @@ type AuthContextValue = {
   user: AuthUser | null;
   token: string | null;
   loading: boolean;
+  sessionMessage: string;
   login: (credentials: LoginCredentials) => Promise<AuthUser>;
   logout: () => void;
+  logoutEverywhere: () => Promise<void>;
+  clearSessionMessage: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -31,22 +34,52 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setTokenState] = useState<string | null>(apiClient.getToken());
   const [user, setUserState] = useState<AuthUser | null>(apiClient.getUser());
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sessionMessage, setSessionMessage] = useState("");
 
   useEffect(() => {
-    setLoading(true);
-    getProfile()
-      .then((profile) => {
+    let isMounted = true;
+
+    const restoreSession = async () => {
+      setLoading(true);
+      try {
+        let profile: AuthUser;
+        try {
+          profile = await getProfile();
+        } catch {
+          profile = await refreshProfile();
+        }
+
+        if (!isMounted) {
+          return;
+        }
         apiClient.setUser(profile);
         setUserState(profile);
-      })
-      .catch(() => {
+        setSessionMessage("");
+      } catch {
+        if (!isMounted) {
+          return;
+        }
+        const hadStoredUser = Boolean(apiClient.getUser());
         apiClient.clearToken();
         apiClient.clearUser();
         setTokenState(null);
         setUserState(null);
-      })
-      .finally(() => setLoading(false));
+        if (hadStoredUser) {
+          setSessionMessage("Your session expired. Please sign in again.");
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    restoreSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const login = async ({ facilitySlug, login, password }: LoginCredentials) => {
@@ -62,6 +95,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       apiClient.setUser(response.user);
       setTokenState(null);
       setUserState(response.user);
+      setSessionMessage("");
 
       return response.user;
     } finally {
@@ -75,6 +109,20 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     apiClient.clearUser();
     setTokenState(null);
     setUserState(null);
+    setSessionMessage("");
+  };
+
+  const logoutEverywhere = async () => {
+    await apiClient.post("/auth/logout-everywhere").catch(() => undefined);
+    apiClient.clearToken();
+    apiClient.clearUser();
+    setTokenState(null);
+    setUserState(null);
+    setSessionMessage("You have been logged out from all sessions.");
+  };
+
+  const clearSessionMessage = () => {
+    setSessionMessage("");
   };
 
   const value = useMemo(
@@ -82,10 +130,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       user,
       token,
       loading,
+      sessionMessage,
       login,
       logout,
+      logoutEverywhere,
+      clearSessionMessage,
     }),
-    [user, token, loading]
+    [user, token, loading, sessionMessage]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

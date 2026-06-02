@@ -5,10 +5,13 @@ import {
   Building2,
   ClipboardList,
   KeyRound,
+  LogOut,
   Save,
+  ShieldCheck,
   User,
 } from "lucide-react";
 import { apiClient, type AuthUser } from "@/api/client";
+import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  describeSessionDevice,
+  getActiveSessions,
+  type ActiveSession,
+} from "@/lib/auth-session";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 
 type Facility = {
@@ -71,8 +79,10 @@ const emptyPasswordForm = {
 const Settings = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
+  const { logoutEverywhere } = useAuth();
   const [facility, setFacility] = useState<Facility | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [facilityForm, setFacilityForm] = useState(emptyFacilityForm);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
@@ -80,6 +90,7 @@ const Settings = () => {
   const [facilityStatus, setFacilityStatus] = useState("");
   const [profileStatus, setProfileStatus] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
+  const [sessionStatus, setSessionStatus] = useState("");
   const [error, setError] = useState("");
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
@@ -92,6 +103,7 @@ const Settings = () => {
         apiClient.get<Facility>(`/facilities/${facilitySlug}`),
         apiClient.get<UserProfile>("/users/me"),
       ]);
+      getActiveSessions().then(setSessions).catch(() => setSessions([]));
       setFacility(facilityResponse);
       setProfile(profileResponse);
       setFacilityForm({
@@ -194,6 +206,18 @@ const Settings = () => {
     }
   };
 
+  const handleLogoutEverywhere = async () => {
+    setError("");
+    setSessionStatus("");
+    try {
+      await logoutEverywhere();
+      setSessionStatus("All active sessions were closed.");
+      navigate(`/login/${facilitySlug}`, { replace: true });
+    } catch (sessionError) {
+      setError(sessionError instanceof Error ? sessionError.message : "Could not close sessions.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -291,25 +315,71 @@ const Settings = () => {
           </Card>
         </div>
 
-        <Card className="h-fit border-border/60">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <KeyRound className="h-4 w-4 text-primary" /> Password
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={changePassword} className="space-y-4">
-              <Field label="Current Password" type="password" value={passwordForm.current_password} onChange={(value) => setPasswordForm((current) => ({ ...current, current_password: value }))} required />
-              <Field label="New Password" type="password" value={passwordForm.new_password} onChange={(value) => setPasswordForm((current) => ({ ...current, new_password: value }))} required />
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <p className="text-sm text-emerald-700">{passwordStatus}</p>
-                <Button type="submit" className="gradient-cta gap-2 border-0 text-primary-foreground">
-                  <Save className="h-4 w-4" /> Change Password
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="h-fit border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <KeyRound className="h-4 w-4 text-primary" /> Password
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={changePassword} className="space-y-4">
+                <Field label="Current Password" type="password" value={passwordForm.current_password} onChange={(value) => setPasswordForm((current) => ({ ...current, current_password: value }))} required />
+                <Field label="New Password" type="password" value={passwordForm.new_password} onChange={(value) => setPasswordForm((current) => ({ ...current, new_password: value }))} required />
+                <div className="flex items-center justify-between gap-3 pt-2">
+                  <p className="text-sm text-emerald-700">{passwordStatus}</p>
+                  <Button type="submit" className="gradient-cta gap-2 border-0 text-primary-foreground">
+                    <Save className="h-4 w-4" /> Change Password
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card className="h-fit border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ShieldCheck className="h-4 w-4 text-primary" /> Sessions
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {sessions.length === 0 ? (
+                <p className="rounded-xl border border-border/60 p-3 text-sm text-muted-foreground">
+                  Active session details are unavailable.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map((session) => (
+                    <div key={session.id} className="rounded-xl border border-border/60 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-foreground">
+                          {describeSessionDevice(session)}
+                        </p>
+                        {session.is_current && (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                            Current
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Last seen {new Date(session.last_seen_at).toLocaleString()}
+                      </p>
+                      {session.ip_address && (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          IP {session.ip_address}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {sessionStatus && <p className="text-sm text-emerald-700">{sessionStatus}</p>}
+              <Button type="button" variant="destructive" className="w-full gap-2" onClick={handleLogoutEverywhere}>
+                <LogOut className="h-4 w-4" /> Logout Everywhere
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </main>
     </div>
   );

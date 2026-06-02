@@ -830,6 +830,34 @@ const roleConfigs: Record<Exclude<StaffRole, "admin">, RoleConfig> = {
   },
 };
 
+export const routeForPortalLabel = (
+  role: Exclude<StaffRole, "admin">,
+  label: string,
+  facilitySlug: string
+) => {
+  const base = `/dashboard/${facilitySlug}`;
+  const normalized = label.toLowerCase();
+
+  if (normalized.includes("dashboard")) return `/portal/${facilitySlug}`;
+  if (normalized.includes("patient")) return `${base}/patients`;
+  if (normalized.includes("schedule") || normalized.includes("appointment")) return `${base}/appointments`;
+  if (normalized.includes("consult")) return `${base}/consultations`;
+  if (normalized.includes("ward") || normalized.includes("bed") || normalized.includes("handover")) return `${base}/wards`;
+  if (normalized.includes("task") || normalized.includes("queue") || normalized.includes("check-in") || normalized.includes("arrival")) return `${base}/queue`;
+  if (normalized.includes("prescription") || normalized.includes("medication") || normalized.includes("dispense")) return `${base}/pharmacy`;
+  if (normalized.includes("lab") || normalized.includes("test") || normalized.includes("sample") || normalized.includes("result") || normalized.includes("quality")) return `${base}/laboratory`;
+  if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return `${base}/records`;
+  if (normalized.includes("stock") || normalized.includes("inventory")) return `${base}/inventory`;
+  if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return `${base}/billing`;
+  if (normalized.includes("message") || normalized.includes("alert")) return `${base}/alerts`;
+
+  if (role === "doctor") return `${base}/consultations`;
+  if (role === "nurse") return `${base}/wards`;
+  if (role === "reception") return `${base}/queue`;
+  if (role === "pharmacist") return `${base}/pharmacy`;
+  return `${base}/laboratory`;
+};
+
 const StaffPortal = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
@@ -907,6 +935,11 @@ const StaffPortal = () => {
       ? "Good afternoon"
       : "Good evening";
   const PrimaryIcon = config.primaryAction.icon;
+  const primaryActionPath = routeForPortalLabel(
+    staff.role,
+    config.primaryAction.label,
+    facilitySlug
+  );
 
   const handleLogout = () => {
     logout();
@@ -939,6 +972,7 @@ const StaffPortal = () => {
               label={entry.label}
               badge={entry.badge}
               active={index === 0}
+              to={routeForPortalLabel(staff.role, entry.label, facilitySlug)}
             />
           ))}
           <div className="px-3 pb-1 pt-3">
@@ -952,12 +986,13 @@ const StaffPortal = () => {
               icon={entry.icon}
               label={entry.label}
               badge={entry.badge}
+              to={routeForPortalLabel(staff.role, entry.label, facilitySlug)}
             />
           ))}
         </nav>
 
         <div className="space-y-1 border-t border-border p-3">
-          <SidebarLink icon={Settings} label="Preferences" />
+          <SidebarLink icon={Settings} label="My Portal" to={`/portal/${facilitySlug}`} active />
           <SidebarLink icon={LogOut} label="Sign Out" onClick={handleLogout} />
         </div>
       </motion.aside>
@@ -1034,8 +1069,10 @@ const StaffPortal = () => {
                 </p>
               </div>
 
-              <Button className="gradient-cta gap-2 border-0 text-primary-foreground shadow-lg">
-                <PrimaryIcon className="h-4 w-4" /> {config.primaryAction.label}
+              <Button asChild className="gradient-cta gap-2 border-0 text-primary-foreground shadow-lg">
+                <Link to={primaryActionPath}>
+                  <PrimaryIcon className="h-4 w-4" /> {config.primaryAction.label}
+                </Link>
               </Button>
             </motion.div>
 
@@ -1072,6 +1109,10 @@ const StaffPortal = () => {
                 {config.quickActions.map((action) => (
                   <motion.button
                     key={action.label}
+                    type="button"
+                    onClick={() =>
+                      navigate(routeForPortalLabel(staff.role, action.label, facilitySlug))
+                    }
                     whileHover={{ y: -2 }}
                     whileTap={{ scale: 0.97 }}
                     className="group flex flex-col items-center gap-2.5 rounded-xl border border-border/50 bg-card p-4 transition-all hover:border-primary/20 hover:shadow-md"
@@ -1264,23 +1305,23 @@ const SidebarLink = ({
   label,
   active,
   badge,
+  to,
   onClick,
 }: {
   icon: ElementType;
   label: string;
   active?: boolean;
   badge?: string;
+  to?: string;
   onClick?: () => void;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+}) => {
+  const className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
       active
         ? "bg-primary/10 text-primary"
         : "text-muted-foreground hover:bg-muted hover:text-foreground"
-    }`}
-  >
+    }`;
+  const content = (
+    <>
     <Icon className="h-4 w-4 shrink-0" />
     <span className="flex-1 text-left">{label}</span>
     {badge && (
@@ -1288,8 +1329,23 @@ const SidebarLink = ({
         {badge}
       </span>
     )}
-  </button>
-);
+    </>
+  );
+
+  if (to) {
+    return (
+      <Link to={to} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  return (
+    <button type="button" onClick={onClick} className={className}>
+      {content}
+    </button>
+  );
+};
 
 const ProfileRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between">

@@ -10,12 +10,20 @@ import logging
 import os
 import uuid
 
-from app.schemas.users import UserResponse, UserRegister, TokenResponse, UserLogin, MessageResponse
+from app.schemas.users import (
+    MessageResponse,
+    TokenResponse,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+    UserSessionResponse,
+)
 from app.services.auth_service import AuthService
 from app.services.session_service import SessionService
 from app.utils.validators import Validators
 from app.middleware.jwt import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES, verify_token
 from app.models.user import User
+from app.models.user_session import UserSession
 from app.extensions import get_db
 
 # Setup logging
@@ -319,6 +327,40 @@ async def logout_everywhere(
     revoked = SessionService.revoke_all_for_user(token_data.get("sub"))
     _clear_auth_cookies(response)
     return MessageResponse(message=f"Logged out {revoked} active session(s)")
+
+
+@router.get("/sessions", response_model=list[UserSessionResponse])
+async def list_sessions(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+    db: Session = Depends(get_db),
+):
+    access_token_value = _get_token_from_request(request, credentials, "hispro_access_token")
+    if not access_token_value:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    token_data = verify_token(access_token_value, token_type="access")
+    user_id = token_data.get("sub")
+    current_session_id = token_data.get("sid")
+    sessions = (
+        db.query(UserSession)
+        .filter_by(user_id=str(user_id), is_active=True)
+        .order_by(UserSession.last_seen_at.desc())
+        .all()
+    )
+
+    return [
+        UserSessionResponse(
+            id=str(session.id),
+            user_agent=session.user_agent,
+            ip_address=session.ip_address,
+            last_seen_at=session.last_seen_at.isoformat() if session.last_seen_at else "",
+            expires_at=session.expires_at.isoformat() if session.expires_at else "",
+            is_current=str(session.id) == str(current_session_id),
+        )
+        for session in sessions
+        if session.revoked_at is None
+    ]
 
 
 @router.post("/verify", response_model=UserResponse)

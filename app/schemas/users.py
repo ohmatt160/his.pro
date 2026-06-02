@@ -49,6 +49,15 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class UserSessionResponse(BaseModel):
+    id: str
+    user_agent: Optional[str]
+    ip_address: Optional[str]
+    last_seen_at: str
+    expires_at: str
+    is_current: bool
+
+
 class FacilityStaffCreate(BaseModel):
     fullName: str = Field(..., min_length=2, max_length=200)
     role: str = Field(..., pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
