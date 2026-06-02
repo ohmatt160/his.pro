@@ -167,7 +167,7 @@ export const authenticateStaff = async ({
       password,
     }
   );
-  const user = await getProfile();
+  const user = await getProfile(auth.access_token);
 
   return {
     ...auth,
@@ -178,9 +178,12 @@ export const authenticateStaff = async ({
   } as AuthResponse;
 };
 
-export const getProfile = async () =>
+export const getProfile = async (authToken?: string) =>
   apiClient
-    .get<BackendUser>("/users/me")
+    .request<BackendUser>("/users/me", {
+      method: "GET",
+      authToken,
+    })
     .then(mapBackendUser);
 
 export const registerAdminUser = async ({

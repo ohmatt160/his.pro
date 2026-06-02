@@ -36,7 +36,7 @@ const features = [
 const Login = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const { token, user, login } = useAuth();
+  const { user, login } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
@@ -58,14 +58,14 @@ const Login = () => {
   }, [facilitySlug]);
 
   useEffect(() => {
-    if (token && user && facilitySlug && user.facilitySlug === facilitySlug) {
+    if (user && facilitySlug && user.facilitySlug === facilitySlug) {
       if (user.role === "admin") {
         navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
       } else {
         navigate(getStaffPortalPath(facilitySlug), { replace: true });
       }
     }
-  }, [facilitySlug, navigate, token, user]);
+  }, [facilitySlug, navigate, user]);
 
   const facilityLink = facilitySlug ? getFacilityLoginLink(facilitySlug) : "";
 
