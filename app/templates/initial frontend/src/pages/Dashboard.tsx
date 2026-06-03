@@ -40,31 +40,13 @@ import {
   getFacilityWorkspace,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
+import {
+  getModuleById,
+  getModulePath,
+  isModuleEnabled,
+  normalizeModules,
+} from "@/lib/modules";
 import { apiClient } from "@/api/client";
-
-const moduleIcons: Record<string, React.ElementType> = {
-  reception: Users,
-  records: FileHeart,
-  consultations: Stethoscope,
-  nursing: BedDouble,
-  lab: FlaskConical,
-  pharmacy: Pill,
-  billing: Receipt,
-  radiology: ScanLine,
-  inventory: Package,
-};
-
-const moduleLabels: Record<string, string> = {
-  reception: "Reception & Registration",
-  records: "Shared Patient Record",
-  consultations: "Doctors & Consultations",
-  nursing: "Nursing & Wards",
-  lab: "Laboratory",
-  pharmacy: "Pharmacy",
-  billing: "Billing & Claims",
-  radiology: "Radiology",
-  inventory: "Inventory & Stores",
-};
 
 type DashboardStats = {
   patient_count: number;
@@ -128,6 +110,38 @@ const Dashboard = () => {
       .catch(() => setDashboardStats(null));
   }, [facilitySlug, user]);
 
+  useEffect(() => {
+    if (!facilitySlug || !user || user.role !== "ADMIN") {
+      return;
+    }
+
+    apiClient
+      .get<{
+        name: string;
+        slug: string;
+        type: string;
+        country?: string | null;
+        phone?: string | null;
+        email?: string | null;
+        modules?: string[];
+        created_at?: string;
+      }>(`/facilities/${facilitySlug}`)
+      .then((facility) => {
+        setWorkspace((current) => ({
+          facilityName: facility.name,
+          facilityType: facility.type,
+          country: facility.country || current?.country || "",
+          fullName: current?.fullName || user.fullName || "Admin",
+          email: facility.email || current?.email || user.email || "",
+          phone: facility.phone || current?.phone || "",
+          selectedModules: normalizeModules(facility.modules),
+          facilitySlug: facility.slug,
+          createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
+        }));
+      })
+      .catch(() => undefined);
+  }, [facilitySlug, user]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -144,40 +158,52 @@ const Dashboard = () => {
   const staffAccessPath = resolvedFacilitySlug
     ? getStaffAccessPath(resolvedFacilitySlug)
     : "";
-  const patientsPath = resolvedFacilitySlug
+  const rawSelectedModules =
+    (data.selectedModules as string[] | undefined) || [
+      "reception",
+      "records",
+      "consultations",
+      "nursing",
+      "pharmacy",
+      "billing",
+    ];
+  const selectedModules = normalizeModules(rawSelectedModules);
+  const moduleEnabled = (moduleId: Parameters<typeof isModuleEnabled>[1]) =>
+    isModuleEnabled(selectedModules, moduleId);
+  const patientsPath = resolvedFacilitySlug && moduleEnabled("reception")
     ? `/dashboard/${resolvedFacilitySlug}/patients`
     : "";
-  const appointmentsPath = resolvedFacilitySlug
+  const appointmentsPath = resolvedFacilitySlug && moduleEnabled("reception")
     ? `/dashboard/${resolvedFacilitySlug}/appointments`
     : "";
-  const billingPath = resolvedFacilitySlug
+  const billingPath = resolvedFacilitySlug && moduleEnabled("billing")
     ? `/dashboard/${resolvedFacilitySlug}/billing`
     : "";
-  const laboratoryPath = resolvedFacilitySlug
+  const laboratoryPath = resolvedFacilitySlug && moduleEnabled("lab")
     ? `/dashboard/${resolvedFacilitySlug}/laboratory`
     : "";
-  const pharmacyPath = resolvedFacilitySlug
+  const pharmacyPath = resolvedFacilitySlug && moduleEnabled("pharmacy")
     ? `/dashboard/${resolvedFacilitySlug}/pharmacy`
     : "";
-  const radiologyPath = resolvedFacilitySlug
+  const radiologyPath = resolvedFacilitySlug && moduleEnabled("radiology")
     ? `/dashboard/${resolvedFacilitySlug}/radiology`
     : "";
-  const inventoryPath = resolvedFacilitySlug
+  const inventoryPath = resolvedFacilitySlug && moduleEnabled("inventory")
     ? `/dashboard/${resolvedFacilitySlug}/inventory`
     : "";
-  const queuePath = resolvedFacilitySlug
+  const queuePath = resolvedFacilitySlug && moduleEnabled("reception")
     ? `/dashboard/${resolvedFacilitySlug}/queue`
     : "";
-  const consultationsPath = resolvedFacilitySlug
+  const consultationsPath = resolvedFacilitySlug && moduleEnabled("consultations")
     ? `/dashboard/${resolvedFacilitySlug}/consultations`
     : "";
-  const wardsPath = resolvedFacilitySlug
+  const wardsPath = resolvedFacilitySlug && moduleEnabled("nursing")
     ? `/dashboard/${resolvedFacilitySlug}/wards`
     : "";
-  const reportsPath = resolvedFacilitySlug
+  const reportsPath = resolvedFacilitySlug && moduleEnabled("reports")
     ? `/dashboard/${resolvedFacilitySlug}/reports`
     : "";
-  const recordsPath = resolvedFacilitySlug
+  const recordsPath = resolvedFacilitySlug && moduleEnabled("records")
     ? `/dashboard/${resolvedFacilitySlug}/records`
     : "";
   const alertsPath = resolvedFacilitySlug
@@ -189,7 +215,7 @@ const Dashboard = () => {
   const settingsPath = resolvedFacilitySlug
     ? `/dashboard/${resolvedFacilitySlug}/settings`
     : "";
-  const suppliersPath = resolvedFacilitySlug
+  const suppliersPath = resolvedFacilitySlug && moduleEnabled("inventory")
     ? `/dashboard/${resolvedFacilitySlug}/suppliers`
     : "";
   const facilityLoginPath = resolvedFacilitySlug
@@ -198,17 +224,9 @@ const Dashboard = () => {
   const dashboardPath = resolvedFacilitySlug
     ? `/dashboard/${resolvedFacilitySlug}`
     : "";
-  const modulePaths: Record<string, string> = {
-    reception: queuePath,
-    records: recordsPath,
-    consultations: consultationsPath,
-    nursing: wardsPath,
-    lab: laboratoryPath,
-    pharmacy: pharmacyPath,
-    billing: billingPath,
-    radiology: radiologyPath,
-    inventory: inventoryPath,
-  };
+  const modulePaths = Object.fromEntries(
+    selectedModules.map((id) => [id, getModulePath(resolvedFacilitySlug, id)])
+  );
 
   const facilityName = (data.facilityName as string) || "My Facility";
   const facilityType = (data.facilityType as string) || "clinic";
@@ -216,16 +234,6 @@ const Dashboard = () => {
   const fullName = (data.fullName as string) || "Admin";
   const email = (data.email as string) || "—";
   const phone = (data.phone as string) || "—";
-  const selectedModules =
-    (data.selectedModules as string[]) || [
-      "reception",
-      "records",
-      "consultations",
-      "nursing",
-      "pharmacy",
-      "billing",
-    ];
-
   const updatedStats = [
     {
       label: "Total Patients",
@@ -280,7 +288,7 @@ const Dashboard = () => {
           {staffAccessPath && (
             <SidebarLink icon={ShieldCheck} label="Staff & Access" to={staffAccessPath} active={location.pathname === staffAccessPath} />
           )}
-          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} active={location.pathname === alertsPath} />}
+          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} active={location.pathname === alertsPath} badge={dashboardStats?.active_alerts} />}
           {auditLogsPath && <SidebarLink icon={ClipboardList} label="Audit Logs" to={auditLogsPath} active={location.pathname === auditLogsPath} />}
           {reportsPath && <SidebarLink icon={Activity} label="Reports" to={reportsPath} active={location.pathname === reportsPath} />}
           {patientsPath && <SidebarLink icon={Users} label="Patients" to={patientsPath} active={location.pathname === patientsPath} />}
@@ -295,14 +303,6 @@ const Dashboard = () => {
           {radiologyPath && <SidebarLink icon={ScanLine} label="Radiology" to={radiologyPath} active={location.pathname === radiologyPath} />}
           {inventoryPath && <SidebarLink icon={Package} label="Inventory" to={inventoryPath} active={location.pathname === inventoryPath} />}
           {suppliersPath && <SidebarLink icon={Truck} label="Suppliers" to={suppliersPath} active={location.pathname === suppliersPath} />}
-          <div className="pt-3 pb-1 px-3">
-            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Modules</p>
-          </div>
-          {selectedModules.map((id) => {
-            const Icon = moduleIcons[id] || Layers;
-            const to = modulePaths[id];
-            return <SidebarLink key={id} icon={Icon} label={moduleLabels[id] || id} to={to} active={Boolean(to && location.pathname === to)} />;
-          })}
         </nav>
 
         <div className="p-3 border-t border-border space-y-1">
@@ -337,7 +337,11 @@ const Dashboard = () => {
             )}
             <Button variant="ghost" size="icon" className="relative">
               <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent" />
+              {Boolean(dashboardStats?.active_alerts) && (
+                <span className="absolute top-1 right-1 rounded-full bg-accent px-1.5 text-[10px] font-bold text-accent-foreground">
+                  {dashboardStats?.active_alerts}
+                </span>
+              )}
             </Button>
             <div className="w-9 h-9 rounded-full gradient-hero flex items-center justify-center text-primary-foreground font-bold text-sm">
               {fullName.charAt(0).toUpperCase()}
@@ -417,7 +421,8 @@ const Dashboard = () => {
                   <CardContent>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                       {selectedModules.map((id, i) => {
-                        const Icon = moduleIcons[id] || Layers;
+                        const module = getModuleById(id);
+                        const Icon = module?.icon || Layers;
                         return (
                           <motion.div
                             key={id}
@@ -436,7 +441,7 @@ const Dashboard = () => {
                               <Icon className="h-5 w-5 text-primary" />
                             </div>
                             <div>
-                              <p className="font-semibold text-sm text-foreground">{moduleLabels[id] || id}</p>
+                              <p className="font-semibold text-sm text-foreground">{module?.label || id}</p>
                               <p className="text-[11px] text-accent font-medium">Active</p>
                             </div>
                           </motion.div>
@@ -525,7 +530,7 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  {resolvedFacilitySlug && (
+                  {queuePath && (
                     <Button asChild variant="outline" className="gap-2">
                       <Link to={queuePath}>
                         <ClipboardList className="h-4 w-4" /> Reception Queue
@@ -553,10 +558,15 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  {resolvedFacilitySlug && (
+                  {alertsPath && (
                     <Button asChild variant="outline" className="gap-2">
                       <Link to={alertsPath}>
                         <Bell className="h-4 w-4" /> Alerts
+                        {Boolean(dashboardStats?.active_alerts) && (
+                          <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+                            {dashboardStats?.active_alerts}
+                          </span>
+                        )}
                       </Link>
                     </Button>
                   )}
@@ -567,7 +577,7 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  {resolvedFacilitySlug && (
+                  {facilityLoginPath && (
                     <Button asChild variant="outline" className="gap-2">
                       <Link to={facilityLoginPath}>
                         <Mail className="h-4 w-4" /> Facility Login
@@ -595,12 +605,14 @@ const SidebarLink = ({
   active,
   to,
   onClick,
+  badge,
 }: {
   icon: React.ElementType;
   label: string;
   active?: boolean;
   to?: string;
   onClick?: () => void;
+  badge?: number;
 }) => {
   const className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
     active
@@ -612,7 +624,12 @@ const SidebarLink = ({
     return (
       <Link to={to} className={className}>
         <Icon className="h-4 w-4 shrink-0" />
-        {label}
+        <span className="flex-1">{label}</span>
+        {Boolean(badge) && (
+          <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
+            {badge}
+          </span>
+        )}
       </Link>
     );
   }

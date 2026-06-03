@@ -96,6 +96,15 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(cold_workspace_lookup.status_code, 200, cold_workspace_lookup.text)
             self.assertEqual(cold_workspace_lookup.json()["slug"], "sunrise-medical-centre")
+            self.assertEqual(cold_workspace_lookup.json()["modules"], ["reception", "records"])
+
+            public_workspace_lookup = await client.get(
+                "/api/v1/facilities/workspace/sunrise-medical-centre",
+            )
+
+            self.assertEqual(public_workspace_lookup.status_code, 200, public_workspace_lookup.text)
+            self.assertEqual(public_workspace_lookup.json()["slug"], "sunrise-medical-centre")
+            self.assertEqual(public_workspace_lookup.json()["modules"], ["reception", "records"])
 
             email_login = await client.post(
                 "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
@@ -155,6 +164,55 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(profile_update.status_code, 200, profile_update.text)
             self.assertEqual(profile_update.json()["phone"], "+234 800 999 1111")
 
+            disabled_lab_access = await client.get(
+                "/api/v1/laboratory/tests",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(disabled_lab_access.status_code, 403, disabled_lab_access.text)
+
+            invalid_modules_update = await client.put(
+                "/api/v1/facilities/sunrise-medical-centre/modules",
+                json=["reception", "unknown-module"],
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(invalid_modules_update.status_code, 400, invalid_modules_update.text)
+
+            modules_update = await client.put(
+                "/api/v1/facilities/sunrise-medical-centre/modules",
+                json=[
+                    "patients",
+                    "records",
+                    "consultations",
+                    "nursing",
+                    "lab",
+                    "pharmacy",
+                    "billing",
+                    "radiology",
+                    "inventory",
+                    "reports",
+                ],
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(modules_update.status_code, 200, modules_update.text)
+            self.assertEqual(
+                modules_update.json()["modules"],
+                [
+                    "reception",
+                    "records",
+                    "consultations",
+                    "nursing",
+                    "lab",
+                    "pharmacy",
+                    "billing",
+                    "radiology",
+                    "inventory",
+                    "reports",
+                ],
+            )
+
             staff_payload = {
                 "fullName": "Nurse Ada Okafor",
                 "role": "nurse",
@@ -211,6 +269,20 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(staff_profile.status_code, 200, staff_profile.text)
             self.assertEqual(staff_profile.json()["role"], "NURSE")
             self.assertEqual(staff_profile.json()["facility_slug"], "sunrise-medical-centre")
+
+            nurse_lab_access_denied = await client.get(
+                "/api/v1/laboratory/tests",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(nurse_lab_access_denied.status_code, 403, nurse_lab_access_denied.text)
+
+            nurse_cross_role_tasks_denied = await client.get(
+                "/api/v1/tasks?role=LAB_TECH",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(nurse_cross_role_tasks_denied.status_code, 403, nurse_cross_role_tasks_denied.text)
 
             facility_alert = await client.post(
                 "/api/v1/alerts",
@@ -276,6 +348,31 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(staff_alert_read.status_code, 200, staff_alert_read.text)
             self.assertTrue(staff_alert_read.json()["is_read"])
 
+            nurse_role_alert = await client.post(
+                "/api/v1/alerts/role",
+                json={
+                    "alert_type": "info",
+                    "title": "Nursing huddle",
+                    "message": "Nursing team huddle starts at 4 PM.",
+                    "recipient_role": "NURSE",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(nurse_role_alert.status_code, 201, nurse_role_alert.text)
+            self.assertEqual(len(nurse_role_alert.json()), 1)
+
+            staff_role_alert_list = await client.get(
+                "/api/v1/alerts?per_page=100",
+                headers={"Authorization": f"Bearer {staff_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_role_alert_list.status_code, 200, staff_role_alert_list.text)
+            self.assertIn(
+                "Nursing huddle",
+                {alert["title"] for alert in staff_role_alert_list.json()},
+            )
+
             audit_log_list = await client.get(
                 "/api/v1/audit-logs?action=CREATE_ALERT&limit=20",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
@@ -304,6 +401,10 @@ class SetupEndpointTest(unittest.TestCase):
             )
             self.assertIn(
                 "UPDATE_PROFILE",
+                {entry["action"] for entry in settings_audit_log_list.json()},
+            )
+            self.assertIn(
+                "UPDATE_FACILITY_MODULES",
                 {entry["action"] for entry in settings_audit_log_list.json()},
             )
 
@@ -407,6 +508,17 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(appointment_create.json()["facility_slug"], "sunrise-medical-centre")
             self.assertEqual(appointment_create.json()["duration_minutes"], 30)
 
+            appointment_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=appointment_reminder",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(appointment_notifications.status_code, 200, appointment_notifications.text)
+            self.assertEqual(
+                {notice["channel"] for notice in appointment_notifications.json()},
+                {"PORTAL", "SMS"},
+            )
+
             appointment_list = await client.get(
                 "/api/v1/appointments",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
@@ -450,6 +562,42 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(consultation_update.status_code, 200, consultation_update.text)
             self.assertEqual(consultation_update.json()["status"], "in_progress")
             self.assertEqual(consultation_update.json()["radiology_orders"][0]["type"], "radiology")
+
+            consultation_lab_orders = await client.get(
+                f"/api/v1/laboratory/orders?patient_id={patient_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_lab_orders.status_code, 200, consultation_lab_orders.text)
+            self.assertEqual(len(consultation_lab_orders.json()), 1)
+
+            consultation_radiology_orders = await client.get(
+                f"/api/v1/radiology?patient_id={patient_create.json()['id']}&per_page=100",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_radiology_orders.status_code, 200, consultation_radiology_orders.text)
+            self.assertEqual(len(consultation_radiology_orders.json()), 1)
+
+            consultation_prescriptions = await client.get(
+                f"/api/v1/pharmacy/prescriptions?patient_id={patient_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_prescriptions.status_code, 200, consultation_prescriptions.text)
+            self.assertEqual(len(consultation_prescriptions.json()), 1)
+
+            consultation_workflow = await client.get(
+                f"/api/v1/order-workflow?patient_id={patient_create.json()['id']}&event_type=consultation_order_created",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(consultation_workflow.status_code, 200, consultation_workflow.text)
+            self.assertTrue(
+                {"lab", "radiology", "prescription"}.issubset(
+                    {event["order_type"] for event in consultation_workflow.json()}
+                )
+            )
 
             consultation_complete = await client.post(
                 f"/api/v1/consultations/{consultation_start.json()['id']}/complete",
@@ -552,6 +700,14 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(ward_discharge.status_code, 200, ward_discharge.text)
             self.assertEqual(ward_discharge.json()["status"], "DISCHARGED")
 
+            discharge_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=discharge_follow_up",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(discharge_notifications.status_code, 200, discharge_notifications.text)
+            self.assertGreaterEqual(len(discharge_notifications.json()), 2)
+
             ward_beds_after_discharge = await client.get(
                 "/api/v1/wards/beds?status=AVAILABLE",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
@@ -578,6 +734,14 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(invoice_create.json()["status"], "PENDING")
             self.assertEqual(invoice_create.json()["facility_slug"], "sunrise-medical-centre")
 
+            bill_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=bill_created",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(bill_notifications.status_code, 200, bill_notifications.text)
+            self.assertGreaterEqual(len(bill_notifications.json()), 2)
+
             payment_create = await client.post(
                 f"/api/v1/billing/invoices/{invoice_create.json()['id']}/payments",
                 json={
@@ -592,6 +756,50 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(payment_create.status_code, 201, payment_create.text)
             self.assertEqual(payment_create.json()["amount"], 10000)
             self.assertEqual(payment_create.json()["reference"], "RCPT-001")
+            self.assertFalse(payment_create.json()["has_receipt"])
+
+            payment_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=payment_received",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(payment_notifications.status_code, 200, payment_notifications.text)
+            self.assertGreaterEqual(len(payment_notifications.json()), 2)
+
+            invalid_receipt_upload = await client.post(
+                f"/api/v1/billing/payments/{payment_create.json()['id']}/receipt",
+                files={"file": ("receipt.txt", b"not an image", "text/plain")},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(invalid_receipt_upload.status_code, 400, invalid_receipt_upload.text)
+
+            oversized_receipt_upload = await client.post(
+                f"/api/v1/billing/payments/{payment_create.json()['id']}/receipt",
+                files={"file": ("receipt.png", b"\x89PNG\r\n\x1a\n" + b"a" * (5 * 1024 * 1024 + 1), "image/png")},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(oversized_receipt_upload.status_code, 413, oversized_receipt_upload.text)
+
+            receipt_upload = await client.post(
+                f"/api/v1/billing/payments/{payment_create.json()['id']}/receipt",
+                files={"file": ("receipt.png", b"\x89PNG\r\n\x1a\nsmall-receipt", "image/png")},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(receipt_upload.status_code, 200, receipt_upload.text)
+            self.assertTrue(receipt_upload.json()["has_receipt"])
+            self.assertEqual(receipt_upload.json()["receipt_original_name"], "receipt.png")
+
+            receipt_download = await client.get(
+                f"/api/v1/billing/payments/{payment_create.json()['id']}/receipt",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(receipt_download.status_code, 200, receipt_download.text)
+            self.assertEqual(receipt_download.headers["content-type"], "image/png")
+            self.assertIn(b"small-receipt", receipt_download.content)
 
             invoice_list = await client.get(
                 "/api/v1/billing/invoices",
@@ -618,6 +826,49 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(report_summary.json()["billing"]["invoice_count"], 1)
             self.assertEqual(report_summary.json()["billing"]["payments_total"], 10000)
             self.assertEqual(report_summary.json()["billing"]["outstanding_total"], 15000)
+
+            revenue_report = await client.get(
+                "/api/v1/reports/revenue?date_from=2026-01-01&date_to=2026-12-31",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(revenue_report.status_code, 200, revenue_report.text)
+            self.assertEqual(revenue_report.json()["invoice_count"], 1)
+            self.assertEqual(revenue_report.json()["collected_total"], 10000)
+            self.assertEqual(revenue_report.json()["outstanding_total"], 15000)
+            self.assertEqual(revenue_report.json()["receipt_count"], 1)
+            self.assertIn(
+                "CASH",
+                {row["label"] for row in revenue_report.json()["payment_methods"]},
+            )
+            self.assertTrue(revenue_report.json()["recent_payments"][0]["metadata"]["has_receipt"])
+
+            department_report = await client.get(
+                "/api/v1/reports/departments?date_from=2026-01-01&date_to=2026-12-31",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(department_report.status_code, 200, department_report.text)
+            self.assertTrue(
+                {
+                    "Consultations",
+                    "Laboratory",
+                    "Radiology",
+                    "Pharmacy",
+                    "Wards",
+                }.issubset(
+                    {row["department"] for row in department_report.json()["departments"]}
+                )
+            )
+
+            operations_report = await client.get(
+                "/api/v1/reports/operations?date_from=2026-01-01&date_to=2026-12-31",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(operations_report.status_code, 200, operations_report.text)
+            self.assertEqual(operations_report.json()["queue"]["by_status"]["waiting"], 1)
+            self.assertIn("active_tasks_by_role", operations_report.json())
 
             lab_test_create = await client.post(
                 "/api/v1/laboratory/tests",
@@ -658,13 +909,32 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(lab_order_create.json()["status"], "PENDING")
             self.assertEqual(lab_order_create.json()["facility_slug"], "sunrise-medical-centre")
 
+            lab_created_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={lab_order_create.json()['id']}&event_type=consultation_order_created",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_created_workflow.status_code, 200, lab_created_workflow.text)
+            self.assertEqual(lab_created_workflow.json()[0]["order_type"], "lab")
+
+            lab_tasks = await client.get(
+                "/api/v1/tasks?role=LAB_TECH",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_tasks.status_code, 200, lab_tasks.text)
+            self.assertIn(
+                "Collect sample",
+                {task["title"] for task in lab_tasks.json()["tasks"]},
+            )
+
             lab_order_list = await client.get(
                 "/api/v1/laboratory/orders",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
             )
 
             self.assertEqual(lab_order_list.status_code, 200, lab_order_list.text)
-            self.assertEqual(len(lab_order_list.json()), 1)
+            self.assertGreaterEqual(len(lab_order_list.json()), 2)
 
             lab_order_update = await client.put(
                 f"/api/v1/laboratory/orders/{lab_order_create.json()['id']}",
@@ -674,6 +944,14 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(lab_order_update.status_code, 200, lab_order_update.text)
             self.assertEqual(lab_order_update.json()["status"], "COLLECTED")
+
+            sample_collected_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={lab_order_create.json()['id']}&event_type=lab_sample_collected",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(sample_collected_workflow.status_code, 200, sample_collected_workflow.text)
+            self.assertEqual(sample_collected_workflow.json()[0]["status"], "COLLECTED")
 
             lab_result_create = await client.post(
                 f"/api/v1/laboratory/results/{lab_order_create.json()['id']}",
@@ -695,6 +973,44 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(lab_result_lookup.status_code, 200, lab_result_lookup.text)
             self.assertEqual(lab_result_lookup.json()["notes"], "Within reference range")
+
+            lab_result_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=lab_result_ready",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_result_notifications.status_code, 200, lab_result_notifications.text)
+            self.assertGreaterEqual(len(lab_result_notifications.json()), 2)
+
+            lab_result_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={lab_order_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(lab_result_workflow.status_code, 200, lab_result_workflow.text)
+            self.assertTrue(
+                {"lab_result_released", "doctor_notified"}.issubset(
+                    {event["event_type"] for event in lab_result_workflow.json()}
+                )
+            )
+
+            doctor_notifications = await client.get(
+                "/api/v1/alerts?is_read=false&per_page=100",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(doctor_notifications.status_code, 200, doctor_notifications.text)
+            self.assertIn(
+                "Lab result ready",
+                {alert["title"] for alert in doctor_notifications.json()},
+            )
+
+            mark_all_notifications_read = await client.put(
+                "/api/v1/alerts/actions/mark-all-read",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(mark_all_notifications_read.status_code, 200, mark_all_notifications_read.text)
 
             radiology_create = await client.post(
                 "/api/v1/radiology",
@@ -718,8 +1034,8 @@ class SetupEndpointTest(unittest.TestCase):
             )
 
             self.assertEqual(radiology_list.status_code, 200, radiology_list.text)
-            self.assertEqual(len(radiology_list.json()), 1)
-            self.assertEqual(radiology_list.json()[0]["patient_name"], "Musa Bello")
+            self.assertGreaterEqual(len(radiology_list.json()), 2)
+            self.assertTrue(all(order["patient_name"] == "Musa Bello" for order in radiology_list.json()))
 
             radiology_update = await client.put(
                 f"/api/v1/radiology/{radiology_create.json()['id']}",
@@ -741,6 +1057,26 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(
                 radiology_report.json()["report"],
                 "No acute cardiopulmonary abnormality.",
+            )
+
+            radiology_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=radiology_report_ready",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_notifications.status_code, 200, radiology_notifications.text)
+            self.assertGreaterEqual(len(radiology_notifications.json()), 2)
+
+            radiology_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={radiology_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(radiology_workflow.status_code, 200, radiology_workflow.text)
+            self.assertTrue(
+                {"radiology_report_completed", "doctor_notified"}.issubset(
+                    {event["event_type"] for event in radiology_workflow.json()}
+                )
             )
 
             medication_create = await client.post(
@@ -767,7 +1103,8 @@ class SetupEndpointTest(unittest.TestCase):
             )
 
             self.assertEqual(medication_list.status_code, 200, medication_list.text)
-            self.assertEqual(len(medication_list.json()), 1)
+            self.assertGreaterEqual(len(medication_list.json()), 2)
+            self.assertIn("PCM-500", {medication["code"] for medication in medication_list.json()})
 
             inventory_create = await client.post(
                 f"/api/v1/pharmacy/inventory/{medication_create.json()['id']}",
@@ -804,6 +1141,25 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(prescription_create.json()["status"], "PENDING")
             self.assertEqual(prescription_create.json()["facility_slug"], "sunrise-medical-centre")
 
+            prescription_created_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={prescription_create.json()['id']}&event_type=consultation_order_created",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(prescription_created_workflow.status_code, 200, prescription_created_workflow.text)
+            self.assertEqual(prescription_created_workflow.json()[0]["order_type"], "prescription")
+
+            pharmacy_tasks = await client.get(
+                "/api/v1/tasks?role=PHARMACIST",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(pharmacy_tasks.status_code, 200, pharmacy_tasks.text)
+            self.assertIn(
+                "Dispense prescription",
+                {task["title"] for task in pharmacy_tasks.json()["tasks"]},
+            )
+
             prescription_dispense = await client.post(
                 f"/api/v1/pharmacy/prescriptions/{prescription_create.json()['id']}/dispense",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
@@ -811,6 +1167,26 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(prescription_dispense.status_code, 200, prescription_dispense.text)
             self.assertEqual(prescription_dispense.json()["status"], "DISPENSED")
+
+            prescription_notifications = await client.get(
+                f"/api/v1/patient-notifications?patient_id={patient_create.json()['id']}&notification_type=prescription_dispensed",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(prescription_notifications.status_code, 200, prescription_notifications.text)
+            self.assertGreaterEqual(len(prescription_notifications.json()), 2)
+
+            prescription_workflow = await client.get(
+                f"/api/v1/order-workflow?order_id={prescription_create.json()['id']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(prescription_workflow.status_code, 200, prescription_workflow.text)
+            self.assertTrue(
+                {"prescription_dispensed", "doctor_notified"}.issubset(
+                    {event["event_type"] for event in prescription_workflow.json()}
+                )
+            )
 
             inventory_after_dispense = await client.get(
                 f"/api/v1/pharmacy/inventory/{medication_create.json()['id']}",
@@ -881,6 +1257,17 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(low_stock.status_code, 200, low_stock.text)
             self.assertEqual(low_stock.json()[0]["medication_name"], "Sterile Gloves")
 
+            inventory_report = await client.get(
+                "/api/v1/reports/inventory",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(inventory_report.status_code, 200, inventory_report.text)
+            self.assertEqual(inventory_report.json()["active_items"], 1)
+            self.assertEqual(inventory_report.json()["low_stock_items"], 1)
+            self.assertEqual(inventory_report.json()["stock_value"], 28000)
+            self.assertEqual(inventory_report.json()["reorder_items"][0]["name"], "Sterile Gloves")
+
             inventory_stock_update = await client.put(
                 f"/api/v1/inventory/{inventory_item_create.json()['id']}/stock",
                 json={"adjustment_type": "addition", "current_stock": 10},
@@ -905,6 +1292,48 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(supplier_list_after_deactivate.status_code, 200, supplier_list_after_deactivate.text)
             self.assertEqual(supplier_list_after_deactivate.json(), [])
+
+            patient_timeline = await client.get(
+                f"/api/v1/patients/{patient_create.json()['id']}/timeline",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(patient_timeline.status_code, 200, patient_timeline.text)
+            self.assertEqual(patient_timeline.json()["patient"]["full_name"], "Musa Bello")
+            self.assertGreaterEqual(patient_timeline.json()["total"], 10)
+            timeline_event_types = {
+                event["event_type"] for event in patient_timeline.json()["events"]
+            }
+            self.assertTrue(
+                {
+                    "patient_registered",
+                    "appointment",
+                    "medical_record",
+                    "lab_order",
+                    "lab_result",
+                    "radiology_order",
+                    "radiology_report",
+                    "prescription",
+                    "prescription_dispensed",
+                    "invoice",
+                    "payment",
+                    "patient_notification",
+                    "workflow_consultation_order_created",
+                    "workflow_lab_sample_collected",
+                    "workflow_lab_result_released",
+                    "workflow_radiology_report_completed",
+                    "workflow_prescription_dispensed",
+                    "workflow_doctor_notified",
+                    "ward_admission",
+                    "ward_discharge",
+                }.issubset(timeline_event_types),
+                timeline_event_types,
+            )
+            payment_events = [
+                event for event in patient_timeline.json()["events"]
+                if event["event_type"] == "payment"
+            ]
+            self.assertTrue(any(event["metadata"]["has_receipt"] for event in payment_events))
 
             password_change = await client.post(
                 "/api/v1/users/me/change-password",

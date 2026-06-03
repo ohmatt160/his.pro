@@ -28,20 +28,24 @@ from app.routes.wards import router as wards_router
 from app.routes.emr import router as emr_router
 from app.routes.users import router as users_router
 from app.routes.password_reset import router as password_reset_router
+from app.routes.patient_notifications import router as patient_notifications_router
 from app.routes.facilities import router as facilities_router
 from app.routes.radiology import router as radiology_router
 from app.routes.inventory import router as inventory_router
 from app.routes.suppliers import router as suppliers_router
 from app.routes.reports import router as reports_router
+from app.routes.order_workflow import router as order_workflow_router
 from app.routes.queue import router as queue_router
 from app.routes.alerts import router as alerts_router
 from app.routes.dashboard import router as dashboard_router
 from app.routes.audit_logs import router as audit_logs_router
 from app.routes.files import router as files_router
+from app.routes.tasks import router as tasks_router
 
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.jwt import JWTMiddleware
+from app.middleware.module_access import ModuleAccessMiddleware
 from app.middleware.security import InputValidationMiddleware, SecurityHeadersMiddleware
 from app.utils.error_handlers import register_error_handlers
 from app.utils.schema import ensure_sqlite_schema_current
@@ -166,6 +170,7 @@ def create_app() -> FastAPI:
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ModuleAccessMiddleware)
     app.add_middleware(JWTMiddleware)
     register_error_handlers(app)
 
@@ -202,16 +207,19 @@ def create_app() -> FastAPI:
     app.include_router(emr_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(password_reset_router, prefix="/api/v1")
+    app.include_router(patient_notifications_router, prefix="/api/v1")
     app.include_router(facilities_router, prefix="/api/v1")
     app.include_router(radiology_router, prefix="/api/v1")
     app.include_router(inventory_router, prefix="/api/v1")
     app.include_router(suppliers_router, prefix="/api/v1")
     app.include_router(reports_router, prefix="/api/v1")
+    app.include_router(order_workflow_router, prefix="/api/v1")
     app.include_router(queue_router, prefix="/api/v1")
     app.include_router(alerts_router, prefix="/api/v1")
     app.include_router(dashboard_router, prefix="/api/v1")
     app.include_router(audit_logs_router, prefix="/api/v1")
     app.include_router(files_router, prefix="/api/v1")
+    app.include_router(tasks_router, prefix="/api/v1")
 
     # Static mounts (assets first, then root SPA fallback)
     if os.path.isdir(ASSETS_DIR):

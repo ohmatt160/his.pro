@@ -12,6 +12,14 @@ class AlertCreate(BaseModel):
     expires_at: Optional[str] = Field(None)  # ISO datetime string
 
 
+class RoleAlertCreate(BaseModel):
+    alert_type: str = Field(..., pattern="^(info|warning|critical)$")
+    title: str = Field(..., max_length=200)
+    message: str = Field(...)
+    recipient_role: str = Field(..., pattern="^(ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|RADIOLOGIST)$")
+    expires_at: Optional[str] = Field(None)
+
+
 class AlertUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
     message: Optional[str] = Field(None)

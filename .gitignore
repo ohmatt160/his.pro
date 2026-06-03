@@ -73,6 +73,7 @@ Thumbs.db
 # Uploads
 uploads/*
 !uploads/.gitkeep
+app/private_uploads/
 
 # Instance data (contains DB)
 instance/

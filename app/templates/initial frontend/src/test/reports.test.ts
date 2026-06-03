@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { defaultReportRange, formatMoney, statusSummary } from "../lib/reports";
+import {
+  completionRate,
+  defaultReportRange,
+  formatMoney,
+  statusSummary,
+} from "../lib/reports";
 
 describe("report helpers", () => {
   it("builds a stable default 30-day report range", () => {
@@ -20,5 +25,10 @@ describe("report helpers", () => {
 
   it("formats naira values for revenue reports", () => {
     expect(formatMoney(25000)).toContain("25,000");
+  });
+
+  it("calculates completion rates without dividing by zero", () => {
+    expect(completionRate(3, 4)).toBe(75);
+    expect(completionRate(0, 0)).toBe(0);
   });
 });

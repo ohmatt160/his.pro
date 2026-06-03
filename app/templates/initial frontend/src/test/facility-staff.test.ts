@@ -51,6 +51,7 @@ describe("facility staff authentication", () => {
     const profileRequest = fetchMock().mock.calls[1][1] as RequestInit;
     const profileHeaders = profileRequest.headers as Headers;
     expect(profileHeaders.get("Authorization")).toBe("Bearer fresh-access-token");
+    expect(auth.access_token).toBe("fresh-access-token");
     expect(window.localStorage.getItem("hispro.auth.token")).toBeNull();
   });
 });

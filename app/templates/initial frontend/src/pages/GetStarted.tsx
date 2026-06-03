@@ -17,72 +17,9 @@ import {
   User,
 } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
-
-const modules = [
-  {
-    id: "reception",
-    label: "Reception & Registration",
-    desc: "Patient registration, appointments, queues, and check-in.",
-  },
-  {
-    id: "records",
-    label: "Shared Patient Record",
-    desc: "One longitudinal patient chart shared across every department.",
-  },
-  {
-    id: "consultations",
-    label: "Doctors & Consultations",
-    desc: "Consult notes, diagnoses, treatment plans, and clinical orders.",
-  },
-  {
-    id: "nursing",
-    label: "Nursing & Wards",
-    desc: "Vitals, nursing notes, medication rounds, and inpatient handoff.",
-  },
-  {
-    id: "lab",
-    label: "Laboratory",
-    desc: "Test ordering, sample tracking, and result delivery.",
-  },
-  {
-    id: "pharmacy",
-    label: "Pharmacy",
-    desc: "Prescriptions, dispensing, and medication tracking.",
-  },
-  {
-    id: "billing",
-    label: "Billing & Claims",
-    desc: "Invoices, payments, and insurance workflow.",
-  },
-  {
-    id: "radiology",
-    label: "Radiology",
-    desc: "Imaging requests, reports, and scan workflow.",
-  },
-  {
-    id: "inventory",
-    label: "Inventory & Stores",
-    desc: "Stock control for drugs, consumables, and supplies.",
-  },
-];
-
-const defaultModulesByFacilityType: Record<string, string[]> = {
-  clinic: ["reception", "records", "consultations", "pharmacy", "billing"],
-  hospital: [
-    "reception",
-    "records",
-    "consultations",
-    "nursing",
-    "pharmacy",
-    "billing",
-  ],
-  lab: ["reception", "records", "lab", "billing", "inventory"],
-};
+import { getDefaultModules, moduleCatalog } from "@/lib/modules";
 
 const stepLabels = ["Facility Info", "Select Modules", "Admin Account"];
-
-const getDefaultModules = (facilityType: string) =>
-  defaultModulesByFacilityType[facilityType] ?? defaultModulesByFacilityType.hospital;
 
 const GetStarted = () => {
   const navigate = useNavigate();
@@ -356,7 +293,7 @@ const GetStarted = () => {
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {modules.map((module) => {
+                {moduleCatalog.map((module) => {
                   const selected = selectedModules.includes(module.id);
 
                   return (
@@ -378,7 +315,7 @@ const GetStarted = () => {
                         {module.label}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {module.desc}
+                        {module.description}
                       </p>
                     </button>
                   );
@@ -669,7 +606,7 @@ const GetStarted = () => {
                     key={id}
                     className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium capitalize text-primary"
                   >
-                    {modules.find((module) => module.id === id)?.label}
+                    {moduleCatalog.find((module) => module.id === id)?.label}
                   </span>
                 ))}
               </div>

@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import ModuleRoute from "@/components/ModuleRoute";
 
 const Alerts = lazy(() => import("./pages/Alerts.tsx"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs.tsx"));
@@ -20,6 +21,7 @@ const Login = lazy(() => import("./pages/Login.tsx"));
 const MedicalRecords = lazy(() => import("./pages/MedicalRecords.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const Patients = lazy(() => import("./pages/Patients.tsx"));
+const PatientTimeline = lazy(() => import("./pages/PatientTimeline.tsx"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy.tsx"));
 const Queue = lazy(() => import("./pages/Queue.tsx"));
 const Radiology = lazy(() => import("./pages/Radiology.tsx"));
@@ -82,7 +84,19 @@ const App = () => (
                 path="/dashboard/:facilitySlug/patients"
                 element={
                   <ProtectedRoute>
-                    <Patients />
+                    <ModuleRoute module="reception">
+                      <Patients />
+                    </ModuleRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/:facilitySlug/patients/:patientId/timeline"
+                element={
+                  <ProtectedRoute>
+                    <ModuleRoute module="reception">
+                      <PatientTimeline />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -90,7 +104,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/appointments"
                 element={
                   <ProtectedRoute>
-                    <Appointments />
+                    <ModuleRoute module="reception">
+                      <Appointments />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -98,7 +114,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/billing"
                 element={
                   <ProtectedRoute>
-                    <Billing />
+                    <ModuleRoute module="billing">
+                      <Billing />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -106,7 +124,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/laboratory"
                 element={
                   <ProtectedRoute>
-                    <Laboratory />
+                    <ModuleRoute module="lab">
+                      <Laboratory />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -114,7 +134,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/pharmacy"
                 element={
                   <ProtectedRoute>
-                    <Pharmacy />
+                    <ModuleRoute module="pharmacy">
+                      <Pharmacy />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -122,7 +144,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/radiology"
                 element={
                   <ProtectedRoute>
-                    <Radiology />
+                    <ModuleRoute module="radiology">
+                      <Radiology />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -130,7 +154,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/inventory"
                 element={
                   <ProtectedRoute>
-                    <Inventory />
+                    <ModuleRoute module="inventory">
+                      <Inventory />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -138,7 +164,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/records"
                 element={
                   <ProtectedRoute>
-                    <MedicalRecords />
+                    <ModuleRoute module="records">
+                      <MedicalRecords />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -170,7 +198,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/suppliers"
                 element={
                   <ProtectedRoute>
-                    <Suppliers />
+                    <ModuleRoute module="inventory">
+                      <Suppliers />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -178,7 +208,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/queue"
                 element={
                   <ProtectedRoute>
-                    <Queue />
+                    <ModuleRoute module="reception">
+                      <Queue />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -186,7 +218,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/consultations"
                 element={
                   <ProtectedRoute>
-                    <Consultations />
+                    <ModuleRoute module="consultations">
+                      <Consultations />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -194,7 +228,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/wards"
                 element={
                   <ProtectedRoute>
-                    <Wards />
+                    <ModuleRoute module="nursing">
+                      <Wards />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />
@@ -202,7 +238,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/reports"
                 element={
                   <ProtectedRoute>
-                    <Reports />
+                    <ModuleRoute module="reports">
+                      <Reports />
+                    </ModuleRoute>
                   </ProtectedRoute>
                 }
               />

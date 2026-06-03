@@ -9,6 +9,7 @@ export type AuthUser = {
 
 const USER_STORAGE_KEY = "hispro.auth.user";
 let inMemoryAuthToken: string | null = null;
+let refreshRequest: Promise<string | null> | null = null;
 
 const getApiBaseUrl = () => {
   const configuredUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
@@ -148,6 +149,48 @@ const parseResponse = async <T>(response: Response): Promise<T> => {
   }
 };
 
+const isAuthRefreshable = (path: string, options: ApiRequestOptions) =>
+  options.authToken === undefined &&
+  !path.includes("/auth/login") &&
+  !path.includes("/auth/register") &&
+  !path.includes("/auth/ensure") &&
+  !path.includes("/auth/refresh") &&
+  !path.includes("/auth/logout");
+
+const refreshAccessToken = async () => {
+  if (!refreshRequest) {
+    refreshRequest = fetch(buildUrl("/auth/refresh"), {
+      method: "POST",
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          clearToken();
+          clearUser();
+          return null;
+        }
+
+        const refreshed = (await parseResponse<{
+          access_token: string;
+          refresh_token: string;
+          token_type: "bearer";
+        }>(response)) as { access_token: string };
+        setToken(refreshed.access_token);
+        return refreshed.access_token;
+      })
+      .catch(() => {
+        clearToken();
+        clearUser();
+        return null;
+      })
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+
+  return refreshRequest;
+};
+
 const isJsonBody = (body: unknown) =>
   body !== undefined &&
   body !== null &&
@@ -185,12 +228,25 @@ export const request = async <T>(
   const url = buildUrl(path);
   const { headers, body } = prepareRequest(options);
   const { authToken: _authToken, body: _body, ...fetchOptions } = options;
-  const response = await fetch(url, {
+  let response = await fetch(url, {
     ...fetchOptions,
     headers,
     body,
     credentials: fetchOptions.credentials ?? "include",
   });
+
+  if (response.status === 401 && isAuthRefreshable(path, options)) {
+    const refreshedToken = await refreshAccessToken();
+    if (refreshedToken) {
+      const retryHeaders = toHeaders(options.headers, refreshedToken);
+      response = await fetch(url, {
+        ...fetchOptions,
+        headers: retryHeaders,
+        body,
+        credentials: fetchOptions.credentials ?? "include",
+      });
+    }
+  }
 
   return parseResponse<T>(response);
 };
@@ -202,6 +258,20 @@ export const put = async <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PUT", body });
 export const del = async <T>(path: string) =>
   request<T>(path, { method: "DELETE" });
+export const downloadBlob = async (path: string) => {
+  const url = buildUrl(path);
+  const response = await fetch(url, {
+    method: "GET",
+    headers: toHeaders(),
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response));
+  }
+
+  return response.blob();
+};
 
 export const apiClient = {
   getToken,
@@ -214,6 +284,7 @@ export const apiClient = {
   post,
   put,
   del,
+  downloadBlob,
   request,
   isSignedIn: () => Boolean(getToken()),
 };

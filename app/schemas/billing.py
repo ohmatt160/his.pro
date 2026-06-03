@@ -46,5 +46,10 @@ class PaymentResponse(BaseModel):
     reference: Optional[str]
     notes: Optional[str]
     processed_by: Optional[str]
+    has_receipt: bool = False
+    receipt_original_name: Optional[str] = None
+    receipt_content_type: Optional[str] = None
+    receipt_size: Optional[int] = None
+    receipt_uploaded_at: Optional[str] = None
+    receipt_url: Optional[str] = None
     created_at: str
-

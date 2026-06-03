@@ -13,6 +13,7 @@ import {
   Search,
   ShieldCheck,
   User,
+  ClipboardList,
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
@@ -252,7 +253,7 @@ const Patients = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.03 }}
-                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 md:grid-cols-[1.3fr_.8fr_1fr_1fr]"
+                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 md:grid-cols-[1.3fr_.8fr_1fr_1fr_auto]"
                   >
                     <div>
                       <p className="font-semibold text-foreground">
@@ -268,6 +269,11 @@ const Patients = () => {
                       <Info icon={Phone} value={patient.phone || "No phone"} />
                       {patient.email && <Info icon={Mail} value={patient.email} />}
                     </div>
+                    <Button asChild variant="outline" size="sm" className="gap-2 self-start">
+                      <Link to={`/dashboard/${facilitySlug}/patients/${patient.id}/timeline`}>
+                        <ClipboardList className="h-4 w-4" /> Timeline
+                      </Link>
+                    </Button>
                   </motion.div>
                 ))}
               </div>

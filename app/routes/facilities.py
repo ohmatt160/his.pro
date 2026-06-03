@@ -12,7 +12,7 @@ import secrets
 import string
 
 from app.extensions import get_db, db_session
-from app.schemas.facilities import FacilityResponse, FacilityCreate, FacilityUpdate
+from app.schemas.facilities import FacilityResponse, FacilityCreate, FacilityUpdate, FacilityModulesUpdate
 from app.schemas.users import MessageResponse, FacilityStaffCreate, FacilityStaffResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
@@ -22,6 +22,49 @@ from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/facilities", tags=["facilities"])
+
+DEFAULT_MODULES_BY_FACILITY_TYPE = {
+    "clinic": ["reception", "records", "consultations", "pharmacy", "billing"],
+    "hospital": [
+        "reception",
+        "records",
+        "consultations",
+        "nursing",
+        "lab",
+        "pharmacy",
+        "billing",
+        "radiology",
+        "inventory",
+        "reports",
+    ],
+    "lab": ["reception", "records", "lab", "billing", "inventory", "reports"],
+    "pharmacy": ["pharmacy", "inventory", "billing", "reports"],
+}
+
+
+def normalize_facility_modules(
+    modules: Optional[List[str]],
+    facility_type: str = "hospital",
+) -> List[str]:
+    raw_modules = modules or DEFAULT_MODULES_BY_FACILITY_TYPE.get(
+        facility_type,
+        DEFAULT_MODULES_BY_FACILITY_TYPE["hospital"],
+    )
+    valid_modules = set(Facility.AVAILABLE_MODULES)
+    normalized: List[str] = []
+
+    for raw_module in raw_modules:
+        module = Validators.sanitize_string(str(raw_module)).lower()
+        module = Facility.MODULE_ALIASES.get(module, module)
+        if module not in valid_modules:
+            raise HTTPException(status_code=400, detail=f"Invalid module: {raw_module}")
+        if module not in normalized:
+            normalized.append(module)
+
+    if not normalized:
+        raise HTTPException(status_code=400, detail="At least one module must be enabled")
+
+    return normalized
 
 
 def build_facility_response(facility: Facility) -> FacilityResponse:
@@ -34,7 +77,7 @@ def build_facility_response(facility: Facility) -> FacilityResponse:
         address=facility.address,
         phone=facility.phone,
         email=facility.email,
-        modules=facility.modules or [],
+        modules=normalize_facility_modules(facility.modules, facility.type),
         settings=facility.settings or {},
         is_active=facility.is_active,
         created_at=facility.created_at.isoformat() if facility.created_at else "",
@@ -65,7 +108,7 @@ def create_facility_record(data: FacilityCreate) -> Facility:
         address=data.address or '',
         phone=data.phone or '',
         email=data.email or '',
-        modules=data.modules or [],
+        modules=normalize_facility_modules(data.modules, data.type),
         settings=data.settings or {}
     )
     db_session.add(facility)
@@ -237,6 +280,16 @@ async def ensure_facility(
 
     facility = create_facility_record(data)
     attach_user_to_facility(current_user, facility)
+    return build_facility_response(facility)
+
+
+@router.get("/workspace/{facility_slug}", response_model=FacilityResponse)
+async def get_public_facility_workspace(
+    facility_slug: str,
+    db: Session = Depends(get_db)
+):
+    """Return non-sensitive workspace metadata needed before login."""
+    facility = get_facility_or_404(facility_slug)
     return build_facility_response(facility)
 
 
@@ -431,7 +484,7 @@ async def deactivate_facility(
 @router.put("/{facility_id}/modules", response_model=FacilityResponse)
 async def update_facility_modules(
     facility_id: str,
-    modules: List[str] = Body(...),
+    payload: List[str] | FacilityModulesUpdate = Body(...),
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
@@ -440,13 +493,10 @@ async def update_facility_modules(
     if facility_id not in {facility.id, facility.slug}:
         raise HTTPException(status_code=404, detail="Facility not found")
 
-    # Validate modules
-    valid_modules = Facility.AVAILABLE_MODULES if hasattr(Facility, 'AVAILABLE_MODULES') else []
-    for module in modules:
-        if module not in valid_modules:
-            raise HTTPException(status_code=400, detail=f"Invalid module: {module}")
+    modules = payload.modules if isinstance(payload, FacilityModulesUpdate) else payload
+    normalized_modules = normalize_facility_modules(modules, facility.type)
 
-    facility.modules = modules
+    facility.modules = normalized_modules
     facility.save()
     db_session.commit()
 
@@ -456,7 +506,7 @@ async def update_facility_modules(
         resource_type="facility",
         resource_id=facility.id,
         facility_slug=facility.slug,
-        details={"modules": modules},
+        details={"modules": normalized_modules},
     )
 
     return build_facility_response(facility)

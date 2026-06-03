@@ -13,6 +13,9 @@ import logging
 
 from app.extensions import get_db, db_session
 from app.schemas.radiology import RadiologyResponse, RadiologyCreate, RadiologyUpdate, RadiologyReport
+from app.services.clinical_workflow_service import ClinicalWorkflowService
+from app.services.order_workflow_service import OrderWorkflowService
+from app.services.patient_notification_service import PatientNotificationService
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
 from app.models.user import User
@@ -127,6 +130,20 @@ async def create_radiology_order(
         status='pending'
     )
     db_session.add(radiology)
+    db_session.flush()
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=radiology.patient_id,
+        order_type="radiology",
+        order_id=radiology.id,
+        event_type="consultation_order_created",
+        status=radiology.status,
+        title="Radiology order created",
+        message=f"{radiology.modality} {radiology.body_part} order created.",
+        actor_id=current_user.id,
+        target_role="RADIOLOGIST",
+        metadata={"modality": radiology.modality, "body_part": radiology.body_part},
+    )
     db_session.commit()
     db_session.refresh(radiology)
 
@@ -177,6 +194,7 @@ async def update_radiology_order(
     if not order:
         raise HTTPException(status_code=404, detail="Radiology order not found")
 
+    previous_status = order.status
     if data.status is not None:
         if data.status not in Radiology.STATUSES:
             raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(Radiology.STATUSES)}")
@@ -196,6 +214,42 @@ async def update_radiology_order(
 
     order.save()
     db_session.commit()
+
+    if order.status == "completed" and previous_status != "completed":
+        OrderWorkflowService.record(
+            facility_slug=facility_slug,
+            patient_id=order.patient_id,
+            order_type="radiology",
+            order_id=order.id,
+            event_type="radiology_report_completed",
+            status=order.status,
+            title="Radiology report completed",
+            message=f"Radiology order completed for {order.modality} {order.body_part}.",
+            actor_id=current_user.id,
+            target_role="DOCTOR",
+            metadata={"modality": order.modality, "body_part": order.body_part},
+        )
+        ClinicalWorkflowService.notify_user(
+            order.requested_by,
+            facility_slug,
+            "info",
+            "Radiology report ready",
+            f"Radiology report is ready for {order.modality} {order.body_part}.",
+        )
+        OrderWorkflowService.record(
+            facility_slug=facility_slug,
+            patient_id=order.patient_id,
+            order_type="radiology",
+            order_id=order.id,
+            event_type="doctor_notified",
+            status="NOTIFIED",
+            title="Doctor notified",
+            message="Ordering clinician was notified that the radiology report is ready.",
+            actor_id=current_user.id,
+            target_role="DOCTOR",
+            metadata={"requested_by": order.requested_by},
+        )
+        db_session.commit()
 
     return _radiology_response(order)
 
@@ -228,6 +282,51 @@ async def add_radiology_report(
     order.status = 'completed'
 
     order.save()
+    patient = db_session.query(Patient).filter_by(id=order.patient_id, facility_slug=facility_slug).first()
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=order.patient_id,
+        order_type="radiology",
+        order_id=order.id,
+        event_type="radiology_report_completed",
+        status=order.status,
+        title="Radiology report completed",
+        message=f"Radiology report completed for {order.modality} {order.body_part}.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"modality": order.modality, "body_part": order.body_part},
+    )
+    if patient:
+        PatientNotificationService.create(
+            facility_slug=facility_slug,
+            patient=patient,
+            notification_type="radiology_report_ready",
+            title="Radiology report ready",
+            message="Your radiology report is ready. Please contact your care team for review.",
+            source_type="radiology",
+            source_id=order.id,
+            metadata={"modality": order.modality, "body_part": order.body_part},
+        )
+    ClinicalWorkflowService.notify_user(
+        order.requested_by,
+        facility_slug,
+        "info",
+        "Radiology report ready",
+        f"Radiology report is ready for {order.modality} {order.body_part}.",
+    )
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=order.patient_id,
+        order_type="radiology",
+        order_id=order.id,
+        event_type="doctor_notified",
+        status="NOTIFIED",
+        title="Doctor notified",
+        message="Ordering clinician was notified that the radiology report is ready.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"requested_by": order.requested_by},
+    )
     db_session.commit()
 
     return _radiology_response(order)

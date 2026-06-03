@@ -5,6 +5,7 @@ import {
   Building2,
   ClipboardList,
   KeyRound,
+  Layers,
   LogOut,
   Save,
   ShieldCheck,
@@ -24,12 +25,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   describeSessionDevice,
   getActiveSessions,
   type ActiveSession,
 } from "@/lib/auth-session";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { moduleCatalog, normalizeModules, type FacilityModuleId } from "@/lib/modules";
 
 type Facility = {
   id: string;
@@ -40,6 +43,7 @@ type Facility = {
   address?: string | null;
   phone?: string | null;
   email?: string | null;
+  modules: string[];
   settings: Record<string, unknown>;
 };
 
@@ -86,8 +90,10 @@ const Settings = () => {
   const [facilityForm, setFacilityForm] = useState(emptyFacilityForm);
   const [profileForm, setProfileForm] = useState(emptyProfileForm);
   const [passwordForm, setPasswordForm] = useState(emptyPasswordForm);
+  const [moduleSelection, setModuleSelection] = useState<FacilityModuleId[]>([]);
   const [loading, setLoading] = useState(true);
   const [facilityStatus, setFacilityStatus] = useState("");
+  const [modulesStatus, setModulesStatus] = useState("");
   const [profileStatus, setProfileStatus] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
   const [sessionStatus, setSessionStatus] = useState("");
@@ -106,6 +112,7 @@ const Settings = () => {
       getActiveSessions().then(setSessions).catch(() => setSessions([]));
       setFacility(facilityResponse);
       setProfile(profileResponse);
+      setModuleSelection(normalizeModules(facilityResponse.modules));
       setFacilityForm({
         name: facilityResponse.name || "",
         type: facilityResponse.type || "hospital",
@@ -123,6 +130,38 @@ const Settings = () => {
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const toggleModule = (moduleId: FacilityModuleId, checked: boolean) => {
+    setModulesStatus("");
+    setModuleSelection((current) => {
+      if (checked) {
+        return current.includes(moduleId) ? current : [...current, moduleId];
+      }
+
+      return current.filter((id) => id !== moduleId);
+    });
+  };
+
+  const saveModules = async () => {
+    if (!facility || moduleSelection.length === 0) {
+      setError("At least one module must stay enabled.");
+      return;
+    }
+
+    setError("");
+    setModulesStatus("");
+    try {
+      const updated = await apiClient.put<Facility>(
+        `/facilities/${facility.slug}/modules`,
+        moduleSelection
+      );
+      setFacility(updated);
+      setModuleSelection(normalizeModules(updated.modules));
+      setModulesStatus("Modules saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Module update failed.");
     }
   };
 
@@ -311,6 +350,52 @@ const Settings = () => {
                 <Field label="Phone" value={profileForm.phone} onChange={(value) => setProfileForm((current) => ({ ...current, phone: value }))} />
                 <SubmitRow status={profileStatus} label="Save Profile" />
               </form>
+            </CardContent>
+          </Card>
+
+          <Card className="border-border/60">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Layers className="h-4 w-4 text-primary" /> Modules
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {moduleCatalog.map((module) => {
+                  const Icon = module.icon;
+                  const checked = moduleSelection.includes(module.id);
+
+                  return (
+                    <div
+                      key={module.id}
+                      className="flex min-h-[112px] items-start justify-between gap-3 rounded-lg border border-border/60 p-4"
+                    >
+                      <div className="flex gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                          <Icon className="h-5 w-5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{module.label}</p>
+                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                            {module.description}
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={checked}
+                        onCheckedChange={(value) => toggleModule(module.id, value)}
+                        aria-label={`${checked ? "Disable" : "Enable"} ${module.label}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-emerald-700">{modulesStatus}</p>
+                <Button type="button" className="gradient-cta gap-2 border-0 text-primary-foreground" onClick={saveModules}>
+                  <Save className="h-4 w-4" /> Save Modules
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

@@ -10,9 +10,16 @@ from typing import Optional, List
 import logging
 
 from app.extensions import get_db
-from app.schemas.patients import PatientListResponse, PatientResponse, PatientCreate, PatientUpdate
+from app.schemas.patients import (
+    PatientListResponse,
+    PatientResponse,
+    PatientCreate,
+    PatientTimelineResponse,
+    PatientUpdate,
+)
 from app.schemas.users import MessageResponse
 from app.services.patient_service import PatientService
+from app.services.patient_timeline_service import PatientTimelineService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -23,6 +30,28 @@ logger = logging.getLogger(__name__)
 # Create router
 router = APIRouter(prefix="/patients", tags=["patients"])
 
+
+def build_patient_response(patient) -> PatientResponse:
+    return PatientResponse(
+        id=str(patient.id),
+        first_name=patient.first_name,
+        last_name=patient.last_name,
+        date_of_birth=patient.date_of_birth.isoformat() if patient.date_of_birth else "",
+        gender=patient.gender,
+        phone=patient.phone,
+        email=patient.email,
+        address=patient.address,
+        blood_type=patient.blood_type,
+        medical_history=patient.medical_history,
+        emergency_contact_name=patient.emergency_contact_name,
+        emergency_contact_phone=patient.emergency_contact_phone,
+        created_by=str(patient.created_by),
+        facility_slug=patient.facility_slug,
+        is_active=patient.is_active,
+        created_at=patient.created_at.isoformat() if patient.created_at else "",
+        updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
+        full_name=patient.full_name
+    )
 
 
 @router.get("", response_model=PatientListResponse)
@@ -56,26 +85,7 @@ async def get_patients(
         # Serialize patients
         patients_list = []
         for patient in result['items']:
-            patients_list.append(PatientResponse(
-                id=str(patient.id),
-                first_name=patient.first_name,
-                last_name=patient.last_name,
-                date_of_birth=patient.date_of_birth.isoformat() if patient.date_of_birth else "",
-                gender=patient.gender,
-                phone=patient.phone,
-                email=patient.email,
-                address=patient.address,
-                blood_type=patient.blood_type,
-                medical_history=patient.medical_history,
-                emergency_contact_name=patient.emergency_contact_name,
-                emergency_contact_phone=patient.emergency_contact_phone,
-                created_by=str(patient.created_by),
-                facility_slug=patient.facility_slug,
-                is_active=patient.is_active,
-                created_at=patient.created_at.isoformat() if patient.created_at else "",
-                updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
-                full_name=patient.full_name
-            ))
+            patients_list.append(build_patient_response(patient))
 
         return PatientListResponse(
             patients=patients_list,
@@ -131,26 +141,7 @@ async def create_patient(
         logger.info(f"[Patient] Patient created successfully: {patient.id}")
 
         # Return patient data
-        return PatientResponse(
-            id=str(patient.id),
-            first_name=patient.first_name,
-            last_name=patient.last_name,
-            date_of_birth=patient.date_of_birth.isoformat() if patient.date_of_birth else "",
-            gender=patient.gender,
-            phone=patient.phone,
-            email=patient.email,
-            address=patient.address,
-            blood_type=patient.blood_type,
-            medical_history=patient.medical_history,
-            emergency_contact_name=patient.emergency_contact_name,
-            emergency_contact_phone=patient.emergency_contact_phone,
-            created_by=str(patient.created_by),
-            facility_slug=patient.facility_slug,
-            is_active=patient.is_active,
-            created_at=patient.created_at.isoformat() if patient.created_at else "",
-            updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
-            full_name=patient.full_name
-        )
+        return build_patient_response(patient)
 
     except HTTPException:
         raise
@@ -181,25 +172,36 @@ async def get_patient(
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
 
-        return PatientResponse(
-            id=str(patient.id),
-            first_name=patient.first_name,
-            last_name=patient.last_name,
-            date_of_birth=patient.date_of_birth.isoformat() if patient.date_of_birth else "",
-            gender=patient.gender,
-            phone=patient.phone,
-            email=patient.email,
-            address=patient.address,
-            blood_type=patient.blood_type,
-            medical_history=patient.medical_history,
-            emergency_contact_name=patient.emergency_contact_name,
-            emergency_contact_phone=patient.emergency_contact_phone,
-            created_by=str(patient.created_by),
-            facility_slug=patient.facility_slug,
-            is_active=patient.is_active,
-            created_at=patient.created_at.isoformat() if patient.created_at else "",
-            updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
-            full_name=patient.full_name
+        return build_patient_response(patient)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[Patient] Exception getting patient {patient_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve patient: {str(e)}")
+
+
+@router.get("/{patient_id}/timeline", response_model=PatientTimelineResponse)
+async def get_patient_timeline(
+    patient_id: str,
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    db: Session = Depends(get_db)
+):
+    try:
+        facility_slug = current_user.facility_slug if current_user else None
+
+        if not facility_slug:
+            raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+        patient = PatientService.get_patient_by_id(patient_id, facility_slug)
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+
+        events = PatientTimelineService.build_patient_timeline(patient, facility_slug)
+        return PatientTimelineResponse(
+            patient=build_patient_response(patient),
+            events=events,
+            total=len(events),
         )
 
     except HTTPException:
@@ -241,26 +243,7 @@ async def update_patient(
         # Update patient
         updated_patient = PatientService.update_patient(patient, data)
 
-        return PatientResponse(
-            id=str(updated_patient.id),
-            first_name=updated_patient.first_name,
-            last_name=updated_patient.last_name,
-            date_of_birth=updated_patient.date_of_birth.isoformat() if updated_patient.date_of_birth else "",
-            gender=updated_patient.gender,
-            phone=updated_patient.phone,
-            email=updated_patient.email,
-            address=updated_patient.address,
-            blood_type=updated_patient.blood_type,
-            medical_history=updated_patient.medical_history,
-            emergency_contact_name=updated_patient.emergency_contact_name,
-            emergency_contact_phone=updated_patient.emergency_contact_phone,
-            created_by=str(updated_patient.created_by),
-            facility_slug=updated_patient.facility_slug,
-            is_active=updated_patient.is_active,
-            created_at=updated_patient.created_at.isoformat() if updated_patient.created_at else "",
-            updated_at=updated_patient.updated_at.isoformat() if updated_patient.updated_at else None,
-            full_name=updated_patient.full_name
-        )
+        return build_patient_response(updated_patient)
 
     except HTTPException:
         raise

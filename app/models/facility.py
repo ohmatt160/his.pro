@@ -37,17 +37,24 @@ class Facility(BaseModel):
 
     # Available modules
     AVAILABLE_MODULES = [
-        'appointments',
-        'patients',
-        'billing',
+        'reception',
+        'records',
+        'consultations',
+        'nursing',
         'lab',
         'pharmacy',
+        'billing',
         'radiology',
         'inventory',
-        'medical_records',
         'reports',
-        'dashboard'
     ]
+
+    MODULE_ALIASES = {
+        'appointments': 'reception',
+        'patients': 'reception',
+        'medical_records': 'records',
+        'dashboard': 'reports',
+    }
 
     def to_dict(self):
         """Convert to dictionary"""

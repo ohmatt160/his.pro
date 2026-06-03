@@ -19,6 +19,7 @@ from app.schemas.consultations import (
     ConsultationStart,
     ConsultationUpdate,
 )
+from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.medical_record_service import MedicalRecordService
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
@@ -227,7 +228,15 @@ async def update_consultation(
             {**order, "type": "radiology"} for order in (radiology_orders or [])
         ]
 
+    should_sync_orders = any(
+        key in data.model_fields_set
+        for key in {"lab_orders", "radiology_orders", "prescriptions"}
+    )
     updated = MedicalRecordService.update_medical_record(record, payload)
+    if should_sync_orders:
+        ClinicalWorkflowService.sync_consultation_orders(updated, current_user)
+        db_session.commit()
+        db_session.refresh(updated)
     return _consultation_response(updated)
 
 

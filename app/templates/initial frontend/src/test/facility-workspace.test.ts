@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  getFacilityWorkspace,
   getFacilityPlatformLink,
   saveFacilityWorkspace,
 } from "../lib/facility-workspace";
@@ -102,5 +103,31 @@ describe("facility workspace API", () => {
     expect(getFacilityPlatformLink("sunrise-medical-centre")).toBe(
       "http://localhost:3000/sunrise-medical-centre"
     );
+  });
+
+  it("loads a cold workspace from the public facility workspace endpoint", async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          id: "facility-1",
+          name: "Sunrise Medical Centre",
+          slug: "sunrise-medical-centre",
+          type: "hospital",
+          country: "Nigeria",
+          phone: "+234 800 000 0000",
+          email: "admin@sunrise.test",
+          modules: ["patients", "records", "dashboard"],
+          created_at: "2026-05-31T10:00:00",
+        }),
+        { status: 200 }
+      )
+    );
+
+    const workspace = await getFacilityWorkspace("sunrise-medical-centre");
+
+    expect(fetchMock().mock.calls[0][0]).toBe(
+      "/api/v1/facilities/workspace/sunrise-medical-centre"
+    );
+    expect(workspace?.selectedModules).toEqual(["reception", "records", "reports"]);
   });
 });

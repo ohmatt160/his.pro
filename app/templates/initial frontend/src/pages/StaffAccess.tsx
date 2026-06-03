@@ -143,6 +143,8 @@ const StaffAccess = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [staffError, setStaffError] = useState("");
+  const [creatingStaff, setCreatingStaff] = useState(false);
   const [justCreated, setJustCreated] = useState<FacilityStaffAccount | null>(
     null
   );
@@ -160,7 +162,19 @@ const StaffAccess = () => {
     }
 
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
-    getFacilityStaff(facilitySlug).then(setStaffList).catch(() => setStaffList([]));
+    getFacilityStaff(facilitySlug)
+      .then((staff) => {
+        setStaffList(staff);
+        setStaffError("");
+      })
+      .catch((error) => {
+        setStaffList([]);
+        setStaffError(
+          error instanceof Error
+            ? error.message
+            : "Staff accounts could not be loaded."
+        );
+      });
   }, [facilitySlug]);
 
   const rolesProvisioned = useMemo(
@@ -235,27 +249,39 @@ const StaffAccess = () => {
       return;
     }
 
-    const account = await createStaffAccount({
-      facilitySlug,
-      fullName: newStaff.fullName.trim(),
-      role: newStaff.role,
-      department: newStaff.department.trim(),
-      email: newStaff.email.trim(),
-      phone: newStaff.phone.trim(),
-      createdBy: workspace?.fullName,
-    });
+    setCreatingStaff(true);
+    setStaffError("");
+    try {
+      const account = await createStaffAccount({
+        facilitySlug,
+        fullName: newStaff.fullName.trim(),
+        role: newStaff.role,
+        department: newStaff.department.trim(),
+        email: newStaff.email.trim(),
+        phone: newStaff.phone.trim(),
+        createdBy: workspace?.fullName,
+      });
 
-    const updatedStaff = await getFacilityStaff(facilitySlug);
-    setStaffList(updatedStaff);
-    setJustCreated(account);
-    setShowAddModal(false);
-    setNewStaff({
-      fullName: "",
-      role: "doctor",
-      department: getDefaultDepartmentForRole("doctor"),
-      email: "",
-      phone: "",
-    });
+      const updatedStaff = await getFacilityStaff(facilitySlug);
+      setStaffList(updatedStaff);
+      setJustCreated(account);
+      setShowAddModal(false);
+      setNewStaff({
+        fullName: "",
+        role: "doctor",
+        department: getDefaultDepartmentForRole("doctor"),
+        email: "",
+        phone: "",
+      });
+    } catch (error) {
+      setStaffError(
+        error instanceof Error
+          ? error.message
+          : "Staff account could not be created."
+      );
+    } finally {
+      setCreatingStaff(false);
+    }
   };
 
   const handleLogout = () => {
@@ -429,6 +455,28 @@ const StaffAccess = () => {
             </motion.div>
 
             <AnimatePresence>
+              {staffError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                >
+                  <Card className="border-destructive/30 bg-destructive/5">
+                    <CardContent className="flex flex-col gap-3 p-4 text-sm text-destructive sm:flex-row sm:items-center sm:justify-between">
+                      <span>{staffError}</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setStaffError("")}
+                      >
+                        Dismiss
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
+
               {justCreated && (
                 <motion.div
                   initial={{ opacity: 0, y: -10, scale: 0.98 }}
@@ -764,9 +812,13 @@ const StaffAccess = () => {
               <Button
                 className="gradient-cta flex-1 border-0 text-primary-foreground"
                 onClick={handleAddStaff}
-                disabled={!newStaff.fullName.trim() || !newStaff.department.trim()}
+                disabled={
+                  creatingStaff ||
+                  !newStaff.fullName.trim() ||
+                  !newStaff.department.trim()
+                }
               >
-                Create Account
+                {creatingStaff ? "Creating..." : "Create Account"}
               </Button>
             </div>
           </div>

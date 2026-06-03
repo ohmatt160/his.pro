@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
-import { getFacilityStaff, type FacilityStaffMember } from "@/lib/facility-staff";
+import { getFacilityStaff, type FacilityStaffAccount } from "@/lib/facility-staff";
 
 type Alert = {
   id: string;
@@ -52,7 +52,9 @@ const emptyForm = {
   alert_type: "info",
   title: "",
   message: "",
-  recipient_id: "facility",
+  recipient_mode: "facility",
+  recipient_id: "",
+  recipient_role: "NURSE",
   expires_at: "",
 };
 
@@ -60,7 +62,7 @@ const Alerts = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [staff, setStaff] = useState<FacilityStaffMember[]>([]);
+  const [staff, setStaff] = useState<FacilityStaffAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
@@ -127,13 +129,24 @@ const Alerts = () => {
     }
 
     try {
-      await apiClient.post<Alert>("/alerts", {
+      const payload = {
         alert_type: form.alert_type,
         title: form.title.trim(),
         message: form.message.trim(),
-        recipient_id: form.recipient_id === "facility" ? undefined : form.recipient_id,
         expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : undefined,
-      });
+      };
+      if (form.recipient_mode === "role") {
+        await apiClient.post<Alert[]>("/alerts/role", {
+          ...payload,
+          recipient_role: form.recipient_role,
+        });
+      } else {
+        const staffRecipientId = form.recipient_id || staff[0]?.staffRecordId;
+        await apiClient.post<Alert>("/alerts", {
+          ...payload,
+          recipient_id: form.recipient_mode === "staff" ? staffRecipientId : undefined,
+        });
+      }
       setForm(emptyForm);
       setShowCreate(false);
       await loadAlerts();
@@ -144,6 +157,11 @@ const Alerts = () => {
 
   const toggleRead = async (alert: Alert) => {
     await apiClient.put<Alert>(`/alerts/${alert.id}/${alert.is_read ? "unread" : "read"}`);
+    await loadAlerts();
+  };
+
+  const markAllRead = async () => {
+    await apiClient.put("/alerts/actions/mark-all-read");
     await loadAlerts();
   };
 
@@ -186,6 +204,11 @@ const Alerts = () => {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <CardTitle className="text-base">Notifications</CardTitle>
               <div className="flex flex-col gap-2 sm:flex-row">
+                {summary.unread > 0 && (
+                  <Button variant="outline" onClick={markAllRead}>
+                    Mark all read
+                  </Button>
+                )}
                 <Select value={filter} onValueChange={setFilter}>
                   <SelectTrigger className="w-full sm:w-40">
                     <SelectValue />
@@ -276,17 +299,41 @@ const Alerts = () => {
               onChange={(value) => setForm((current) => ({ ...current, alert_type: value }))}
             />
             <SelectField
-              label="Recipient"
-              value={form.recipient_id}
+              label="Recipient Type"
+              value={form.recipient_mode}
               options={[
                 { value: "facility", label: "Facility-wide" },
-                ...staff.map((member) => ({
-                  value: member.id || member.loginId,
-                  label: `${member.fullName} (${member.role})`,
-                })),
+                { value: "role", label: "Role" },
+                { value: "staff", label: "Staff member" },
               ]}
-              onChange={(value) => setForm((current) => ({ ...current, recipient_id: value }))}
+              onChange={(value) => setForm((current) => ({ ...current, recipient_mode: value }))}
             />
+            {form.recipient_mode === "role" && (
+              <SelectField
+                label="Role"
+                value={form.recipient_role}
+                options={[
+                  { value: "ADMIN", label: "Admins" },
+                  { value: "DOCTOR", label: "Doctors" },
+                  { value: "NURSE", label: "Nurses" },
+                  { value: "LAB_TECH", label: "Lab staff" },
+                  { value: "PHARMACIST", label: "Pharmacists" },
+                  { value: "RECEPTIONIST", label: "Receptionists" },
+                ]}
+                onChange={(value) => setForm((current) => ({ ...current, recipient_role: value }))}
+              />
+            )}
+            {form.recipient_mode === "staff" && (
+              <SelectField
+                label="Staff Member"
+                value={form.recipient_id || staff[0]?.staffRecordId || ""}
+                options={staff.map((member) => ({
+                  value: member.staffRecordId,
+                  label: `${member.fullName} (${member.role})`,
+                }))}
+                onChange={(value) => setForm((current) => ({ ...current, recipient_id: value }))}
+              />
+            )}
             <Field label="Title" value={form.title} onChange={(value) => setForm((current) => ({ ...current, title: value }))} required />
             <div>
               <Label>Message *</Label>

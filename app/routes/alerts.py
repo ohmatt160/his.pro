@@ -12,7 +12,7 @@ from datetime import datetime
 import logging
 
 from app.extensions import get_db, db_session
-from app.schemas.alerts import AlertResponse, AlertCreate, AlertUpdate
+from app.schemas.alerts import AlertResponse, AlertCreate, AlertUpdate, RoleAlertCreate
 from app.schemas.users import MessageResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
@@ -47,6 +47,15 @@ def _visible_alert_query(current_user: User):
         or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None),
         or_(Alert.expires_at == None, Alert.expires_at > datetime.utcnow()),
     )
+
+
+def _parse_expiry(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid expires_at format. Use ISO 8601 format")
 
 
 @router.get("", response_model=List[AlertResponse])
@@ -102,15 +111,7 @@ async def create_alert(
         if recipient.facility_slug != facility_slug:
             raise HTTPException(status_code=404, detail="Recipient not found")
 
-    # Parse expiry
-    expires_at = None
-    if data.expires_at:
-        try:
-            # Handle ISO format with possible Z suffix
-            expires_str = data.expires_at.replace('Z', '+00:00')
-            expires_at = datetime.fromisoformat(expires_str)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid expires_at format. Use ISO 8601 format")
+    expires_at = _parse_expiry(data.expires_at)
 
     alert = Alert(
         facility_slug=facility_slug,
@@ -138,6 +139,54 @@ async def create_alert(
     )
 
     return _alert_response(alert)
+
+
+@router.post("/role", response_model=List[AlertResponse], status_code=status.HTTP_201_CREATED)
+async def create_role_alert(
+    data: RoleAlertCreate,
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    db: Session = Depends(get_db)
+):
+    """Create the same alert for every active staff member with a role."""
+    facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    recipients = db_session.query(User).filter_by(
+        facility_slug=facility_slug,
+        role=data.recipient_role,
+        is_active=True,
+    ).all()
+    if not recipients:
+        raise HTTPException(status_code=404, detail="No active users found for this role")
+
+    alerts = []
+    expires_at = _parse_expiry(data.expires_at)
+    for recipient in recipients:
+        alert = Alert(
+            facility_slug=facility_slug,
+            alert_type=data.alert_type,
+            title=Validators.sanitize_string(data.title),
+            message=Validators.sanitize_string(data.message),
+            recipient_id=recipient.id,
+            expires_at=expires_at,
+        )
+        db_session.add(alert)
+        alerts.append(alert)
+    db_session.commit()
+    for alert in alerts:
+        db_session.refresh(alert)
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="CREATE_ROLE_ALERT",
+        resource_type="alert",
+        resource_id=None,
+        facility_slug=facility_slug,
+        details={"recipient_role": data.recipient_role, "count": len(alerts), "title": data.title},
+    )
+
+    return [_alert_response(alert) for alert in alerts]
 
 
 @router.get("/{alert_id}", response_model=AlertResponse)
@@ -221,7 +270,7 @@ async def mark_as_read(
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
-    alert = db_session.query(Alert).filter_by(id=alert_id, facility_slug=facility_slug).first()
+    alert = _visible_alert_query(current_user).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 
@@ -230,6 +279,24 @@ async def mark_as_read(
     db_session.commit()
 
     return _alert_response(alert)
+
+
+@router.put("/actions/mark-all-read", response_model=MessageResponse)
+async def mark_all_as_read(
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    db: Session = Depends(get_db)
+):
+    """Mark all visible unread alerts as read."""
+    facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    alerts = _visible_alert_query(current_user).filter(Alert.is_read == False).all()
+    for alert in alerts:
+        alert.mark_as_read()
+        db_session.add(alert)
+    db_session.commit()
+    return MessageResponse(message=f"Marked {len(alerts)} alert(s) as read")
 
 
 @router.put("/{alert_id}/unread", response_model=AlertResponse)

@@ -18,6 +18,7 @@ type TokenResponse = {
 
 export const refreshProfile = async () => {
   const refreshed = await apiClient.post<TokenResponse>("/auth/refresh");
+  apiClient.setToken(refreshed.access_token);
   return getProfile(refreshed.access_token);
 };
 

@@ -24,6 +24,10 @@ class FacilityUpdate(BaseModel):
     settings: Optional[dict] = None
 
 
+class FacilityModulesUpdate(BaseModel):
+    modules: List[str] = Field(default_factory=list)
+
+
 class FacilityResponse(BaseModel):
     id: str
     name: str

@@ -6,6 +6,8 @@ import {
   Banknote,
   CalendarDays,
   CreditCard,
+  Download,
+  FileImage,
   Plus,
   Receipt,
   Search,
@@ -58,6 +60,22 @@ type Invoice = {
   created_at: string;
 };
 
+type Payment = {
+  id: string;
+  invoice_id: string;
+  amount: number;
+  payment_method: PaymentMethod | string;
+  reference?: string | null;
+  notes?: string | null;
+  has_receipt: boolean;
+  receipt_original_name?: string | null;
+  receipt_content_type?: string | null;
+  receipt_size?: number | null;
+  receipt_uploaded_at?: string | null;
+  receipt_url?: string | null;
+  created_at: string;
+};
+
 type PaymentMethod = "CASH" | "CARD" | "TRANSFER" | "INSURANCE";
 
 const emptyInvoiceForm = {
@@ -88,12 +106,14 @@ const Billing = () => {
   const { facilitySlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, Payment[]>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
   const [payingInvoice, setPayingInvoice] = useState<Invoice | null>(null);
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [error, setError] = useState("");
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
@@ -140,8 +160,21 @@ const Billing = () => {
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<Invoice[]>("/billing/invoices"),
       ]);
+      const paymentPairs = await Promise.all(
+        invoiceResponse.map(async (invoice) => {
+          try {
+            const payments = await apiClient.get<Payment[]>(
+              `/billing/invoices/${invoice.id}/payments`
+            );
+            return [invoice.id, payments] as const;
+          } catch {
+            return [invoice.id, []] as const;
+          }
+        })
+      );
       setPatients(patientResponse.patients);
       setInvoices(invoiceResponse);
+      setPaymentsByInvoice(Object.fromEntries(paymentPairs));
     } finally {
       setLoading(false);
     }
@@ -202,19 +235,46 @@ const Billing = () => {
     }
 
     try {
-      await apiClient.post(`/billing/invoices/${payingInvoice.id}/payments`, {
+      const payment = await apiClient.post<Payment>(`/billing/invoices/${payingInvoice.id}/payments`, {
         amount,
         payment_method: paymentForm.payment_method,
         reference: paymentForm.reference.trim() || undefined,
         notes: paymentForm.notes.trim() || undefined,
       });
+      if (receiptFile) {
+        const formData = new FormData();
+        formData.append("file", receiptFile);
+        await apiClient.request(`/billing/payments/${payment.id}/receipt`, {
+          method: "POST",
+          body: formData,
+        });
+      }
       setPaymentForm(emptyPaymentForm);
+      setReceiptFile(null);
       setPayingInvoice(null);
       await loadBilling();
     } catch (paymentError) {
       setError(
         paymentError instanceof Error ? paymentError.message : "Payment failed."
       );
+    }
+  };
+
+  const downloadReceipt = async (payment: Payment) => {
+    if (!payment.receipt_url) {
+      return;
+    }
+
+    try {
+      const blob = await apiClient.downloadBlob(payment.receipt_url);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = payment.receipt_original_name || `receipt-${payment.id}`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (receiptError) {
+      setError(receiptError instanceof Error ? receiptError.message : "Receipt download failed.");
     }
   };
 
@@ -290,48 +350,57 @@ const Billing = () => {
             ) : (
               <div className="space-y-2">
                 {visibleInvoices.map((invoice, index) => (
-                  <motion.div
-                    key={invoice.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.03 }}
-                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 lg:grid-cols-[1.3fr_1fr_.8fr_.8fr_auto]"
-                  >
-                    <div>
-                      <p className="font-semibold text-foreground">
-                        {invoice.invoice_number}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {patientNames[invoice.patient_id] || "Unknown patient"}
-                      </p>
+                  <motion.div key={invoice.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03 }} className="rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30">
+                    <div className="grid gap-3 lg:grid-cols-[1.3fr_1fr_.8fr_.8fr_auto]">
+                      <div>
+                        <p className="font-semibold text-foreground">{invoice.invoice_number}</p>
+                        <p className="text-xs text-muted-foreground">{patientNames[invoice.patient_id] || "Unknown patient"}</p>
+                      </div>
+                      <Info icon={CalendarDays} value={`Due ${invoice.due_date || "not set"}`} />
+                      <div>
+                        <p className="text-sm font-semibold">{formatCurrency(invoice.amount)}</p>
+                        <p className="text-xs text-muted-foreground">Paid {formatCurrency(invoice.paid_amount)}</p>
+                      </div>
+                      <div>
+                        <StatusBadge status={invoice.status} />
+                        <p className="mt-1 text-xs text-muted-foreground">Balance {formatCurrency(invoice.balance)}</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        disabled={invoice.balance <= 0 || invoice.status === "CANCELLED"}
+                        onClick={() => {
+                          setError("");
+                          setReceiptFile(null);
+                          setPaymentForm({ ...emptyPaymentForm, amount: String(invoice.balance) });
+                          setPayingInvoice(invoice);
+                        }}
+                      >
+                        Record Payment
+                      </Button>
                     </div>
-                    <Info icon={CalendarDays} value={`Due ${invoice.due_date || "not set"}`} />
-                    <div>
-                      <p className="text-sm font-semibold">{formatCurrency(invoice.amount)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Paid {formatCurrency(invoice.paid_amount)}
-                      </p>
-                    </div>
-                    <div>
-                      <StatusBadge status={invoice.status} />
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Balance {formatCurrency(invoice.balance)}
-                      </p>
-                    </div>
-                    <Button
-                      variant="outline"
-                      disabled={invoice.balance <= 0 || invoice.status === "CANCELLED"}
-                      onClick={() => {
-                        setError("");
-                        setPaymentForm({
-                          ...emptyPaymentForm,
-                          amount: String(invoice.balance),
-                        });
-                        setPayingInvoice(invoice);
-                      }}
-                    >
-                      Record Payment
-                    </Button>
+                    {Boolean(paymentsByInvoice[invoice.id]?.length) && (
+                      <div className="mt-3 space-y-2 border-t border-border/60 pt-3">
+                        {paymentsByInvoice[invoice.id].map((payment) => (
+                          <div key={payment.id} className="flex flex-col gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="font-medium text-foreground">
+                                {formatCurrency(payment.amount)} · {payment.payment_method}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {payment.reference || "No reference"} · {new Date(payment.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                            {payment.has_receipt ? (
+                              <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => downloadReceipt(payment)}>
+                                <Download className="h-4 w-4" /> Receipt
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No receipt</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 ))}
               </div>
@@ -402,6 +471,20 @@ const Billing = () => {
                 setInvoiceForm((current) => ({ ...current, notes: value }))
               }
             />
+            <div>
+              <Label>Receipt Image</Label>
+              <Input
+                className="mt-1.5"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setReceiptFile(event.target.files?.[0] || null)}
+              />
+              {receiptFile && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <FileImage className="h-3.5 w-3.5" /> {receiptFile.name}
+                </p>
+              )}
+            </div>
             {error && <FormError message={error} />}
             <div className="flex gap-3">
               <Button type="button" variant="outline" className="flex-1" onClick={() => setShowInvoiceDialog(false)}>

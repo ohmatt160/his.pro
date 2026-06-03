@@ -17,6 +17,7 @@ from app.schemas.wards import (
     WardBedResponse,
     WardBedUpdate,
 )
+from app.services.patient_notification_service import PatientNotificationService
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
 
@@ -320,6 +321,17 @@ async def discharge_patient(
         bed.status = "AVAILABLE"
         db_session.add(bed)
     db_session.add(admission)
+    patient = admission.patient or _get_patient(admission.patient_id, facility_slug)
+    PatientNotificationService.create(
+        facility_slug=facility_slug,
+        patient=patient,
+        notification_type="discharge_follow_up",
+        title="Discharge follow-up",
+        message="You have been discharged. Please follow your care instructions and contact the hospital if symptoms worsen.",
+        source_type="ward_admission",
+        source_id=admission.id,
+        metadata={"ward_name": admission.ward_name, "discharged_at": admission.discharged_at.isoformat()},
+    )
     db_session.commit()
     db_session.refresh(admission)
     return _admission_response(admission)

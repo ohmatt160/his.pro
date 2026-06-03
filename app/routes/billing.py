@@ -3,7 +3,8 @@ Billing Routes - FastAPI Version
 Converted from Flask-RESTx billing_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import logging
@@ -11,9 +12,12 @@ import logging
 from app.extensions import get_db, db_session
 from app.schemas.billing import InvoiceResponse, PaymentCreate, PaymentResponse, InvoiceCreate, InvoiceUpdate
 from app.services.billing_service import BillingService
+from app.services.patient_notification_service import PatientNotificationService
+from app.services.receipt_service import ReceiptService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
 from app.models.patient import Patient
+from app.models.billing import Payment
 from app.models.facility import Facility
 
 logger = logging.getLogger(__name__)
@@ -43,6 +47,7 @@ def _invoice_response(invoice) -> InvoiceResponse:
 
 
 def _payment_response(payment) -> PaymentResponse:
+    has_receipt = bool(payment.receipt_filename)
     return PaymentResponse(
         id=str(payment.id),
         invoice_id=str(payment.invoice_id),
@@ -51,8 +56,21 @@ def _payment_response(payment) -> PaymentResponse:
         reference=payment.reference_number,
         notes=payment.notes,
         processed_by=None,
+        has_receipt=has_receipt,
+        receipt_original_name=payment.receipt_original_name,
+        receipt_content_type=payment.receipt_content_type,
+        receipt_size=payment.receipt_size,
+        receipt_uploaded_at=payment.receipt_uploaded_at.isoformat() if payment.receipt_uploaded_at else None,
+        receipt_url=f"/billing/payments/{payment.id}/receipt" if has_receipt else None,
         created_at=payment.payment_date.isoformat() if payment.payment_date else ""
     )
+
+
+def _get_payment_for_facility(payment_id: str, facility_slug: str) -> Payment:
+    payment = db_session.query(Payment).filter_by(id=payment_id).first()
+    if not payment or not payment.invoice or payment.invoice.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return payment
 
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
@@ -99,6 +117,16 @@ async def create_invoice(
         raise HTTPException(status_code=404, detail="Patient not found")
 
     invoice = BillingService.create_invoice(data.model_dump(), facility_slug=facility_slug)
+    PatientNotificationService.create(
+        facility_slug=facility_slug,
+        patient=patient,
+        notification_type="bill_created",
+        title="Bill created",
+        message=f"Your bill {invoice.invoice_number} has been created.",
+        source_type="invoice",
+        source_id=invoice.id,
+        metadata={"invoice_number": invoice.invoice_number, "amount": float(invoice.total or 0)},
+    )
 
     return _invoice_response(invoice)
 
@@ -135,7 +163,79 @@ async def add_payment(
     if not payment:
         raise HTTPException(status_code=404, detail=error or "Invoice not found or payment error")
 
+    invoice = payment.invoice
+    patient = db_session.query(Patient).filter_by(
+        id=invoice.patient_id,
+        facility_slug=facility_slug,
+    ).first()
+    if patient:
+        PatientNotificationService.create(
+            facility_slug=facility_slug,
+            patient=patient,
+            notification_type="payment_received",
+            title="Payment received",
+            message=f"Payment of {float(payment.amount or 0):,.2f} was received for {invoice.invoice_number}.",
+            source_type="payment",
+            source_id=payment.id,
+            metadata={
+                "invoice_id": invoice.id,
+                "invoice_number": invoice.invoice_number,
+                "amount": float(payment.amount or 0),
+                "payment_method": payment.payment_method,
+            },
+        )
+
     return _payment_response(payment)
+
+
+@router.get("/invoices/{invoice_id}/payments", response_model=List[PaymentResponse])
+async def get_invoice_payments(
+    invoice_id: str,
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    db: Session = Depends(get_db)
+):
+    facility_slug = current_user.facility_slug
+    invoice = BillingService.get_invoice_by_id(invoice_id)
+
+    if not invoice or invoice.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    return [_payment_response(payment) for payment in invoice.payments]
+
+
+@router.post("/payments/{payment_id}/receipt", response_model=PaymentResponse)
+async def upload_payment_receipt(
+    payment_id: str,
+    file: UploadFile = File(...),
+    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    db: Session = Depends(get_db)
+):
+    facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    payment = _get_payment_for_facility(payment_id, facility_slug)
+    updated = await ReceiptService.attach_receipt(payment, file)
+    return _payment_response(updated)
+
+
+@router.get("/payments/{payment_id}/receipt")
+async def download_payment_receipt(
+    payment_id: str,
+    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE')),
+    db: Session = Depends(get_db)
+):
+    facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    payment = _get_payment_for_facility(payment_id, facility_slug)
+    path = ReceiptService.get_receipt_file(payment)
+    return FileResponse(
+        path,
+        media_type=payment.receipt_content_type or "application/octet-stream",
+        filename=payment.receipt_original_name or "receipt",
+    )
 
 
 @router.put("/invoices/{invoice_id}", response_model=InvoiceResponse)

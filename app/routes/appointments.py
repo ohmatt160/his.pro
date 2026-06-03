@@ -13,6 +13,7 @@ from app.extensions import get_db
 from app.schemas.appointments import AppointmentResponse, AppointmentCreate, AppointmentUpdate
 from app.schemas.users import MessageResponse
 from app.services.appointment_service import AppointmentService
+from app.services.patient_notification_service import PatientNotificationService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -105,6 +106,19 @@ async def create_appointment(
             payload['notes'] = Validators.sanitize_string(payload['notes'])
 
         appointment = AppointmentService.create_appointment(payload)
+        PatientNotificationService.create(
+            facility_slug=facility_slug,
+            patient=patient,
+            notification_type="appointment_reminder",
+            title="Appointment reminder",
+            message=f"Your appointment is scheduled for {appointment.appointment_date.isoformat()}.",
+            source_type="appointment",
+            source_id=appointment.id,
+            metadata={
+                "appointment_date": appointment.appointment_date.isoformat() if appointment.appointment_date else None,
+                "doctor_id": appointment.doctor_id,
+            },
+        )
 
         return AppointmentResponse(
             id=str(appointment.id),

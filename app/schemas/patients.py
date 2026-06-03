@@ -61,3 +61,18 @@ class PatientListResponse(BaseModel):
     pages: int
 
 
+class PatientTimelineEvent(BaseModel):
+    id: str
+    event_type: str
+    module: str
+    title: str
+    description: str
+    status: Optional[str]
+    occurred_at: str
+    metadata: dict = Field(default_factory=dict)
+
+
+class PatientTimelineResponse(BaseModel):
+    patient: PatientResponse
+    events: List[PatientTimelineEvent]
+    total: int

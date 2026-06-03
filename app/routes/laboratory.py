@@ -12,7 +12,10 @@ import logging
 from app.extensions import get_db
 from app.schemas.laboratory import LabTestResponse, LabTestCreate, LabOrderResponse, LabOrderCreate, LabOrderUpdate, \
     LabResultResponse, LabResultCreate
+from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.lab_service import LabService
+from app.services.order_workflow_service import OrderWorkflowService
+from app.services.patient_notification_service import PatientNotificationService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
 from app.models.patient import Patient
@@ -172,6 +175,19 @@ async def create_lab_order(
     payload['facility_slug'] = facility_slug
 
     order = LabService.create_lab_order(payload, current_user.id)
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=order.patient_id,
+        order_type="lab",
+        order_id=order.id,
+        event_type="consultation_order_created",
+        status=order.status,
+        title="Lab order created",
+        message=f"Lab order created for test {test.name}.",
+        actor_id=current_user.id,
+        target_role="LAB_TECH",
+        metadata={"test_id": test.id, "test_name": test.name},
+    )
 
     return _lab_order_response(order)
 
@@ -207,7 +223,22 @@ async def update_lab_order_status(
     if not data.status:
         raise HTTPException(status_code=400, detail="Status is required")
 
+    previous_status = order.status
     updated_order = LabService.update_lab_order_status(order, data.status)
+    if updated_order.status == "COLLECTED" and previous_status != "COLLECTED":
+        OrderWorkflowService.record(
+            facility_slug=facility_slug,
+            patient_id=updated_order.patient_id,
+            order_type="lab",
+            order_id=updated_order.id,
+            event_type="lab_sample_collected",
+            status=updated_order.status,
+            title="Lab sample collected",
+            message="Lab sample has been collected.",
+            actor_id=current_user.id,
+            target_role="LAB_TECH",
+            metadata={"test_id": updated_order.test_id},
+        )
 
     return _lab_order_response(updated_order)
 
@@ -250,5 +281,50 @@ async def create_lab_result(
         raise HTTPException(status_code=400, detail="Lab order already completed")
 
     result = LabService.create_lab_result(order_id, data.model_dump())
+    patient = db.query(Patient).filter_by(id=order.patient_id, facility_slug=facility_slug).first()
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=order.patient_id,
+        order_type="lab",
+        order_id=order.id,
+        event_type="lab_result_released",
+        status="COMPLETED",
+        title="Lab result released",
+        message=f"Result released for {order.test.name if order.test else 'lab order'}.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"result_id": result.id, "is_abnormal": result.is_abnormal},
+    )
+    if patient:
+        PatientNotificationService.create(
+            facility_slug=facility_slug,
+            patient=patient,
+            notification_type="lab_result_ready",
+            title="Lab result ready",
+            message="Your lab result is ready. Please contact your care team for review.",
+            source_type="lab_order",
+            source_id=order.id,
+            metadata={"result_id": result.id, "is_abnormal": result.is_abnormal},
+        )
+    ClinicalWorkflowService.notify_user(
+        order.ordered_by,
+        facility_slug,
+        "info",
+        "Lab result ready",
+        f"A lab result is ready for order {order.id}",
+    )
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=order.patient_id,
+        order_type="lab",
+        order_id=order.id,
+        event_type="doctor_notified",
+        status="NOTIFIED",
+        title="Doctor notified",
+        message="Ordering clinician was notified that the lab result is ready.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"ordered_by": order.ordered_by},
+    )
 
     return _lab_result_response(result)

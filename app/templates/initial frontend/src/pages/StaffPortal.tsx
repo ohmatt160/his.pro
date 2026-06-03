@@ -41,6 +41,8 @@ import {
   getFacilityDashboardPath,
   getFacilityWorkspace,
 } from "@/lib/facility-workspace";
+import { canAccessModule, getRouteModuleId, moduleCatalog } from "@/lib/modules";
+import { formatTaskTime, getTasks, taskTone, type WorkTask } from "@/lib/tasks";
 
 type QuickAction = {
   label: string;
@@ -863,6 +865,7 @@ const StaffPortal = () => {
   const { facilitySlug = "" } = useParams();
   const { user, logout } = useAuth();
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
+  const [tasks, setTasks] = useState<WorkTask[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -901,6 +904,15 @@ const StaffPortal = () => {
     }
   }, [facilitySlug, isLoading, navigate, user, workspace]);
 
+  useEffect(() => {
+    if (!user || user.role === "admin" || user.facilitySlug !== facilitySlug) {
+      setTasks([]);
+      return;
+    }
+
+    getTasks(25).then((response) => setTasks(response.tasks)).catch(() => setTasks([]));
+  }, [facilitySlug, user]);
+
   if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -920,6 +932,41 @@ const StaffPortal = () => {
     ...user,
   } as StaffPortalUser;
   const config = roleConfigs[staff.role];
+  const canUseLabel = (label: string) => {
+    const moduleId = getRouteModuleId(label);
+    return moduleId
+      ? canAccessModule({
+          modules: workspace.selectedModules,
+          moduleId,
+          role: staff.role,
+        })
+      : true;
+  };
+  const sidebarMain = config.sidebarMain.filter((entry) => canUseLabel(entry.label));
+  const sidebarTools = config.sidebarTools.filter((entry) => canUseLabel(entry.label));
+  const quickActions = config.quickActions.filter((action) => canUseLabel(action.label));
+  const accessModules = moduleCatalog
+    .filter((module) =>
+      canAccessModule({
+        modules: workspace.selectedModules,
+        moduleId: module.id,
+        role: staff.role,
+      })
+    )
+    .map((module) => module.label);
+  const liveQueueItems = tasks.map((task) => ({
+    primary: task.patient_name || task.title,
+    secondary: task.patient_name ? task.title : task.description,
+    time: formatTaskTime(task),
+    status: task.priority === "urgent" ? "Urgent" : task.status,
+    tone: taskTone(task.priority),
+    action: "Open",
+    to: `/dashboard/${facilitySlug}/${task.action_path}`,
+  }));
+  const queueItems = liveQueueItems.length > 0 ? liveQueueItems : config.queueItems.map((entry) => ({
+    ...entry,
+    to: routeForPortalLabel(staff.role, entry.action || entry.primary, facilitySlug),
+  }));
   const firstName = staff.fullName.split(" ")[0] || staff.fullName;
   const initials = staff.fullName
     .split(" ")
@@ -965,7 +1012,7 @@ const StaffPortal = () => {
         </div>
 
         <nav className="flex-1 space-y-1 p-3">
-          {config.sidebarMain.map((entry, index) => (
+          {sidebarMain.map((entry, index) => (
             <SidebarLink
               key={entry.label}
               icon={entry.icon}
@@ -980,7 +1027,7 @@ const StaffPortal = () => {
               Tools
             </p>
           </div>
-          {config.sidebarTools.map((entry) => (
+          {sidebarTools.map((entry) => (
             <SidebarLink
               key={entry.label}
               icon={entry.icon}
@@ -1064,7 +1111,7 @@ const StaffPortal = () => {
                   })}
                   <span className="text-border">·</span>
                   <span className="text-sm">
-                    {config.queueItems.length} {config.queueCountLabel}
+                    {queueItems.length} {liveQueueItems.length > 0 ? "open tasks" : config.queueCountLabel}
                   </span>
                 </p>
               </div>
@@ -1106,7 +1153,7 @@ const StaffPortal = () => {
                 Quick Actions
               </h2>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-                {config.quickActions.map((action) => (
+                {quickActions.map((action) => (
                   <motion.button
                     key={action.label}
                     type="button"
@@ -1149,9 +1196,9 @@ const StaffPortal = () => {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {config.queueItems.map((entry, index) => (
+                    {queueItems.map((entry, index) => (
                       <motion.div
-                        key={`${entry.primary}-${entry.time}`}
+                        key={`${entry.primary}-${entry.time}-${index}`}
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.3 + index * 0.06 }}
@@ -1183,11 +1230,12 @@ const StaffPortal = () => {
                           {entry.status}
                         </span>
                         <Button
+                          asChild
                           variant="ghost"
                           size="sm"
                           className="h-7 text-xs opacity-0 transition-opacity group-hover:opacity-100"
                         >
-                          {entry.action}
+                          <Link to={entry.to}>{entry.action}</Link>
                         </Button>
                       </motion.div>
                     ))}
@@ -1257,7 +1305,7 @@ const StaffPortal = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="flex flex-wrap gap-2">
-                      {config.accessModules.map((module) => (
+                      {accessModules.map((module) => (
                         <Badge key={module} variant="secondary">
                           {module}
                         </Badge>

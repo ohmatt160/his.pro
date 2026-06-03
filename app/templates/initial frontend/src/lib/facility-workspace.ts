@@ -1,4 +1,5 @@
 import { apiClient } from "@/api/client";
+import { normalizeModules } from "@/lib/modules";
 
 export type FacilityWorkspaceData = {
   facilityName: string;
@@ -107,8 +108,8 @@ const mapBackendFacility = (
   fullName: fallback.fullName,
   email: facility.email || fallback.email,
   phone: facility.phone || fallback.phone,
-  selectedModules: facility.modules?.length
-    ? facility.modules
+  selectedModules: normalizeModules(facility.modules).length
+    ? normalizeModules(facility.modules)
     : fallback.selectedModules,
   facilitySlug: facility.slug,
   createdAt: facility.created_at || new Date().toISOString(),
@@ -168,7 +169,7 @@ export const getFacilityWorkspace = async (
 
   try {
     const facility = await apiClient.get<BackendFacility>(
-      `/facilities/${facilitySlug}`
+      `/facilities/workspace/${facilitySlug}`
     );
     const workspace = mapBackendFacility(facility, {
       facilityName: facility.name,

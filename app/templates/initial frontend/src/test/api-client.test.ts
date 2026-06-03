@@ -16,6 +16,8 @@ const getFetchCall = () => {
   return fetchMock.mock.calls[0] as [string, RequestInit];
 };
 
+const getFetchMock = () => fetch as unknown as ReturnType<typeof vi.fn>;
+
 describe("api client", () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -136,6 +138,38 @@ describe("api client", () => {
     await expect(request("/auth/login", { method: "POST" })).rejects.toThrow(
       "Invalid login"
     );
+  });
+
+  it("refreshes once and retries protected requests after a 401", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ detail: "Token expired" }), {
+          status: 401,
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            access_token: "refreshed-token",
+            refresh_token: "rotated-refresh",
+            token_type: "bearer",
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ staff: [] }), { status: 200 })
+      );
+
+    const result = await request<{ staff: unknown[] }>("/facilities/demo/staff");
+
+    expect(result.staff).toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(getFetchMock().mock.calls[1][0]).toBe("/api/v1/auth/refresh");
+
+    const retryHeaders = getFetchMock().mock.calls[2][1].headers as Headers;
+    expect(retryHeaders.get("Authorization")).toBe("Bearer refreshed-token");
+    expect(apiClient.getToken()).toBe("refreshed-token");
   });
 
   it("rejects successful responses with invalid JSON", async () => {

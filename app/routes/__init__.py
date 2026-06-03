@@ -14,11 +14,13 @@ from app.routes.files_new import router as files_new_router
 from app.routes.inventory import router as inventory_router
 from app.routes.laboratory import router as laboratory_router
 from app.routes.password_reset import router as password_reset_router
+from app.routes.patient_notifications import router as patient_notifications_router
 from app.routes.patients import router as patients_router
 from app.routes.pharmacy import router as pharmacy_router
 from app.routes.queue import router as queue_router
 from app.routes.radiology import router as radiology_router
 from app.routes.reports import router as reports_router
+from app.routes.order_workflow import router as order_workflow_router
 from app.routes.suppliers import router as suppliers_router
 from app.routes.users import router as users_router
 from app.routes.wards import router as wards_router
@@ -39,11 +41,13 @@ api_router.include_router(files_new_router)
 api_router.include_router(inventory_router)
 api_router.include_router(laboratory_router)
 api_router.include_router(password_reset_router)
+api_router.include_router(patient_notifications_router)
 api_router.include_router(patients_router)
 api_router.include_router(pharmacy_router)
 api_router.include_router(queue_router)
 api_router.include_router(radiology_router)
 api_router.include_router(reports_router)
+api_router.include_router(order_workflow_router)
 api_router.include_router(suppliers_router)
 api_router.include_router(users_router)
 api_router.include_router(wards_router)

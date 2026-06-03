@@ -167,6 +167,7 @@ export const authenticateStaff = async ({
       password,
     }
   );
+  apiClient.setToken(auth.access_token);
   const user = await getProfile(auth.access_token);
 
   return {
@@ -211,15 +212,8 @@ export const registerAdminUser = async ({
 
 export const getFacilityStaff = async (
   facilitySlug: string
-): Promise<FacilityStaffAccount[]> => {
-  try {
-    return await apiClient.get<FacilityStaffAccount[]>(
-      `/facilities/${facilitySlug}/staff`
-    );
-  } catch {
-    return [];
-  }
-};
+): Promise<FacilityStaffAccount[]> =>
+  apiClient.get<FacilityStaffAccount[]>(`/facilities/${facilitySlug}/staff`);
 
 export const getStaffByLoginId = async (
   facilitySlug: string,

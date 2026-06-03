@@ -16,6 +16,8 @@ from app.models.alert import Alert
 from app.models.audit_log import AuditLog
 from app.models.user_session import UserSession
 from app.models.ward import WardAdmission, WardBed
+from app.models.patient_notification import PatientNotification
+from app.models.order_workflow import OrderWorkflowEvent
 
 # Export all models
 __all__ = [
@@ -46,4 +48,6 @@ __all__ = [
     'UserSession',
     'WardAdmission',
     'WardBed',
+    'PatientNotification',
+    'OrderWorkflowEvent',
 ]

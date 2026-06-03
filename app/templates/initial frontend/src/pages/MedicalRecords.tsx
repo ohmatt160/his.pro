@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import {
   ArrowLeft,
   ClipboardPlus,
+  ClipboardList,
   FileHeart,
   HeartPulse,
   Plus,
@@ -251,7 +252,7 @@ const MedicalRecords = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.03 }}
-                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 lg:grid-cols-[1.1fr_1fr_1fr_.8fr]"
+                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 lg:grid-cols-[1.1fr_1fr_1fr_.8fr_auto]"
                   >
                     <div>
                       <p className="font-semibold text-foreground">
@@ -279,6 +280,11 @@ const MedicalRecords = () => {
                     <p className="text-sm text-muted-foreground">
                       {record.follow_up_date ? `Follow-up ${record.follow_up_date}` : "No follow-up"}
                     </p>
+                    <Button asChild variant="outline" size="sm" className="gap-2 self-start">
+                      <Link to={`/dashboard/${facilitySlug}/patients/${record.patient_id}/timeline`}>
+                        <ClipboardList className="h-4 w-4" /> Timeline
+                      </Link>
+                    </Button>
                   </motion.div>
                 ))}
               </div>

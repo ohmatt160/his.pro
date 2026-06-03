@@ -55,6 +55,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
         apiClient.setUser(profile);
         setUserState(profile);
+        setTokenState(apiClient.getToken());
         setSessionMessage("");
       } catch {
         if (!isMounted) {
@@ -93,7 +94,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       apiClient.setUser(response.user);
-      setTokenState(null);
+      setTokenState(response.access_token);
       setUserState(response.user);
       setSessionMessage("");
 

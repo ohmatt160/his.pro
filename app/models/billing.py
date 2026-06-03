@@ -84,6 +84,11 @@ class Payment(BaseModel):
     reference_number = Column(String(100))
     notes = Column(Text)
     payment_date = Column(DateTime, nullable=False)
+    receipt_filename = Column(String(255), nullable=True)
+    receipt_original_name = Column(String(255), nullable=True)
+    receipt_content_type = Column(String(100), nullable=True)
+    receipt_size = Column(Integer, nullable=True)
+    receipt_uploaded_at = Column(DateTime, nullable=True)
 
     PAYMENT_METHODS = ['CASH', 'CARD', 'TRANSFER', 'INSURANCE']
 

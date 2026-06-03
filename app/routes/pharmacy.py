@@ -19,6 +19,9 @@ from app.schemas.pharmacy import (
     MedicationCreate,
 )
 from app.schemas.users import MessageResponse
+from app.services.clinical_workflow_service import ClinicalWorkflowService
+from app.services.order_workflow_service import OrderWorkflowService
+from app.services.patient_notification_service import PatientNotificationService
 from app.services.pharmacy_service import PharmacyService
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
@@ -228,6 +231,19 @@ async def create_prescription(
     payload['facility_slug'] = facility_slug
 
     prescription = PharmacyService.create_prescription(payload, current_user.id)
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=prescription.patient_id,
+        order_type="prescription",
+        order_id=prescription.id,
+        event_type="consultation_order_created",
+        status=prescription.status,
+        title="Prescription created",
+        message="Prescription created for pharmacy dispensing.",
+        actor_id=current_user.id,
+        target_role="PHARMACIST",
+        metadata={"items": len(data.items)},
+    )
 
     return _prescription_response(prescription)
 
@@ -262,6 +278,52 @@ async def dispense_prescription(
 
     if error:
         raise HTTPException(status_code=400, detail=error)
+
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=prescription.patient_id,
+        order_type="prescription",
+        order_id=prescription.id,
+        event_type="prescription_dispensed",
+        status=prescription.status,
+        title="Prescription dispensed",
+        message="Prescription has been dispensed by pharmacy.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"dispensed_by": prescription.dispensed_by},
+    )
+    patient = db.query(Patient).filter_by(id=prescription.patient_id, facility_slug=facility_slug).first()
+    if patient:
+        PatientNotificationService.create(
+            facility_slug=facility_slug,
+            patient=patient,
+            notification_type="prescription_dispensed",
+            title="Prescription dispensed",
+            message="Your prescription has been dispensed and is ready for pickup or collection confirmation.",
+            source_type="prescription",
+            source_id=prescription.id,
+            metadata={"dispensed_by": prescription.dispensed_by},
+        )
+    ClinicalWorkflowService.notify_user(
+        prescription.prescribed_by,
+        facility_slug,
+        "info",
+        "Prescription dispensed",
+        f"Prescription {prescription.id} has been dispensed.",
+    )
+    OrderWorkflowService.record(
+        facility_slug=facility_slug,
+        patient_id=prescription.patient_id,
+        order_type="prescription",
+        order_id=prescription.id,
+        event_type="doctor_notified",
+        status="NOTIFIED",
+        title="Doctor notified",
+        message="Prescribing clinician was notified that the prescription was dispensed.",
+        actor_id=current_user.id,
+        target_role="DOCTOR",
+        metadata={"prescribed_by": prescription.prescribed_by},
+    )
 
     return _prescription_response(prescription)
 
