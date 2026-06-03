@@ -12,6 +12,7 @@ import logging
 from app.extensions import get_db, engine
 from app.models.user import User
 from app.middleware.jwt import verify_token
+from app.models.facility import Facility
 from app import jwt_blocklist
 
 logger = logging.getLogger(__name__)
@@ -61,9 +62,17 @@ async def get_current_user(
                 detail="User not found or inactive"
             )
 
+        if user.facility_slug and not user.facility_id:
+            facility = db.query(Facility).filter_by(slug=user.facility_slug, is_active=True).first()
+            if facility:
+                user.facility_id = facility.id
+                db.add(user)
+                db.flush()
+
         # Attach user to request state for middleware
         request.state.user_id = user.id
         request.state.user = token_data
+        request.state.tenant_id = str(user.facility_id) if user.facility_id else token_data.get("tid")
 
         return user
     except HTTPException:

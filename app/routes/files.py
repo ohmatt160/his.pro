@@ -21,6 +21,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/files", tags=["files"])
 
 
+def _tenant_folder(current_user: User, folder: str = "uploads") -> str:
+    if not current_user.facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    safe_folder = FileUploadService.sanitize_folder(folder)
+    return f"tenants/{current_user.facility_slug}/{safe_folder}"
+
+
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_file(
     file: UploadFile = File(...),
@@ -28,7 +36,7 @@ async def upload_file(
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'))
 ):
     """Upload a file"""
-    success, result = FileUploadService.upload_file(file, folder=folder)
+    success, result = FileUploadService.upload_file(file, folder=_tenant_folder(current_user, folder))
 
     if not success:
         raise HTTPException(status_code=400, detail=result)
@@ -44,7 +52,7 @@ async def list_files(
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'))
 ):
     """List uploaded files"""
-    result = FileUploadService.list_files(folder=folder, page=page, per_page=per_page)
+    result = FileUploadService.list_files(folder=_tenant_folder(current_user, folder), page=page, per_page=per_page)
     return result
 
 
@@ -55,7 +63,7 @@ async def get_file_info(
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'))
 ):
     """Get file information"""
-    file_info = FileUploadService.get_file_info(filename, folder=folder)
+    file_info = FileUploadService.get_file_info(filename, folder=_tenant_folder(current_user, folder))
 
     if not file_info:
         raise HTTPException(status_code=404, detail="File not found")
@@ -70,7 +78,7 @@ async def delete_file(
     current_user: User = Depends(role_required('ADMIN'))
 ):
     """Delete a file"""
-    success, message = FileUploadService.delete_file(filename, folder=folder)
+    success, message = FileUploadService.delete_file(filename, folder=_tenant_folder(current_user, folder))
 
     if not success:
         raise HTTPException(status_code=400, detail=message)

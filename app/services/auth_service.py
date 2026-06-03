@@ -1,5 +1,6 @@
 from app.models.user import User
 from app.extensions import db_session
+from app.services.tenant_service import resolve_facility_id
 from app.utils.validators import Validators
 from sqlalchemy import or_
 
@@ -36,6 +37,7 @@ class AuthService:
             role=data['role'],
             first_name=data.get('first_name'),
             last_name=data.get('last_name'),
+            facility_id=resolve_facility_id(data.get('facility_slug'), session=session),
             facility_slug=data.get('facility_slug')  # Assign facility if provided
         )
         user.set_password(data['password'])

@@ -70,6 +70,7 @@ def normalize_facility_modules(
 def build_facility_response(facility: Facility) -> FacilityResponse:
     return FacilityResponse(
         id=str(facility.id),
+        tenant_id=str(facility.id),
         name=facility.name,
         slug=facility.slug,
         type=facility.type,
@@ -124,7 +125,8 @@ def attach_user_to_facility(user: User, facility: Facility) -> None:
             detail="User already belongs to another facility"
         )
 
-    if user.facility_slug != facility.slug:
+    if user.facility_slug != facility.slug or user.facility_id != facility.id:
+        user.facility_id = facility.id
         user.facility_slug = facility.slug
         db_session.add(user)
         db_session.commit()
@@ -158,11 +160,16 @@ ROLE_PREFIX = {
 }
 
 
-def require_admin_for_facility(user: User, facility_slug: str) -> None:
+def require_admin_for_facility(user: User, facility: Facility) -> None:
     if user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Only facility admins can manage staff")
 
-    if user.facility_slug != facility_slug:
+    if user.facility_id:
+        if str(user.facility_id) != str(facility.id):
+            raise HTTPException(status_code=403, detail="Cannot manage another facility")
+        return
+
+    if user.facility_slug != facility.slug:
         raise HTTPException(status_code=403, detail="Cannot manage another facility")
 
 
@@ -185,11 +192,14 @@ def generate_temporary_password(length: int = 12) -> str:
             return password
 
 
-def next_staff_login_id(facility_slug: str, role: str) -> str:
+def next_staff_login_id(facility: Facility, role: str) -> str:
     prefix = ROLE_PREFIX[role]
     existing_count = (
         db_session.query(User)
-        .filter(User.facility_slug == facility_slug, User.role == role)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.role == role,
+        )
         .count()
     )
     return f"{prefix}-{existing_count + 1:03d}"
@@ -206,6 +216,7 @@ def build_staff_response(
 
     return FacilityStaffResponse(
         staffRecordId=str(user.id),
+        facilityId=str(user.facility_id) if user.facility_id else None,
         facilitySlug=user.facility_slug or "",
         fullName=full_name,
         role=BACKEND_TO_FRONTEND_ROLE.get(user.role, "reception"),
@@ -232,9 +243,23 @@ def get_facility_or_404(facility_slug: str) -> Facility:
 def get_current_admin_facility(current_user: User) -> Facility:
     if current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Admin access required")
-    if not current_user.facility_slug:
+
+    facility = None
+    if current_user.facility_id:
+        facility = (
+            db_session.query(Facility)
+            .filter_by(id=current_user.facility_id, is_active=True)
+            .first()
+        )
+    elif current_user.facility_slug:
+        facility = get_facility_or_404(current_user.facility_slug)
+        current_user.facility_id = facility.id
+        db_session.add(current_user)
+        db_session.flush()
+
+    if not facility:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
-    return get_facility_or_404(current_user.facility_slug)
+    return facility
 
 
 @router.get("", response_model=List[FacilityResponse])
@@ -300,12 +325,15 @@ async def get_facility_staff(
     db: Session = Depends(get_db)
 ):
     """List active staff accounts for a facility."""
-    get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility_slug)
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
 
     staff = (
         db_session.query(User)
-        .filter(User.facility_slug == facility_slug, User.is_active == True)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.is_active == True,
+        )
         .order_by(User.created_at.asc())
         .all()
     )
@@ -325,8 +353,8 @@ async def create_facility_staff(
     db: Session = Depends(get_db)
 ):
     """Create a staff user for a facility and return one-time credentials."""
-    get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility_slug)
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
 
     frontend_role = data.role.lower()
     role = FRONTEND_TO_BACKEND_ROLE.get(frontend_role, data.role.upper())
@@ -336,7 +364,7 @@ async def create_facility_staff(
     full_name = Validators.sanitize_string(data.fullName)
     department = Validators.sanitize_string(data.department)
     first_name, last_name = split_full_name(full_name)
-    login_id = next_staff_login_id(facility_slug, role)
+    login_id = next_staff_login_id(facility, role)
     email = str(data.email).lower() if data.email else f"{login_id.lower()}@{facility_slug}.hispro.local"
     phone = Validators.sanitize_string(data.phone or "—")
     temporary_password = data.password or generate_temporary_password()
@@ -358,6 +386,7 @@ async def create_facility_staff(
         last_name=last_name,
         phone=phone,
         department=department,
+        facility_id=facility.id,
         facility_slug=facility_slug,
         must_change_password=True,
     )
@@ -382,13 +411,13 @@ async def get_facility_staff_member(
     db: Session = Depends(get_db)
 ):
     """Get one staff account by login ID."""
-    get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility_slug)
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
 
     member = (
         db_session.query(User)
         .filter(
-            User.facility_slug == facility_slug,
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
             User.username == login_id,
             User.is_active == True,
         )

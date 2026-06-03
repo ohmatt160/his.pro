@@ -7,6 +7,7 @@ class Supplier(BaseModel):
     """Supplier model for managing medical suppliers/vendors"""
     __tablename__ = 'suppliers'
 
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
     name = Column(String(200), nullable=False)
     contact_person = Column(String(100))

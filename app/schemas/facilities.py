@@ -30,6 +30,7 @@ class FacilityModulesUpdate(BaseModel):
 
 class FacilityResponse(BaseModel):
     id: str
+    tenant_id: str
     name: str
     slug: str
     type: str

@@ -9,6 +9,7 @@ class MedicalRecord(BaseModel):
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     appointment_id = Column(String(36), ForeignKey('appointments.id'))
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     created_by = Column(String(36), ForeignKey('users.id'))
 

@@ -9,6 +9,7 @@ class PatientNotification(BaseModel):
 
     __tablename__ = "patient_notifications"
 
+    facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)
     patient_id = Column(String(36), ForeignKey("patients.id"), nullable=False, index=True)
     notification_type = Column(String(80), nullable=False, index=True)
@@ -28,4 +29,3 @@ class PatientNotification(BaseModel):
 
     STATUSES = ["QUEUED", "SENT", "SUPPRESSED", "FAILED", "READ"]
     CHANNELS = ["PORTAL", "SMS"]
-

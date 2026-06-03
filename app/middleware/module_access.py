@@ -92,11 +92,15 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
         if not user or not user.facility_slug:
             return await call_next(request)
 
-        facility = (
-            db_session.query(Facility)
-            .filter(Facility.slug == user.facility_slug, Facility.is_active == True)
-            .first()
-        )
+        facility_query = db_session.query(Facility).filter(Facility.is_active == True)
+        if user.facility_id:
+            facility = facility_query.filter(Facility.id == user.facility_id).first()
+        else:
+            facility = facility_query.filter(Facility.slug == user.facility_slug).first()
+            if facility:
+                user.facility_id = facility.id
+                db_session.add(user)
+                db_session.flush()
         if not facility:
             return await call_next(request)
 

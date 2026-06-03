@@ -11,6 +11,7 @@ class WardBed(BaseModel):
 
     __tablename__ = "ward_beds"
 
+    facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)
     ward_name = Column(String(120), nullable=False, index=True)
     bed_number = Column(String(40), nullable=False)
@@ -27,6 +28,7 @@ class WardAdmission(BaseModel):
 
     __tablename__ = "ward_admissions"
 
+    facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)
     patient_id = Column(String(36), ForeignKey("patients.id"), nullable=False, index=True)
     bed_id = Column(String(36), ForeignKey("ward_beds.id"), nullable=True, index=True)

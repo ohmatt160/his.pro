@@ -18,6 +18,7 @@ class User(BaseModel):
     last_name = Column(String(100))
     phone = Column(String(20))
     department = Column(String(100))
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     must_change_password = Column(Boolean, default=False)
     last_password_change = Column(DateTime, nullable=True)

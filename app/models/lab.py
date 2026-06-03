@@ -32,6 +32,7 @@ class LabOrder(BaseModel):
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     test_id = Column(String(36), ForeignKey('lab_tests.id'), nullable=False)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     ordered_by = Column(String(36), ForeignKey('users.id'))
     performed_by = Column(String(36), ForeignKey('users.id'))

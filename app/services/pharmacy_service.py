@@ -202,10 +202,13 @@ class PharmacyService:
         return prescription, None
     
     @staticmethod
-    def cancel_prescription(prescription_id):
+    def cancel_prescription(prescription_id, facility_slug=None):
         """Cancel a prescription"""
         prescription = Prescription.query.get(prescription_id)
         if not prescription:
+            return None, "Prescription not found"
+
+        if facility_slug and prescription.facility_slug != facility_slug:
             return None, "Prescription not found"
         
         if prescription.status != 'PENDING':

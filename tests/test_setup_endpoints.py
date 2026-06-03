@@ -87,7 +87,9 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(first_facility.status_code, 200, first_facility.text)
             self.assertEqual(second_facility.status_code, 200, second_facility.text)
             self.assertEqual(first_facility.json()["id"], second_facility.json()["id"])
+            self.assertEqual(second_facility.json()["tenant_id"], second_facility.json()["id"])
             self.assertEqual(second_facility.json()["slug"], "sunrise-medical-centre")
+            facility_id = second_facility.json()["id"]
 
             cold_workspace_lookup = await client.get(
                 "/api/v1/facilities/sunrise-medical-centre",
@@ -96,6 +98,7 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(cold_workspace_lookup.status_code, 200, cold_workspace_lookup.text)
             self.assertEqual(cold_workspace_lookup.json()["slug"], "sunrise-medical-centre")
+            self.assertEqual(cold_workspace_lookup.json()["tenant_id"], facility_id)
             self.assertEqual(cold_workspace_lookup.json()["modules"], ["reception", "records"])
 
             public_workspace_lookup = await client.get(
@@ -104,6 +107,7 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(public_workspace_lookup.status_code, 200, public_workspace_lookup.text)
             self.assertEqual(public_workspace_lookup.json()["slug"], "sunrise-medical-centre")
+            self.assertEqual(public_workspace_lookup.json()["tenant_id"], facility_id)
             self.assertEqual(public_workspace_lookup.json()["modules"], ["reception", "records"])
 
             email_login = await client.post(
@@ -125,6 +129,7 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(profile.status_code, 200, profile.text)
             self.assertEqual(profile.json()["username"], "sunrise-medical-centre-admin")
             self.assertEqual(profile.json()["role"], "ADMIN")
+            self.assertEqual(profile.json()["facility_id"], facility_id)
             self.assertEqual(profile.json()["facility_slug"], "sunrise-medical-centre")
 
             active_sessions = await client.get(
@@ -228,6 +233,7 @@ class SetupEndpointTest(unittest.TestCase):
             )
 
             self.assertEqual(staff_create.status_code, 201, staff_create.text)
+            self.assertEqual(staff_create.json()["facilityId"], facility_id)
             self.assertEqual(staff_create.json()["loginId"], "NUR-001")
             self.assertEqual(staff_create.json()["role"], "nurse")
             self.assertTrue(staff_create.json()["temporaryPassword"])
@@ -241,6 +247,10 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(
                 [member["loginId"] for member in staff_list.json()],
                 ["sunrise-medical-centre-admin", "NUR-001"],
+            )
+            self.assertEqual(
+                {member["facilityId"] for member in staff_list.json()},
+                {facility_id},
             )
 
             staff_lookup = await client.get(
@@ -268,6 +278,7 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(staff_profile.status_code, 200, staff_profile.text)
             self.assertEqual(staff_profile.json()["role"], "NURSE")
+            self.assertEqual(staff_profile.json()["facility_id"], facility_id)
             self.assertEqual(staff_profile.json()["facility_slug"], "sunrise-medical-centre")
 
             nurse_lab_access_denied = await client.get(
@@ -1355,6 +1366,23 @@ class SetupEndpointTest(unittest.TestCase):
             )
 
             self.assertEqual(changed_password_login.status_code, 200, changed_password_login.text)
+
+            from app.services.tenant_service import TENANT_SCOPED_MODELS
+
+            for model in TENANT_SCOPED_MODELS:
+                missing_tenant_id = (
+                    self.db_session.query(model)
+                    .filter(
+                        model.facility_slug == "sunrise-medical-centre",
+                        model.facility_id.is_(None),
+                    )
+                    .count()
+                )
+                self.assertEqual(
+                    missing_tenant_id,
+                    0,
+                    f"{model.__name__} rows must carry facility_id tenant key",
+                )
 
         asyncio.run(run_test())
 

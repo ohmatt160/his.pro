@@ -8,6 +8,7 @@ class OrderWorkflowEvent(BaseModel):
 
     __tablename__ = "order_workflow_events"
 
+    facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)
     patient_id = Column(String(36), ForeignKey("patients.id"), nullable=True, index=True)
     order_type = Column(String(80), nullable=False, index=True)
@@ -20,4 +21,3 @@ class OrderWorkflowEvent(BaseModel):
     target_role = Column(String(80), nullable=True, index=True)
     metadata_json = Column(JSON, default=dict)
     occurred_at = Column(DateTime, nullable=False)
-

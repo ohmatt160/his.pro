@@ -1,5 +1,6 @@
 export type AuthUser = {
   id?: string;
+  facilityId?: string;
   facilitySlug: string;
   loginId: string;
   role: string;

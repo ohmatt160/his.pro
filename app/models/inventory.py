@@ -9,6 +9,7 @@ class Inventory(BaseModel):
     """Inventory model for managing medical supplies and medications"""
     __tablename__ = 'inventory'
 
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
     name = Column(String(200), nullable=False)
     sku = Column(String(100), nullable=False)

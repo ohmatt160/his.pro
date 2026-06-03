@@ -12,6 +12,7 @@ class AuditLog(BaseModel):
     action = Column(String(100), nullable=False)
     resource_type = Column(String(50))
     resource_id = Column(String(36))
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     details = Column(JSON, default=dict)
     ip_address = Column(String(45))

@@ -10,6 +10,7 @@ class Appointment(BaseModel):
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     doctor_id = Column(String(36), ForeignKey('users.id'), nullable=False, index=True)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     appointment_date = Column(DateTime, nullable=False)
     scheduled_time = Column(DateTime, nullable=True)

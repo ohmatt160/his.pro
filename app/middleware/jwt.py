@@ -30,6 +30,7 @@ def create_access_token(
     expires_delta: timedelta = None,
     session_id: str | None = None,
     jti: str | None = None,
+    tenant_id: str | None = None,
 ) -> str:
     """
     Create a JWT access token
@@ -48,6 +49,8 @@ def create_access_token(
     }
     if session_id:
         to_encode["sid"] = session_id
+    if tenant_id:
+        to_encode["tid"] = str(tenant_id)
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 
@@ -56,6 +59,7 @@ def create_refresh_token(
     identity: int | str,
     session_id: str | None = None,
     jti: str | None = None,
+    tenant_id: str | None = None,
 ) -> str:
     """
     Create a JWT refresh token
@@ -70,6 +74,8 @@ def create_refresh_token(
     }
     if session_id:
         to_encode["sid"] = session_id
+    if tenant_id:
+        to_encode["tid"] = str(tenant_id)
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
 

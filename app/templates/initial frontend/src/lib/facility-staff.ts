@@ -53,6 +53,7 @@ type BackendUser = {
   role: string;
   first_name?: string | null;
   last_name?: string | null;
+  facility_id?: string | null;
   facility_slug?: string | null;
 };
 
@@ -127,6 +128,7 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
 
   return {
     id: user.id,
+    facilityId: user.facility_id || undefined,
     facilitySlug: user.facility_slug || "",
     loginId: user.username,
     role,

@@ -50,6 +50,7 @@ from app.middleware.security import InputValidationMiddleware, SecurityHeadersMi
 from app.utils.error_handlers import register_error_handlers
 from app.utils.schema import ensure_sqlite_schema_current
 from app.services.email_service import EmailService
+from app.services.tenant_service import backfill_facility_ids, register_tenant_hooks
 from app.extensions import db_session
 from app.models import UserSession
 
@@ -78,6 +79,7 @@ async def lifespan(app: FastAPI):
     try:
         Base.metadata.create_all(bind=engine)
         ensure_sqlite_schema_current(engine)
+        backfill_facility_ids()
         print("[OK] Database tables initialized")
     except Exception as e:
         print(f"[WARNING] Database init failed: {e}")
@@ -110,6 +112,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application"""
+
+    register_tenant_hooks()
 
     app = FastAPI(
         title="HIS.Pro API",

@@ -86,8 +86,8 @@ def build_token_response(user: User, request: Request | None = None) -> TokenRes
     refresh_jti = str(uuid.uuid4())
     session = SessionService.create_session(str(user.id), refresh_jti, request)
     return TokenResponse(
-        access_token=create_access_token(identity=user.id, session_id=session.id),
-        refresh_token=create_refresh_token(identity=user.id, session_id=session.id, jti=refresh_jti),
+        access_token=create_access_token(identity=user.id, session_id=session.id, tenant_id=user.facility_id),
+        refresh_token=create_refresh_token(identity=user.id, session_id=session.id, jti=refresh_jti, tenant_id=user.facility_id),
     )
 
 
@@ -134,6 +134,7 @@ async def register_user(
             role=user.role,
             first_name=user.first_name,
             last_name=user.last_name,
+            facility_id=str(user.facility_id) if user.facility_id else None,
             facility_slug=user.facility_slug,
             is_active=user.is_active,
             created_at=user.created_at.isoformat() if user.created_at else "",
@@ -262,8 +263,8 @@ async def refresh_token(
         new_refresh_jti = str(uuid.uuid4())
         SessionService.rotate_refresh_token(token_data.get("sid"), user_id, new_refresh_jti)
         token_response = TokenResponse(
-            access_token=create_access_token(identity=user.id, session_id=token_data.get("sid")),
-            refresh_token=create_refresh_token(identity=user.id, session_id=token_data.get("sid"), jti=new_refresh_jti),
+            access_token=create_access_token(identity=user.id, session_id=token_data.get("sid"), tenant_id=user.facility_id),
+            refresh_token=create_refresh_token(identity=user.id, session_id=token_data.get("sid"), jti=new_refresh_jti, tenant_id=user.facility_id),
         )
         _set_auth_cookies(response, token_response)
         
@@ -385,6 +386,7 @@ async def verify_current_session(
         role=user.role,
         first_name=user.first_name,
         last_name=user.last_name,
+        facility_id=str(user.facility_id) if user.facility_id else None,
         facility_slug=user.facility_slug,
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else "",

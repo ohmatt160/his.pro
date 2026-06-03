@@ -33,6 +33,7 @@ class UserResponse(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     phone: Optional[str] = None
+    facility_id: Optional[str] = None
     facility_slug: Optional[str]
     is_active: bool
     created_at: str
@@ -70,6 +71,7 @@ class FacilityStaffCreate(BaseModel):
 
 class FacilityStaffResponse(BaseModel):
     staffRecordId: str
+    facilityId: Optional[str] = None
     facilitySlug: str
     fullName: str
     role: str

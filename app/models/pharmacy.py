@@ -17,6 +17,7 @@ class Medication(BaseModel):
     price = Column(Numeric(10, 2), default=0)
     reorder_level = Column(Integer, default=10)
     is_active = Column(Boolean, default=True)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
 
     # Relationships
@@ -53,6 +54,7 @@ class Prescription(BaseModel):
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     prescribed_by = Column(String(36), ForeignKey('users.id'))
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     status = Column(String(50), default='PENDING')  # PENDING, DISPENSED, CANCELLED
     notes = Column(Text)

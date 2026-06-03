@@ -335,12 +335,18 @@ async def cancel_prescription(
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    prescription, error = PharmacyService.cancel_prescription(prescription_id)
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    prescription, error = PharmacyService.cancel_prescription(
+        prescription_id,
+        facility_slug=facility_slug,
+    )
+
+    if not prescription:
+        raise HTTPException(status_code=404, detail="Prescription not found")
 
     if error:
         raise HTTPException(status_code=400, detail=error)
-
-    if not prescription or prescription.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Prescription not found")
 
     return MessageResponse(message="Prescription cancelled successfully")

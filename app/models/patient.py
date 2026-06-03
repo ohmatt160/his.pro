@@ -20,6 +20,7 @@ class Patient(BaseModel):
     emergency_contact_phone = Column(String(20))
     is_active = Column(Boolean, default=True)
     created_by = Column(String(36), ForeignKey('users.id'), index=True)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
 
     # Relationships

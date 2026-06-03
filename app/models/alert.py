@@ -8,6 +8,7 @@ class Alert(BaseModel):
     """Alert model for system notifications and alerts"""
     __tablename__ = 'alerts'
 
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
     alert_type = Column(String(50), nullable=False, index=True)  # info/warning/critical
     title = Column(String(200), nullable=False)

@@ -9,6 +9,7 @@ class Radiology(BaseModel):
     __tablename__ = 'radiology_orders'
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
     request_date = Column(DateTime, default=datetime.utcnow)
     modality = Column(String(50), nullable=False)  # X-ray/CT/MRI/Ultrasound
