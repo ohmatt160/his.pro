@@ -33,6 +33,12 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 import { getFacilityStaff, type FacilityStaffAccount } from "@/lib/facility-staff";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Alert = {
   id: string;
@@ -58,6 +64,8 @@ const emptyForm = {
   expires_at: "",
 };
 
+type AlertResource = "alerts" | "staff";
+
 const Alerts = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
@@ -69,6 +77,7 @@ const Alerts = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<AlertResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -100,12 +109,18 @@ const Alerts = () => {
   const loadAlerts = async () => {
     setLoading(true);
     try {
-      const [alertResponse, staffResponse] = await Promise.all([
+      const [alertResponse, staffResponse] = await Promise.allSettled([
         apiClient.get<Alert[]>("/alerts?per_page=100"),
         facilitySlug ? getFacilityStaff(facilitySlug) : Promise.resolve([]),
       ]);
-      setAlerts(alertResponse);
-      setStaff(staffResponse);
+
+      const errors: ResourceErrors<AlertResource> = {};
+      addSettledError(errors, "alerts", alertResponse, "Alerts could not be loaded.");
+      addSettledError(errors, "staff", staffResponse, "Staff could not be loaded.");
+
+      setAlerts(settledValue(alertResponse, []));
+      setStaff(settledValue(staffResponse, []));
+      setDataErrors(errors);
     } finally {
       setLoading(false);
     }
@@ -113,8 +128,6 @@ const Alerts = () => {
 
   useEffect(() => {
     loadAlerts().catch(() => {
-      setAlerts([]);
-      setStaff([]);
       setLoading(false);
     });
   }, []);
@@ -192,6 +205,12 @@ const Alerts = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some alert data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Alerts" value={String(alerts.length)} icon={Bell} />
           <Metric label="Unread" value={String(summary.unread)} icon={Megaphone} />

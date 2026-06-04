@@ -33,6 +33,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -78,6 +84,8 @@ type Payment = {
 
 type PaymentMethod = "CASH" | "CARD" | "TRANSFER" | "INSURANCE";
 
+type BillingResource = "patients" | "invoices";
+
 const emptyInvoiceForm = {
   patient_id: "",
   amount: "",
@@ -115,6 +123,7 @@ const Billing = () => {
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<BillingResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -156,12 +165,20 @@ const Billing = () => {
   const loadBilling = async () => {
     setLoading(true);
     try {
-      const [patientResponse, invoiceResponse] = await Promise.all([
+      const [patientResponse, invoiceResponse] = await Promise.allSettled([
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<Invoice[]>("/billing/invoices"),
       ]);
+
+      const errors: ResourceErrors<BillingResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "invoices", invoiceResponse, "Invoices could not be loaded.");
+
+      const nextPatients = settledValue(patientResponse, { patients: [], total: 0 }).patients;
+      const nextInvoices = settledValue(invoiceResponse, []);
+
       const paymentPairs = await Promise.all(
-        invoiceResponse.map(async (invoice) => {
+        nextInvoices.map(async (invoice) => {
           try {
             const payments = await apiClient.get<Payment[]>(
               `/billing/invoices/${invoice.id}/payments`
@@ -172,9 +189,10 @@ const Billing = () => {
           }
         })
       );
-      setPatients(patientResponse.patients);
-      setInvoices(invoiceResponse);
+      setPatients(nextPatients);
+      setInvoices(nextInvoices);
       setPaymentsByInvoice(Object.fromEntries(paymentPairs));
+      setDataErrors(errors);
     } finally {
       setLoading(false);
     }
@@ -182,8 +200,6 @@ const Billing = () => {
 
   useEffect(() => {
     loadBilling().catch(() => {
-      setPatients([]);
-      setInvoices([]);
       setLoading(false);
     });
   }, []);
@@ -310,6 +326,12 @@ const Billing = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some billing data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Invoices" value={String(invoices.length)} icon={Receipt} />
           <Metric label="Total Billed" value={formatCurrency(totals.billed)} icon={Banknote} />

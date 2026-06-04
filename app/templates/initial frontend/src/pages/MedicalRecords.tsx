@@ -33,6 +33,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -57,6 +63,8 @@ type MedicalRecord = {
   notes?: string | null;
   created_at: string;
 };
+
+type MedicalRecordResource = "patients" | "records";
 
 const emptyRecordForm = {
   patient_id: "",
@@ -88,6 +96,7 @@ const MedicalRecords = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyRecordForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<MedicalRecordResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -131,12 +140,18 @@ const MedicalRecords = () => {
   const loadRecords = async () => {
     setLoading(true);
     try {
-      const [patientResponse, recordResponse] = await Promise.all([
+      const [patientResponse, recordResponse] = await Promise.allSettled([
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<MedicalRecord[]>("/emr"),
       ]);
-      setPatients(patientResponse.patients);
-      setRecords(recordResponse);
+
+      const errors: ResourceErrors<MedicalRecordResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "records", recordResponse, "Medical records could not be loaded.");
+
+      setPatients(settledValue(patientResponse, { patients: [] }).patients);
+      setRecords(settledValue(recordResponse, []));
+      setDataErrors(errors);
     } finally {
       setLoading(false);
     }
@@ -144,8 +159,6 @@ const MedicalRecords = () => {
 
   useEffect(() => {
     loadRecords().catch(() => {
-      setPatients([]);
-      setRecords([]);
       setLoading(false);
     });
   }, []);
@@ -215,6 +228,12 @@ const MedicalRecords = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some medical record data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Records" value={String(records.length)} icon={FileHeart} />
           <Metric label="Patients" value={String(summary.patients)} icon={Users} />

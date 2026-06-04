@@ -39,6 +39,12 @@ import {
   type WardAdmission,
   type WardBed,
 } from "@/lib/wards";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -51,6 +57,8 @@ type Patient = {
 type PatientListResponse = {
   patients: Patient[];
 };
+
+type WardResource = "patients" | "beds" | "admissions";
 
 const emptyBedForm = {
   ward_name: "Observation Ward",
@@ -81,6 +89,7 @@ const Wards = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<WardResource>>({});
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
   const paths = {
@@ -93,16 +102,27 @@ const Wards = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [patientResponse, bedResponse, admissionResponse] = await Promise.all([
+      const [patientResponse, bedResponse, admissionResponse] = await Promise.allSettled([
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<WardBed[]>("/wards/beds"),
         apiClient.get<WardAdmission[]>("/wards/admissions?status=ACTIVE"),
       ]);
-      setPatients(patientResponse.patients);
-      setBeds(bedResponse);
-      setAdmissions(admissionResponse);
+
+      const errors: ResourceErrors<WardResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "beds", bedResponse, "Beds could not be loaded.");
+      addSettledError(errors, "admissions", admissionResponse, "Admissions could not be loaded.");
+
+      const nextPatients = settledValue(patientResponse, { patients: [] }).patients;
+      const nextBeds = settledValue(bedResponse, []);
+      const nextAdmissions = settledValue(admissionResponse, []);
+
+      setPatients(nextPatients);
+      setBeds(nextBeds);
+      setAdmissions(nextAdmissions);
+      setDataErrors(errors);
       if (selectedAdmission) {
-        const refreshed = admissionResponse.find((item) => item.id === selectedAdmission.id);
+        const refreshed = nextAdmissions.find((item) => item.id === selectedAdmission.id);
         setSelectedAdmission(refreshed || null);
       }
     } finally {
@@ -261,6 +281,12 @@ const Wards = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some ward data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Beds" value={String(summary.beds)} icon={BedDouble} />
           <Metric label="Available" value={String(summary.available)} icon={ClipboardList} />

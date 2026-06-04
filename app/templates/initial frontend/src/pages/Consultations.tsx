@@ -28,6 +28,12 @@ import {
   payloadFromConsultationForm,
 } from "@/lib/consultations";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Appointment = {
   id: string;
@@ -49,6 +55,8 @@ type PatientListResponse = {
   patients: Patient[];
 };
 
+type ConsultationResource = "appointments" | "patients" | "consultations";
+
 const activeAppointmentStatuses = ["SCHEDULED", "CONFIRMED", "IN_PROGRESS"];
 
 const Consultations = () => {
@@ -62,6 +70,7 @@ const Consultations = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<ConsultationResource>>({});
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
   const paths = {
@@ -77,17 +86,28 @@ const Consultations = () => {
     setLoading(true);
     try {
       const [appointmentResponse, patientResponse, consultationResponse] =
-        await Promise.all([
+        await Promise.allSettled([
           apiClient.get<Appointment[]>("/appointments"),
           apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
           apiClient.get<Consultation[]>("/consultations"),
         ]);
-      setAppointments(appointmentResponse);
-      setPatients(patientResponse.patients);
-      setConsultations(consultationResponse);
+
+      const errors: ResourceErrors<ConsultationResource> = {};
+      addSettledError(errors, "appointments", appointmentResponse, "Appointments could not be loaded.");
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "consultations", consultationResponse, "Consultations could not be loaded.");
+
+      const nextAppointments = settledValue(appointmentResponse, []);
+      const nextPatients = settledValue(patientResponse, { patients: [] }).patients;
+      const nextConsultations = settledValue(consultationResponse, []);
+
+      setAppointments(nextAppointments);
+      setPatients(nextPatients);
+      setConsultations(nextConsultations);
+      setDataErrors(errors);
 
       if (activeConsultation) {
-        const refreshed = consultationResponse.find((item) => item.id === activeConsultation.id);
+        const refreshed = nextConsultations.find((item) => item.id === activeConsultation.id);
         if (refreshed) {
           setActiveConsultation(refreshed);
           setForm(formFromConsultation(refreshed));
@@ -100,9 +120,6 @@ const Consultations = () => {
 
   useEffect(() => {
     loadData().catch(() => {
-      setAppointments([]);
-      setPatients([]);
-      setConsultations([]);
       setLoading(false);
     });
   }, []);
@@ -247,6 +264,12 @@ const Consultations = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some consultation data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Worklist" value={String(worklist.length)} icon={ClipboardList} />
           <Metric label="Open Notes" value={String(consultations.length - completedCount)} icon={FileHeart} />

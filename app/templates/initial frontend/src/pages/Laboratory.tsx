@@ -33,6 +33,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -77,6 +83,8 @@ type LabResult = {
   is_abnormal?: boolean | null;
   notes?: string | null;
 };
+
+type LaboratoryResource = "patients" | "tests" | "orders";
 
 const emptyTestForm = {
   name: "",
@@ -124,6 +132,7 @@ const Laboratory = () => {
   const [orderForm, setOrderForm] = useState(emptyOrderForm);
   const [resultForm, setResultForm] = useState(emptyResultForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<LaboratoryResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -176,16 +185,27 @@ const Laboratory = () => {
   const loadLaboratory = async () => {
     setLoading(true);
     try {
-      const [patientResponse, testResponse, orderResponse] = await Promise.all([
+      const [patientResponse, testResponse, orderResponse] = await Promise.allSettled([
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<LabTest[]>("/laboratory/tests"),
         apiClient.get<LabOrder[]>("/laboratory/orders"),
       ]);
-      setPatients(patientResponse.patients);
-      setTests(testResponse);
-      setOrders(orderResponse);
 
-      const completedOrders = orderResponse.filter(
+      const errors: ResourceErrors<LaboratoryResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "tests", testResponse, "Lab tests could not be loaded.");
+      addSettledError(errors, "orders", orderResponse, "Lab orders could not be loaded.");
+
+      const nextPatients = settledValue(patientResponse, { patients: [], total: 0 }).patients;
+      const nextTests = settledValue(testResponse, []);
+      const nextOrders = settledValue(orderResponse, []);
+
+      setPatients(nextPatients);
+      setTests(nextTests);
+      setOrders(nextOrders);
+      setDataErrors(errors);
+
+      const completedOrders = nextOrders.filter(
         (order) => order.status === "COMPLETED"
       );
       const resultEntries = await Promise.all(
@@ -208,9 +228,6 @@ const Laboratory = () => {
 
   useEffect(() => {
     loadLaboratory().catch(() => {
-      setPatients([]);
-      setTests([]);
-      setOrders([]);
       setLoading(false);
     });
   }, []);
@@ -329,6 +346,12 @@ const Laboratory = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some laboratory data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Active Tests" value={String(tests.length)} icon={TestTube2} />
           <Metric label="Pending" value={String(summary.pending)} icon={FlaskConical} />

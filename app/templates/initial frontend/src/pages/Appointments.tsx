@@ -39,6 +39,7 @@ import {
   type FacilityStaffAccount,
 } from "@/lib/facility-staff";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { addSettledError, getResourceError, settledValue } from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -96,9 +97,6 @@ const emptyForm = {
   notes: "",
 };
 
-const errorMessage = (fallback: string) => (error: unknown) =>
-  error instanceof Error ? error.message : fallback;
-
 export const loadAppointmentResources = async (
   facilitySlug: string
 ): Promise<AppointmentResourceState> => {
@@ -111,25 +109,16 @@ export const loadAppointmentResources = async (
     ]);
 
   const errors: AppointmentResourceState["errors"] = {};
-
-  if (patientResult.status === "rejected") {
-    errors.patients = errorMessage("Patients could not be loaded.")(patientResult.reason);
-  }
-  if (staffResult.status === "rejected") {
-    errors.clinicians = errorMessage("Clinicians could not be loaded.")(staffResult.reason);
-  }
-  if (appointmentResult.status === "rejected") {
-    errors.appointments = errorMessage("Appointments could not be loaded.")(appointmentResult.reason);
-  }
-  if (queueResult.status === "rejected") {
-    errors.queue = errorMessage("Queue could not be loaded.")(queueResult.reason);
-  }
+  addSettledError(errors, "patients", patientResult, "Patients could not be loaded.");
+  addSettledError(errors, "clinicians", staffResult, "Clinicians could not be loaded.");
+  addSettledError(errors, "appointments", appointmentResult, "Appointments could not be loaded.");
+  addSettledError(errors, "queue", queueResult, "Queue could not be loaded.");
 
   return {
-    patients: patientResult.status === "fulfilled" ? patientResult.value.patients : [],
-    clinicians: staffResult.status === "fulfilled" ? staffResult.value : [],
-    appointments: appointmentResult.status === "fulfilled" ? appointmentResult.value : [],
-    queue: queueResult.status === "fulfilled" ? queueResult.value.queue_entries : [],
+    patients: settledValue(patientResult, { patients: [], total: 0 }).patients,
+    clinicians: settledValue(staffResult, []),
+    appointments: settledValue(appointmentResult, []),
+    queue: settledValue(queueResult, { queue_entries: [] }).queue_entries,
     errors,
   };
 };
@@ -234,7 +223,7 @@ const Appointments = () => {
       await apiClient.put<Appointment>(`/appointments/${appointmentId}`, { status });
       await loadData();
     } catch (statusError) {
-      setError(errorMessage("Appointment status could not be updated.")(statusError));
+      setError(getResourceError(statusError, "Appointment status could not be updated."));
     }
   };
 
@@ -248,7 +237,7 @@ const Appointments = () => {
       });
       await loadData();
     } catch (queueError) {
-      setError(errorMessage("Patient could not be added to queue.")(queueError));
+      setError(getResourceError(queueError, "Patient could not be added to queue."));
     }
   };
 

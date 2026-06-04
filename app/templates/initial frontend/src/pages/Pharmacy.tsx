@@ -32,6 +32,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -73,6 +79,8 @@ type Prescription = {
   filled_at?: string | null;
   created_at: string;
 };
+
+type PharmacyResource = "patients" | "medications" | "prescriptions";
 
 const emptyMedicationForm = {
   name: "",
@@ -125,6 +133,7 @@ const Pharmacy = () => {
   const [stockForm, setStockForm] = useState(emptyStockForm);
   const [prescriptionForm, setPrescriptionForm] = useState(emptyPrescriptionForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<PharmacyResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -179,18 +188,28 @@ const Pharmacy = () => {
     setLoading(true);
     try {
       const [patientResponse, medicationResponse, prescriptionResponse] =
-        await Promise.all([
+        await Promise.allSettled([
           apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
           apiClient.get<Medication[]>("/pharmacy/medications"),
           apiClient.get<Prescription[]>("/pharmacy/prescriptions"),
         ]);
 
-      setPatients(patientResponse.patients);
-      setMedications(medicationResponse);
-      setPrescriptions(prescriptionResponse);
+      const errors: ResourceErrors<PharmacyResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "medications", medicationResponse, "Medications could not be loaded.");
+      addSettledError(errors, "prescriptions", prescriptionResponse, "Prescriptions could not be loaded.");
+
+      const nextPatients = settledValue(patientResponse, { patients: [] }).patients;
+      const nextMedications = settledValue(medicationResponse, []);
+      const nextPrescriptions = settledValue(prescriptionResponse, []);
+
+      setPatients(nextPatients);
+      setMedications(nextMedications);
+      setPrescriptions(nextPrescriptions);
+      setDataErrors(errors);
 
       const inventoryEntries = await Promise.all(
-        medicationResponse.map(async (medication) => {
+        nextMedications.map(async (medication) => {
           try {
             const item = await apiClient.get<Inventory>(
               `/pharmacy/inventory/${medication.id}`
@@ -209,9 +228,6 @@ const Pharmacy = () => {
 
   useEffect(() => {
     loadPharmacy().catch(() => {
-      setPatients([]);
-      setMedications([]);
-      setPrescriptions([]);
       setLoading(false);
     });
   }, []);
@@ -355,6 +371,12 @@ const Pharmacy = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some pharmacy data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Medications" value={String(medications.length)} icon={Pill} />
           <Metric label="Stock Units" value={String(summary.stock)} icon={PackagePlus} />

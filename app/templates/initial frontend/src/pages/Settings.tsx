@@ -33,6 +33,12 @@ import {
 } from "@/lib/auth-session";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 import { moduleCatalog, normalizeModules, type FacilityModuleId } from "@/lib/modules";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Facility = {
   id: string;
@@ -80,6 +86,8 @@ const emptyPasswordForm = {
   new_password: "",
 };
 
+type SettingsResource = "facility" | "profile";
+
 const Settings = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
@@ -98,6 +106,7 @@ const Settings = () => {
   const [passwordStatus, setPasswordStatus] = useState("");
   const [sessionStatus, setSessionStatus] = useState("");
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<SettingsResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
   const auditLogsPath = `/dashboard/${facilitySlug}/audit-logs`;
@@ -105,29 +114,44 @@ const Settings = () => {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      const [facilityResponse, profileResponse] = await Promise.all([
+      const [facilityResponse, profileResponse] = await Promise.allSettled([
         apiClient.get<Facility>(`/facilities/${facilitySlug}`),
         apiClient.get<UserProfile>("/users/me"),
       ]);
       getActiveSessions().then(setSessions).catch(() => setSessions([]));
-      setFacility(facilityResponse);
-      setProfile(profileResponse);
-      setModuleSelection(normalizeModules(facilityResponse.modules));
-      setFacilityForm({
-        name: facilityResponse.name || "",
-        type: facilityResponse.type || "hospital",
-        country: facilityResponse.country || "",
-        address: facilityResponse.address || "",
-        phone: facilityResponse.phone || "",
-        email: facilityResponse.email || "",
-      });
-      setProfileForm({
-        username: profileResponse.username || "",
-        email: profileResponse.email || "",
-        first_name: profileResponse.first_name || "",
-        last_name: profileResponse.last_name || "",
-        phone: profileResponse.phone || "",
-      });
+
+      const errors: ResourceErrors<SettingsResource> = {};
+      addSettledError(errors, "facility", facilityResponse, "Facility settings could not be loaded.");
+      addSettledError(errors, "profile", profileResponse, "Profile settings could not be loaded.");
+
+      const nextFacility = settledValue<Facility | null>(facilityResponse, null);
+      const nextProfile = settledValue<UserProfile | null>(profileResponse, null);
+
+      setFacility(nextFacility);
+      setProfile(nextProfile);
+      setDataErrors(errors);
+
+      if (nextFacility) {
+        setModuleSelection(normalizeModules(nextFacility.modules));
+        setFacilityForm({
+          name: nextFacility.name || "",
+          type: nextFacility.type || "hospital",
+          country: nextFacility.country || "",
+          address: nextFacility.address || "",
+          phone: nextFacility.phone || "",
+          email: nextFacility.email || "",
+        });
+      }
+
+      if (nextProfile) {
+        setProfileForm({
+          username: nextProfile.username || "",
+          email: nextProfile.email || "",
+          first_name: nextProfile.first_name || "",
+          last_name: nextProfile.last_name || "",
+          phone: nextProfile.phone || "",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -294,6 +318,12 @@ const Settings = () => {
 
       <main className="mx-auto grid max-w-7xl gap-6 p-6 lg:grid-cols-[1fr_420px]">
         <div className="space-y-6">
+          {hasResourceErrors(dataErrors) && (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Some settings data could not be loaded. Available sections are still usable.
+            </p>
+          )}
+
           {error && (
             <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
               {error}

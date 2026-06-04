@@ -32,6 +32,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type Patient = {
   id: string;
@@ -59,6 +65,8 @@ type RadiologyOrder = {
   radiologist_name?: string | null;
 };
 
+type RadiologyResource = "patients" | "orders";
+
 const modalities = ["X-ray", "CT", "MRI", "Ultrasound"];
 
 const emptyOrderForm = {
@@ -80,6 +88,7 @@ const Radiology = () => {
   const [orderForm, setOrderForm] = useState(emptyOrderForm);
   const [report, setReport] = useState("");
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<RadiologyResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -122,12 +131,18 @@ const Radiology = () => {
   const loadRadiology = async () => {
     setLoading(true);
     try {
-      const [patientResponse, orderResponse] = await Promise.all([
+      const [patientResponse, orderResponse] = await Promise.allSettled([
         apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
         apiClient.get<RadiologyOrder[]>("/radiology?per_page=100"),
       ]);
-      setPatients(patientResponse.patients);
-      setOrders(orderResponse);
+
+      const errors: ResourceErrors<RadiologyResource> = {};
+      addSettledError(errors, "patients", patientResponse, "Patients could not be loaded.");
+      addSettledError(errors, "orders", orderResponse, "Radiology orders could not be loaded.");
+
+      setPatients(settledValue(patientResponse, { patients: [] }).patients);
+      setOrders(settledValue(orderResponse, []));
+      setDataErrors(errors);
     } finally {
       setLoading(false);
     }
@@ -135,8 +150,6 @@ const Radiology = () => {
 
   useEffect(() => {
     loadRadiology().catch(() => {
-      setPatients([]);
-      setOrders([]);
       setLoading(false);
     });
   }, []);
@@ -224,6 +237,12 @@ const Radiology = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some radiology data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Orders" value={String(orders.length)} icon={ScanLine} />
           <Metric label="Pending" value={String(summary.pending)} icon={ImagePlus} />

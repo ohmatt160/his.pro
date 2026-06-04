@@ -31,6 +31,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  addSettledError,
+  hasResourceErrors,
+  settledValue,
+  type ResourceErrors,
+} from "@/lib/resource-loading";
 
 type InventoryItem = {
   id: string;
@@ -53,6 +59,8 @@ type Supplier = {
   id: string;
   name: string;
 };
+
+type InventoryResource = "items" | "suppliers";
 
 const emptyItemForm = {
   name: "",
@@ -92,6 +100,7 @@ const Inventory = () => {
   const [itemForm, setItemForm] = useState(emptyItemForm);
   const [stockForm, setStockForm] = useState(emptyStockForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<ResourceErrors<InventoryResource>>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
 
@@ -121,10 +130,18 @@ const Inventory = () => {
   const loadInventory = async () => {
     setLoading(true);
     try {
-      const response = await apiClient.get<InventoryItem[]>("/inventory?per_page=100");
-      const supplierResponse = await apiClient.get<Supplier[]>("/suppliers");
-      setItems(response);
-      setSuppliers(supplierResponse);
+      const [itemResponse, supplierResponse] = await Promise.allSettled([
+        apiClient.get<InventoryItem[]>("/inventory?per_page=100"),
+        apiClient.get<Supplier[]>("/suppliers"),
+      ]);
+
+      const errors: ResourceErrors<InventoryResource> = {};
+      addSettledError(errors, "items", itemResponse, "Inventory items could not be loaded.");
+      addSettledError(errors, "suppliers", supplierResponse, "Suppliers could not be loaded.");
+
+      setItems(settledValue(itemResponse, []));
+      setSuppliers(settledValue(supplierResponse, []));
+      setDataErrors(errors);
     } finally {
       setLoading(false);
     }
@@ -132,7 +149,6 @@ const Inventory = () => {
 
   useEffect(() => {
     loadInventory().catch(() => {
-      setItems([]);
       setLoading(false);
     });
   }, []);
@@ -222,6 +238,12 @@ const Inventory = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {hasResourceErrors(dataErrors) && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some inventory data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Items" value={String(items.length)} icon={Boxes} />
           <Metric label="Stock Units" value={String(summary.stock)} icon={Package} />

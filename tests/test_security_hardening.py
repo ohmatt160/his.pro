@@ -10,6 +10,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from tests.test_app_factory import import_isolated_app
+
 
 class SecurityHardeningTest(unittest.TestCase):
     @classmethod
@@ -20,10 +22,7 @@ class SecurityHardeningTest(unittest.TestCase):
         os.environ["ALLOWED_ORIGINS"] = "https://his-pro.vercel.app"
         os.environ["RATE_LIMIT_NAMESPACE"] = f"security-test-{os.path.basename(cls.temp_dir.name)}"
 
-        import httpx
-
-        from app.main import app
-        from app.extensions import Base, db_session, engine
+        app, Base, db_session, engine, httpx = import_isolated_app()
 
         Base.metadata.create_all(bind=engine)
         cls.app = app

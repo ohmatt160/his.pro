@@ -10,6 +10,8 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from tests.test_app_factory import import_isolated_app
+
 
 class TenantIsolationTest(unittest.TestCase):
     @classmethod
@@ -19,10 +21,7 @@ class TenantIsolationTest(unittest.TestCase):
         os.environ["DATABASE_URL"] = f"sqlite:///{cls.database_path}"
         os.environ["RATE_LIMIT_NAMESPACE"] = f"tenant-isolation-{os.path.basename(cls.temp_dir.name)}"
 
-        import httpx
-
-        from app.main import app
-        from app.extensions import Base, db_session, engine
+        app, Base, db_session, engine, httpx = import_isolated_app()
 
         Base.metadata.create_all(bind=engine)
         cls.app = app
