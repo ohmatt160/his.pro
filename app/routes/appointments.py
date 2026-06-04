@@ -46,7 +46,13 @@ async def get_appointments(
                 raise HTTPException(status_code=404, detail="Patient not found")
             appointments = AppointmentService.get_appointments_by_patient(patient_id, facility_slug)
         elif doctor_id:
-            appointments = AppointmentService.get_appointments_by_doctor(doctor_id, facility_slug)
+            doctor = db.query(User).filter_by(id=doctor_id, facility_slug=facility_slug, is_active=True).first()
+            if not doctor:
+                raise HTTPException(status_code=404, detail="Doctor or staff member not found")
+            appointments = AppointmentService.get_appointments_by_doctor(
+                doctor_id,
+                facility_slug=facility_slug,
+            )
         else:
             # Get all appointments for facility
             from app.models.appointment import Appointment

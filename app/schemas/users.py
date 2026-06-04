@@ -69,6 +69,17 @@ class FacilityStaffCreate(BaseModel):
     createdBy: Optional[str] = Field(None, max_length=200)
 
 
+class FacilityStaffUpdate(BaseModel):
+    fullName: Optional[str] = Field(None, min_length=2, max_length=200)
+    role: Optional[str] = Field(None, pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    department: Optional[str] = Field(None, min_length=2, max_length=100)
+    email: Optional[EmailStr] = Field(None)
+    phone: Optional[str] = Field(None, max_length=20)
+    password: Optional[str] = Field(None, min_length=8)
+    mustChangePassword: Optional[bool] = None
+    isActive: Optional[bool] = None
+
+
 class FacilityStaffResponse(BaseModel):
     staffRecordId: str
     facilityId: Optional[str] = None

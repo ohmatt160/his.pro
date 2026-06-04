@@ -56,6 +56,7 @@ import {
   getFacilityStaff,
   getStaffRoleLabel,
   staffRoles,
+  updateStaffAccount,
   type FacilityStaffAccount,
   type StaffRole,
 } from "@/lib/facility-staff";
@@ -112,6 +113,17 @@ const departmentOptions = [
 
 const assignableRoles = staffRoles.filter((role) => role !== "admin");
 
+const emptyEditStaff = {
+  fullName: "",
+  role: "doctor" as StaffRole,
+  department: "",
+  email: "",
+  phone: "",
+  password: "",
+  mustChangePassword: true,
+  isActive: true,
+};
+
 const container = {
   hidden: {},
   show: { transition: { staggerChildren: 0.07 } },
@@ -145,6 +157,9 @@ const StaffAccess = () => {
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [staffError, setStaffError] = useState("");
   const [creatingStaff, setCreatingStaff] = useState(false);
+  const [updatingStaff, setUpdatingStaff] = useState(false);
+  const [editingStaff, setEditingStaff] = useState<FacilityStaffAccount | null>(null);
+  const [editStaff, setEditStaff] = useState(emptyEditStaff);
   const [justCreated, setJustCreated] = useState<FacilityStaffAccount | null>(
     null
   );
@@ -281,6 +296,59 @@ const StaffAccess = () => {
       );
     } finally {
       setCreatingStaff(false);
+    }
+  };
+
+  const openEditStaff = (member: FacilityStaffAccount) => {
+    setStaffError("");
+    setEditingStaff(member);
+    setEditStaff({
+      fullName: member.fullName,
+      role: member.role === "admin" ? "doctor" : member.role,
+      department: member.department,
+      email: member.email,
+      phone: member.phone === "—" ? "" : member.phone,
+      password: "",
+      mustChangePassword: true,
+      isActive: member.status === "active",
+    });
+  };
+
+  const handleUpdateStaff = async () => {
+    if (!editingStaff || !editStaff.fullName.trim() || !editStaff.department.trim()) {
+      return;
+    }
+
+    setUpdatingStaff(true);
+    setStaffError("");
+    try {
+      const updated = await updateStaffAccount({
+        facilitySlug,
+        loginId: editingStaff.loginId,
+        fullName: editStaff.fullName,
+        role: editingStaff.role === "admin" ? undefined : editStaff.role,
+        department: editStaff.department,
+        email: editStaff.email,
+        phone: editStaff.phone,
+        password: editStaff.password || undefined,
+        mustChangePassword: editStaff.password ? editStaff.mustChangePassword : undefined,
+        isActive: editStaff.isActive,
+      });
+      const updatedStaff = await getFacilityStaff(facilitySlug);
+      setStaffList(updatedStaff);
+      setEditingStaff(null);
+      setEditStaff(emptyEditStaff);
+      if (updated.temporaryPassword) {
+        setJustCreated(updated);
+      }
+    } catch (error) {
+      setStaffError(
+        error instanceof Error
+          ? error.message
+          : "Staff account could not be updated."
+      );
+    } finally {
+      setUpdatingStaff(false);
     }
   };
 
@@ -664,8 +732,13 @@ const StaffAccess = () => {
                           </div>
 
                           <div className="col-span-1 hidden justify-end md:flex">
-                            <Button asChild variant="ghost" size="sm" className="h-8 text-xs">
-                              <Link to={facilityLoginPath}>Open login</Link>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 text-xs"
+                              onClick={() => openEditStaff(member)}
+                            >
+                              Edit
                             </Button>
                           </div>
                         </motion.div>
@@ -819,6 +892,177 @@ const StaffAccess = () => {
                 }
               >
                 {creatingStaff ? "Creating..." : "Create Account"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(editingStaff)} onOpenChange={(open) => !open && setEditingStaff(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg">
+              <Settings className="h-5 w-5 text-primary" /> Edit Staff Account
+            </DialogTitle>
+            <DialogDescription>
+              Update staff details or reset their password.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Full Name *
+              </Label>
+              <Input
+                value={editStaff.fullName}
+                onChange={(event) =>
+                  setEditStaff((previous) => ({ ...previous, fullName: event.target.value }))
+                }
+                className="mt-1.5"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Role
+                </Label>
+                <Select
+                  value={editingStaff?.role === "admin" ? "admin" : editStaff.role}
+                  disabled={editingStaff?.role === "admin"}
+                  onValueChange={(value) => {
+                    const role = value as StaffRole;
+                    setEditStaff((previous) => ({
+                      ...previous,
+                      role,
+                      department: getDefaultDepartmentForRole(role),
+                    }));
+                  }}
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editingStaff?.role === "admin" && (
+                      <SelectItem value="admin">Facility Admin</SelectItem>
+                    )}
+                    {assignableRoles.map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {getStaffRoleLabel(role)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Status
+                </Label>
+                <Select
+                  value={editStaff.isActive ? "active" : "inactive"}
+                  onValueChange={(value) =>
+                    setEditStaff((previous) => ({
+                      ...previous,
+                      isActive: value === "active",
+                    }))
+                  }
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Department *
+              </Label>
+              <Select
+                value={editStaff.department}
+                onValueChange={(value) =>
+                  setEditStaff((previous) => ({ ...previous, department: value }))
+                }
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departmentOptions.map((department) => (
+                    <SelectItem key={department} value={department}>
+                      {department}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Work Email
+              </Label>
+              <Input
+                type="email"
+                value={editStaff.email}
+                onChange={(event) =>
+                  setEditStaff((previous) => ({ ...previous, email: event.target.value }))
+                }
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Phone
+              </Label>
+              <Input
+                value={editStaff.phone}
+                onChange={(event) =>
+                  setEditStaff((previous) => ({ ...previous, phone: event.target.value }))
+                }
+                className="mt-1.5"
+              />
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                New Password
+              </Label>
+              <Input
+                type="password"
+                placeholder="Leave blank to keep current password"
+                value={editStaff.password}
+                onChange={(event) =>
+                  setEditStaff((previous) => ({ ...previous, password: event.target.value }))
+                }
+                className="mt-1.5"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setEditingStaff(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="gradient-cta flex-1 border-0 text-primary-foreground"
+                onClick={handleUpdateStaff}
+                disabled={
+                  updatingStaff ||
+                  !editStaff.fullName.trim() ||
+                  !editStaff.department.trim()
+                }
+              >
+                {updatingStaff ? "Saving..." : "Save Changes"}
               </Button>
             </div>
           </div>

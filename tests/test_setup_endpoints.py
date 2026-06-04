@@ -238,6 +238,39 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(staff_create.json()["role"], "nurse")
             self.assertTrue(staff_create.json()["temporaryPassword"])
 
+            staff_update = await client.put(
+                "/api/v1/facilities/sunrise-medical-centre/staff/NUR-001",
+                json={
+                    "fullName": "Nurse Ada Okafor",
+                    "role": "nurse",
+                    "department": "Nursing",
+                    "phone": "+234 800 111 3333",
+                    "password": "NurseAda2026",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(staff_update.status_code, 200, staff_update.text)
+            self.assertEqual(staff_update.json()["phone"], "+234 800 111 3333")
+            self.assertEqual(staff_update.json()["temporaryPassword"], "NurseAda2026")
+
+            doctor_create = await client.post(
+                "/api/v1/facilities/sunrise-medical-centre/staff",
+                json={
+                    "fullName": "Dr. Chidi Nwosu",
+                    "role": "doctor",
+                    "department": "Consultations",
+                    "email": "chidi.nwosu@sunrise.example.com",
+                    "phone": "+234 800 222 3333",
+                    "createdBy": "Dr. Amina Yusuf",
+                },
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(doctor_create.status_code, 201, doctor_create.text)
+            self.assertEqual(doctor_create.json()["loginId"], "DOC-001")
+            self.assertEqual(doctor_create.json()["role"], "doctor")
+
             staff_list = await client.get(
                 "/api/v1/facilities/sunrise-medical-centre/staff",
                 headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
@@ -246,11 +279,22 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(staff_list.status_code, 200, staff_list.text)
             self.assertEqual(
                 [member["loginId"] for member in staff_list.json()],
-                ["sunrise-medical-centre-admin", "NUR-001"],
+                ["sunrise-medical-centre-admin", "NUR-001", "DOC-001"],
             )
             self.assertEqual(
                 {member["facilityId"] for member in staff_list.json()},
                 {facility_id},
+            )
+
+            clinicians = await client.get(
+                "/api/v1/facilities/sunrise-medical-centre/clinicians",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(clinicians.status_code, 200, clinicians.text)
+            self.assertEqual(
+                {member["loginId"] for member in clinicians.json()},
+                {"sunrise-medical-centre-admin", "DOC-001"},
             )
 
             staff_lookup = await client.get(
@@ -265,7 +309,7 @@ class SetupEndpointTest(unittest.TestCase):
                 "/api/v1/auth/login?facility_slug=sunrise-medical-centre",
                 json={
                     "username": "NUR-001",
-                    "password": staff_create.json()["temporaryPassword"],
+                    "password": "NurseAda2026",
                 },
             )
 
@@ -506,7 +550,7 @@ class SetupEndpointTest(unittest.TestCase):
                 "/api/v1/appointments",
                 json={
                     "patient_id": patient_create.json()["id"],
-                    "doctor_id": profile.json()["id"],
+                    "doctor_id": doctor_create.json()["staffRecordId"],
                     "appointment_date": "2026-06-01T10:30:00",
                     "duration_minutes": 30,
                     "reason": "Initial consultation",
@@ -517,6 +561,7 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(appointment_create.status_code, 201, appointment_create.text)
             self.assertEqual(appointment_create.json()["facility_slug"], "sunrise-medical-centre")
+            self.assertEqual(appointment_create.json()["doctor_id"], doctor_create.json()["staffRecordId"])
             self.assertEqual(appointment_create.json()["duration_minutes"], 30)
 
             appointment_notifications = await client.get(
@@ -537,6 +582,14 @@ class SetupEndpointTest(unittest.TestCase):
 
             self.assertEqual(appointment_list.status_code, 200, appointment_list.text)
             self.assertEqual(len(appointment_list.json()), 1)
+
+            doctor_appointment_list = await client.get(
+                f"/api/v1/appointments?doctor_id={doctor_create.json()['staffRecordId']}",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(doctor_appointment_list.status_code, 200, doctor_appointment_list.text)
+            self.assertEqual(len(doctor_appointment_list.json()), 1)
 
             consultation_start = await client.post(
                 "/api/v1/consultations/start",

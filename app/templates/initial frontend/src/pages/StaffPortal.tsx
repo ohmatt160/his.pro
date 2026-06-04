@@ -963,10 +963,36 @@ const StaffPortal = () => {
     action: "Open",
     to: `/dashboard/${facilitySlug}/${task.action_path}`,
   }));
-  const queueItems = liveQueueItems.length > 0 ? liveQueueItems : config.queueItems.map((entry) => ({
-    ...entry,
-    to: routeForPortalLabel(staff.role, entry.action || entry.primary, facilitySlug),
+  const queueItems = liveQueueItems;
+  const openTaskCount = tasks.filter((task) => task.status !== "completed").length;
+  const completedTaskCount = tasks.filter((task) => task.status === "completed").length;
+  const liveStats: StatCard[] = [
+    {
+      label: "Open Tasks",
+      value: String(openTaskCount),
+      icon: ClipboardList,
+      color: "bg-primary/10 text-primary",
+    },
+    {
+      label: "Completed",
+      value: String(completedTaskCount),
+      icon: CheckCircle2,
+      color: "bg-accent/10 text-accent",
+    },
+  ];
+  const liveActivity: ActivityItem[] = tasks.slice(0, 4).map((task) => ({
+    action: task.title,
+    subject: task.patient_name || task.description,
+    time: formatTaskTime(task),
+    icon: ClipboardList,
   }));
+  const liveAlerts: AlertItem[] = tasks
+    .filter((task) => task.priority === "urgent")
+    .slice(0, 3)
+    .map((task) => ({
+      text: task.patient_name ? `${task.title} for ${task.patient_name}` : task.title,
+      severity: "critical",
+    }));
   const firstName = staff.fullName.split(" ")[0] || staff.fullName;
   const initials = staff.fullName
     .split(" ")
@@ -1111,7 +1137,7 @@ const StaffPortal = () => {
                   })}
                   <span className="text-border">·</span>
                   <span className="text-sm">
-                    {queueItems.length} {liveQueueItems.length > 0 ? "open tasks" : config.queueCountLabel}
+                    {queueItems.length} open tasks
                   </span>
                 </p>
               </div>
@@ -1123,9 +1149,9 @@ const StaffPortal = () => {
               </Button>
             </motion.div>
 
-            {config.alerts.length > 0 && (
+            {liveAlerts.length > 0 && (
               <motion.div variants={item} className="space-y-2">
-                {config.alerts.map((alert) => (
+                {liveAlerts.map((alert) => (
                   <div
                     key={alert.text}
                     className={`flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium ${
@@ -1136,13 +1162,6 @@ const StaffPortal = () => {
                   >
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     {alert.text}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="ml-auto h-7 text-xs"
-                    >
-                      Review
-                    </Button>
                   </div>
                 ))}
               </motion.div>
@@ -1196,56 +1215,65 @@ const StaffPortal = () => {
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {queueItems.map((entry, index) => (
-                      <motion.div
-                        key={`${entry.primary}-${entry.time}-${index}`}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.3 + index * 0.06 }}
-                        className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/40"
-                      >
-                        <div className="w-14 shrink-0 text-center">
-                          <p className="text-xs font-bold text-foreground">
-                            {entry.time}
-                          </p>
-                        </div>
-                        <div className="h-8 w-px bg-border/60" />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-semibold text-foreground">
-                            {entry.primary}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {entry.secondary}
-                          </p>
-                        </div>
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                            entry.tone === "success"
-                              ? "border-emerald-200 bg-emerald-100 text-emerald-700"
-                              : entry.tone === "critical"
-                              ? "border-rose-200 bg-rose-100 text-rose-700"
-                              : "border-amber-200 bg-amber-100 text-amber-700"
-                          }`}
+                    {queueItems.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-center">
+                        <p className="text-sm font-semibold text-foreground">No open tasks</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Live work will appear here when orders, appointments, or tasks are assigned.
+                        </p>
+                      </div>
+                    ) : (
+                      queueItems.map((entry, index) => (
+                        <motion.div
+                          key={`${entry.primary}-${entry.time}-${index}`}
+                          initial={{ opacity: 0, x: -10 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.3 + index * 0.06 }}
+                          className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-muted/40"
                         >
-                          {entry.status}
-                        </span>
-                        <Button
-                          asChild
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          <Link to={entry.to}>{entry.action}</Link>
-                        </Button>
-                      </motion.div>
-                    ))}
+                          <div className="w-14 shrink-0 text-center">
+                            <p className="text-xs font-bold text-foreground">
+                              {entry.time}
+                            </p>
+                          </div>
+                          <div className="h-8 w-px bg-border/60" />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {entry.primary}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {entry.secondary}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                              entry.tone === "success"
+                                ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+                                : entry.tone === "critical"
+                                ? "border-rose-200 bg-rose-100 text-rose-700"
+                                : "border-amber-200 bg-amber-100 text-amber-700"
+                            }`}
+                          >
+                            {entry.status}
+                          </span>
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs opacity-0 transition-opacity group-hover:opacity-100"
+                          >
+                            <Link to={entry.to}>{entry.action}</Link>
+                          </Button>
+                        </motion.div>
+                      ))
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>
 
               <motion.div variants={item} className="space-y-4 lg:col-span-2">
                 <div className="grid grid-cols-2 gap-3">
-                  {config.stats.map((stat) => (
+                  {liveStats.map((stat) => (
                     <Card key={stat.label} className="border-border/60">
                       <CardContent className="p-4 text-center">
                         <div
@@ -1272,24 +1300,30 @@ const StaffPortal = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    {config.recentActivity.map((activity) => (
-                      <div
-                        key={`${activity.action}-${activity.time}`}
-                        className="flex items-start gap-3"
-                      >
-                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-                          <activity.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                    {liveActivity.length === 0 ? (
+                      <p className="py-4 text-sm text-muted-foreground">
+                        No recent live activity.
+                      </p>
+                    ) : (
+                      liveActivity.map((activity) => (
+                        <div
+                          key={`${activity.action}-${activity.time}`}
+                          className="flex items-start gap-3"
+                        >
+                          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted">
+                            <activity.icon className="h-3.5 w-3.5 text-muted-foreground" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-foreground">
+                              {activity.action}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {activity.subject} · {activity.time}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium text-foreground">
-                            {activity.action}
-                          </p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {activity.subject} · {activity.time}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </CardContent>
                 </Card>
               </motion.div>

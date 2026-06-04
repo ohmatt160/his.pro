@@ -13,7 +13,7 @@ import string
 
 from app.extensions import get_db, db_session
 from app.schemas.facilities import FacilityResponse, FacilityCreate, FacilityUpdate, FacilityModulesUpdate
-from app.schemas.users import MessageResponse, FacilityStaffCreate, FacilityStaffResponse
+from app.schemas.users import MessageResponse, FacilityStaffCreate, FacilityStaffUpdate, FacilityStaffResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
 from app.models.user import User
@@ -341,6 +341,34 @@ async def get_facility_staff(
     return [build_staff_response(member) for member in staff]
 
 
+@router.get("/{facility_slug}/clinicians", response_model=List[FacilityStaffResponse])
+async def get_facility_clinicians(
+    facility_slug: str,
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    db: Session = Depends(get_db)
+):
+    """List active clinicians that can be assigned to appointments."""
+    facility = get_facility_or_404(facility_slug)
+    if current_user.facility_id:
+        if str(current_user.facility_id) != str(facility.id):
+            raise HTTPException(status_code=403, detail="Cannot access another facility")
+    elif current_user.facility_slug != facility.slug:
+        raise HTTPException(status_code=403, detail="Cannot access another facility")
+
+    clinicians = (
+        db_session.query(User)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.role.in_(["ADMIN", "DOCTOR"]),
+            User.is_active == True,
+        )
+        .order_by(User.role.asc(), User.first_name.asc(), User.username.asc())
+        .all()
+    )
+
+    return [build_staff_response(member) for member in clinicians]
+
+
 @router.post(
     "/{facility_slug}/staff",
     response_model=FacilityStaffResponse,
@@ -427,6 +455,82 @@ async def get_facility_staff_member(
         raise HTTPException(status_code=404, detail="Staff member not found")
 
     return build_staff_response(member)
+
+
+@router.put("/{facility_slug}/staff/{login_id}", response_model=FacilityStaffResponse)
+async def update_facility_staff_member(
+    facility_slug: str,
+    login_id: str,
+    data: FacilityStaffUpdate,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    """Update a staff account's details, role, active state, or password."""
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+
+    member = (
+        db_session.query(User)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.username == login_id,
+        )
+        .first()
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    payload = data.model_dump(exclude_unset=True)
+
+    if "fullName" in payload and payload["fullName"] is not None:
+        full_name = Validators.sanitize_string(payload["fullName"])
+        member.first_name, member.last_name = split_full_name(full_name)
+
+    if "role" in payload and payload["role"] is not None:
+        frontend_role = payload["role"].lower()
+        role = FRONTEND_TO_BACKEND_ROLE.get(frontend_role, payload["role"].upper())
+        if role not in ROLE_PREFIX or role == "ADMIN":
+            raise HTTPException(status_code=400, detail="Invalid staff role")
+        member.role = role
+
+    if "department" in payload and payload["department"] is not None:
+        member.department = Validators.sanitize_string(payload["department"])
+
+    if "phone" in payload:
+        member.phone = Validators.sanitize_string(payload["phone"] or "—")
+
+    if "email" in payload and payload["email"] is not None:
+        email = str(payload["email"]).lower()
+        existing = db_session.query(User).filter(User.email == email, User.id != member.id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="Email already exists")
+        member.email = email
+
+    temporary_password = ""
+    if "password" in payload and payload["password"]:
+        is_valid_password, password_error = Validators.validate_password(payload["password"])
+        if not is_valid_password:
+            raise HTTPException(status_code=400, detail=password_error)
+        member.set_password(payload["password"])
+        member.must_change_password = True if payload.get("mustChangePassword") is None else bool(payload["mustChangePassword"])
+        temporary_password = payload["password"]
+    elif "mustChangePassword" in payload:
+        member.must_change_password = bool(payload["mustChangePassword"])
+
+    if "isActive" in payload:
+        if member.id == current_user.id and payload["isActive"] is False:
+            raise HTTPException(status_code=400, detail="You cannot deactivate your own admin account")
+        member.is_active = bool(payload["isActive"])
+
+    db_session.add(member)
+    db_session.commit()
+    db_session.refresh(member)
+
+    return build_staff_response(
+        member,
+        temporary_password=temporary_password,
+        created_by=current_user.username,
+    )
 
 
 @router.get("/{facility_id}", response_model=FacilityResponse)

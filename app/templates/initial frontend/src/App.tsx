@@ -1,10 +1,11 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/context/AuthContext";
+import AppShell from "@/components/AppShell";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ModuleRoute from "@/components/ModuleRoute";
 
@@ -46,6 +47,10 @@ const RouteFallback = () => (
   </div>
 );
 
+const WithAppShell = ({ children }: { children: ReactNode }) => (
+  <AppShell>{children}</AppShell>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -76,7 +81,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/staff"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <StaffAccess />
+                    <WithAppShell>
+                      <StaffAccess />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />
@@ -85,7 +92,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="reception">
-                      <Patients />
+                      <WithAppShell>
+                        <Patients />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -95,7 +104,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="reception">
-                      <PatientTimeline />
+                      <WithAppShell>
+                        <PatientTimeline />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -105,7 +116,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="reception">
-                      <Appointments />
+                      <WithAppShell>
+                        <Appointments />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -115,7 +128,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="billing">
-                      <Billing />
+                      <WithAppShell>
+                        <Billing />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -125,7 +140,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="lab">
-                      <Laboratory />
+                      <WithAppShell>
+                        <Laboratory />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -135,7 +152,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="pharmacy">
-                      <Pharmacy />
+                      <WithAppShell>
+                        <Pharmacy />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -145,7 +164,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="radiology">
-                      <Radiology />
+                      <WithAppShell>
+                        <Radiology />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -155,7 +176,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="inventory">
-                      <Inventory />
+                      <WithAppShell>
+                        <Inventory />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -165,7 +188,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="records">
-                      <MedicalRecords />
+                      <WithAppShell>
+                        <MedicalRecords />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -174,7 +199,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/alerts"
                 element={
                   <ProtectedRoute>
-                    <Alerts />
+                    <WithAppShell>
+                      <Alerts />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />
@@ -182,7 +209,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/audit-logs"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <AuditLogs />
+                    <WithAppShell>
+                      <AuditLogs />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />
@@ -190,7 +219,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug/settings"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <Settings />
+                    <WithAppShell>
+                      <Settings />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />
@@ -199,7 +230,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="inventory">
-                      <Suppliers />
+                      <WithAppShell>
+                        <Suppliers />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -209,7 +242,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="reception">
-                      <Queue />
+                      <WithAppShell>
+                        <Queue />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -219,7 +254,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="consultations">
-                      <Consultations />
+                      <WithAppShell>
+                        <Consultations />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -229,7 +266,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="nursing">
-                      <Wards />
+                      <WithAppShell>
+                        <Wards />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }
@@ -239,7 +278,9 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <ModuleRoute module="reports">
-                      <Reports />
+                      <WithAppShell>
+                        <Reports />
+                      </WithAppShell>
                     </ModuleRoute>
                   </ProtectedRoute>
                 }

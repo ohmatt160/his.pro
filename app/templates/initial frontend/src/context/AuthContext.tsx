@@ -12,6 +12,9 @@ import {
   getProfile,
 } from "@/lib/facility-staff";
 
+const IDLE_TIMEOUT_MS = 60 * 60 * 1000;
+const LAST_ACTIVITY_KEY = "hispro:last-activity-at";
+
 type LoginCredentials = {
   facilitySlug: string;
   login: string;
@@ -31,6 +34,21 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+const getLastActivityAt = () => {
+  if (typeof window === "undefined") {
+    return Date.now();
+  }
+  return Number(window.localStorage.getItem(LAST_ACTIVITY_KEY) || Date.now());
+};
+
+const markActivity = () => {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+  }
+};
+
+const hasTimedOut = () => Date.now() - getLastActivityAt() > IDLE_TIMEOUT_MS;
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setTokenState] = useState<string | null>(apiClient.getToken());
   const [user, setUserState] = useState<AuthUser | null>(apiClient.getUser());
@@ -43,6 +61,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const restoreSession = async () => {
       setLoading(true);
       try {
+        if ((apiClient.getUser() || apiClient.getToken()) && hasTimedOut()) {
+          throw new Error("Session idle timeout");
+        }
+
         let profile: AuthUser;
         try {
           profile = await getProfile();
@@ -54,6 +76,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           return;
         }
         apiClient.setUser(profile);
+        markActivity();
         setUserState(profile);
         setTokenState(apiClient.getToken());
         setSessionMessage("");
@@ -83,6 +106,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const onActivity = () => markActivity();
+    const onFocus = () => {
+      if (hasTimedOut()) {
+        apiClient.post("/auth/logout").catch(() => undefined);
+        apiClient.clearToken();
+        apiClient.clearUser();
+        setTokenState(null);
+        setUserState(null);
+        setSessionMessage("Your session expired after being idle. Please sign in again.");
+        return;
+      }
+      markActivity();
+    };
+
+    const events = ["click", "keydown", "mousemove", "touchstart", "scroll"];
+    events.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }));
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    markActivity();
+
+    return () => {
+      events.forEach((eventName) => window.removeEventListener(eventName, onActivity));
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [user]);
+
   const login = async ({ facilitySlug, login, password }: LoginCredentials) => {
     setLoading(true);
 
@@ -94,6 +149,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       });
 
       apiClient.setUser(response.user);
+      markActivity();
       setTokenState(response.access_token);
       setUserState(response.user);
       setSessionMessage("");
@@ -108,6 +164,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     apiClient.post("/auth/logout").catch(() => undefined);
     apiClient.clearToken();
     apiClient.clearUser();
+    window.localStorage.removeItem(LAST_ACTIVITY_KEY);
     setTokenState(null);
     setUserState(null);
     setSessionMessage("");
@@ -117,6 +174,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     await apiClient.post("/auth/logout-everywhere").catch(() => undefined);
     apiClient.clearToken();
     apiClient.clearUser();
+    window.localStorage.removeItem(LAST_ACTIVITY_KEY);
     setTokenState(null);
     setUserState(null);
     setSessionMessage("You have been logged out from all sessions.");

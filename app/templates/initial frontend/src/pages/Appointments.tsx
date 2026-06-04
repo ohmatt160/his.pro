@@ -15,7 +15,6 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
-import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -34,7 +33,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getStaffAccessPath, type FacilityStaffAccount } from "@/lib/facility-staff";
+import {
+  getFacilityClinicians,
+  getStaffAccessPath,
+  type FacilityStaffAccount,
+} from "@/lib/facility-staff";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 
 type Patient = {
@@ -73,6 +76,16 @@ type QueueEntry = {
   priority: string;
 };
 
+type AppointmentResourceName = "patients" | "clinicians" | "appointments" | "queue";
+
+type AppointmentResourceState = {
+  patients: Patient[];
+  clinicians: FacilityStaffAccount[];
+  appointments: Appointment[];
+  queue: QueueEntry[];
+  errors: Partial<Record<AppointmentResourceName, string>>;
+};
+
 const emptyForm = {
   patient_id: "",
   doctor_id: "",
@@ -83,9 +96,46 @@ const emptyForm = {
   notes: "",
 };
 
+const errorMessage = (fallback: string) => (error: unknown) =>
+  error instanceof Error ? error.message : fallback;
+
+export const loadAppointmentResources = async (
+  facilitySlug: string
+): Promise<AppointmentResourceState> => {
+  const [patientResult, staffResult, appointmentResult, queueResult] =
+    await Promise.allSettled([
+      apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
+      getFacilityClinicians(facilitySlug),
+      apiClient.get<Appointment[]>("/appointments"),
+      apiClient.get<{ queue_entries: QueueEntry[] }>("/queue?per_page=100"),
+    ]);
+
+  const errors: AppointmentResourceState["errors"] = {};
+
+  if (patientResult.status === "rejected") {
+    errors.patients = errorMessage("Patients could not be loaded.")(patientResult.reason);
+  }
+  if (staffResult.status === "rejected") {
+    errors.clinicians = errorMessage("Clinicians could not be loaded.")(staffResult.reason);
+  }
+  if (appointmentResult.status === "rejected") {
+    errors.appointments = errorMessage("Appointments could not be loaded.")(appointmentResult.reason);
+  }
+  if (queueResult.status === "rejected") {
+    errors.queue = errorMessage("Queue could not be loaded.")(queueResult.reason);
+  }
+
+  return {
+    patients: patientResult.status === "fulfilled" ? patientResult.value.patients : [],
+    clinicians: staffResult.status === "fulfilled" ? staffResult.value : [],
+    appointments: appointmentResult.status === "fulfilled" ? appointmentResult.value : [],
+    queue: queueResult.status === "fulfilled" ? queueResult.value.queue_entries : [],
+    errors,
+  };
+};
+
 const Appointments = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
   const { facilitySlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [staff, setStaff] = useState<FacilityStaffAccount[]>([]);
@@ -96,13 +146,14 @@ const Appointments = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [dataErrors, setDataErrors] = useState<AppointmentResourceState["errors"]>({});
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
   const patientsPath = `/dashboard/${facilitySlug}/patients`;
   const staffPath = getStaffAccessPath(facilitySlug);
 
-  const doctors = useMemo(
-    () => staff.filter((member) => member.role === "doctor"),
+  const clinicians = useMemo(
+    () => staff.filter((member) => member.role === "doctor" || member.role === "admin"),
     [staff]
   );
 
@@ -114,18 +165,12 @@ const Appointments = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [patientResponse, staffResponse, appointmentResponse, queueResponse] =
-        await Promise.all([
-          apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
-          apiClient.get<FacilityStaffAccount[]>(`/facilities/${facilitySlug}/staff`),
-          apiClient.get<Appointment[]>("/appointments"),
-          apiClient.get<{ queue_entries: QueueEntry[] }>("/queue?per_page=100"),
-        ]);
-
-      setPatients(patientResponse.patients);
-      setStaff(staffResponse);
-      setAppointments(appointmentResponse);
-      setQueue(queueResponse.queue_entries);
+      const resources = await loadAppointmentResources(facilitySlug);
+      setPatients(resources.patients);
+      setStaff(resources.clinicians);
+      setAppointments(resources.appointments);
+      setQueue(resources.queue);
+      setDataErrors(resources.errors);
     } finally {
       setLoading(false);
     }
@@ -157,7 +202,7 @@ const Appointments = () => {
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const doctorId = form.doctor_id || doctors[0]?.staffRecordId || user?.id || "";
+    const doctorId = form.doctor_id || clinicians[0]?.staffRecordId || "";
     if (!form.patient_id || !doctorId || !form.date || !form.time) {
       setError("Patient, clinician, date, and time are required.");
       return;
@@ -185,18 +230,26 @@ const Appointments = () => {
   };
 
   const updateStatus = async (appointmentId: string, status: string) => {
-    await apiClient.put<Appointment>(`/appointments/${appointmentId}`, { status });
-    await loadData();
+    try {
+      await apiClient.put<Appointment>(`/appointments/${appointmentId}`, { status });
+      await loadData();
+    } catch (statusError) {
+      setError(errorMessage("Appointment status could not be updated.")(statusError));
+    }
   };
 
   const addToQueue = async (appointment: Appointment) => {
-    await apiClient.post<QueueEntry>("/queue", {
-      patient_id: appointment.patient_id,
-      appointment_id: appointment.id,
-      department: "Front Desk",
-      priority: "normal",
-    });
-    await loadData();
+    try {
+      await apiClient.post<QueueEntry>("/queue", {
+        patient_id: appointment.patient_id,
+        appointment_id: appointment.id,
+        department: "Front Desk",
+        priority: "normal",
+      });
+      await loadData();
+    } catch (queueError) {
+      setError(errorMessage("Patient could not be added to queue.")(queueError));
+    }
   };
 
   const isInQueue = (appointmentId: string) =>
@@ -225,6 +278,9 @@ const Appointments = () => {
             <Button asChild variant="outline">
               <Link to={patientsPath}>Patients</Link>
             </Button>
+            <Button asChild variant="outline">
+              <Link to={staffPath}>Clinicians</Link>
+            </Button>
             <Button
               onClick={() => setShowCreate(true)}
               className="gradient-cta gap-2 border-0 text-primary-foreground"
@@ -236,6 +292,12 @@ const Appointments = () => {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 p-6">
+        {Object.keys(dataErrors).length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Some appointment data could not be loaded. Available sections are still usable.
+          </div>
+        )}
+
         <div className="grid gap-4 md:grid-cols-4">
           <Metric label="Appointments" value={String(appointments.length)} icon={CalendarDays} />
           <Metric label="Scheduled" value={String(appointments.filter((item) => item.status === "SCHEDULED").length)} icon={Clock} />
@@ -264,6 +326,12 @@ const Appointments = () => {
                 <p className="py-12 text-center text-sm text-muted-foreground">
                   Loading appointments...
                 </p>
+              ) : dataErrors.appointments ? (
+                <SectionError
+                  title="Appointments unavailable"
+                  message="Patient and clinician selection can still work while appointments reload."
+                  onRetry={loadData}
+                />
               ) : filteredAppointments.length === 0 ? (
                 <EmptyState onCreate={() => setShowCreate(true)} />
               ) : (
@@ -315,7 +383,13 @@ const Appointments = () => {
               <CardTitle className="text-base">Active Queue</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {queue.length === 0 ? (
+              {dataErrors.queue ? (
+                <SectionError
+                  title="Queue unavailable"
+                  message="Scheduling still works; queue can be retried separately."
+                  onRetry={loadData}
+                />
+              ) : queue.length === 0 ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   No patients in queue.
                 </p>
@@ -357,29 +431,50 @@ const Appointments = () => {
                   <SelectValue placeholder="Select patient" />
                 </SelectTrigger>
                 <SelectContent>
-                  {patients.map((patient) => (
+                  {patients.length === 0 ? (
+                    <SelectItem value="no-patients" disabled>
+                      No patients found
+                    </SelectItem>
+                  ) : patients.map((patient) => (
                     <SelectItem key={patient.id} value={patient.id}>
                       {patient.full_name || `${patient.first_name} ${patient.last_name}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {patients.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {dataErrors.patients
+                    ? "Patients could not be loaded. Retry or check your session."
+                    : "Register a patient first, then return to schedule."}
+                </p>
+              )}
             </div>
             <div>
-              <Label>Clinician</Label>
-              <Select value={form.doctor_id || "current"} onValueChange={(value) => updateForm("doctor_id", value === "current" ? "" : value)}>
+              <Label>Clinician *</Label>
+              <Select value={form.doctor_id} onValueChange={(value) => updateForm("doctor_id", value)}>
                 <SelectTrigger className="mt-1.5">
-                  <SelectValue />
+                  <SelectValue placeholder="Select clinician" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="current">Current admin</SelectItem>
-                  {doctors.map((doctor) => (
+                  {clinicians.length === 0 ? (
+                    <SelectItem value="no-clinicians" disabled>
+                      No clinicians found
+                    </SelectItem>
+                  ) : clinicians.map((doctor) => (
                     <SelectItem key={doctor.staffRecordId} value={doctor.staffRecordId}>
-                      {doctor.fullName}
+                      {doctor.fullName} · {doctor.role === "admin" ? "Admin" : "Doctor"}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {clinicians.length === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {dataErrors.clinicians
+                    ? "Clinicians could not be loaded. Retry or add a clinician from Staff."
+                    : "Add a doctor or active admin account before scheduling."}
+                </p>
+              )}
             </div>
             <Field label="Date" type="date" value={form.date} onChange={(value) => updateForm("date", value)} required />
             <Field label="Time" type="time" value={form.time} onChange={(value) => updateForm("time", value)} required />
@@ -459,6 +554,24 @@ const EmptyState = ({ onCreate }: { onCreate: () => void }) => (
     </p>
     <Button onClick={onCreate} className="gradient-cta mt-4 border-0 text-primary-foreground">
       Schedule Appointment
+    </Button>
+  </div>
+);
+
+const SectionError = ({
+  title,
+  message,
+  onRetry,
+}: {
+  title: string;
+  message: string;
+  onRetry: () => void;
+}) => (
+  <div className="rounded-xl border border-dashed border-amber-200 bg-amber-50/60 px-4 py-8 text-center">
+    <p className="font-semibold text-amber-900">{title}</p>
+    <p className="mx-auto mt-1 max-w-sm text-sm text-amber-800">{message}</p>
+    <Button type="button" variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+      Retry
     </Button>
   </div>
 );

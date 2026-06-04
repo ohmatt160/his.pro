@@ -20,7 +20,7 @@ export type FacilityStaffAccount = {
   password: string;
   temporaryPassword: string;
   mustChangePassword: boolean;
-  status: "active";
+  status: "active" | "inactive";
   createdAt: string;
   createdBy?: string;
 };
@@ -217,6 +217,11 @@ export const getFacilityStaff = async (
 ): Promise<FacilityStaffAccount[]> =>
   apiClient.get<FacilityStaffAccount[]>(`/facilities/${facilitySlug}/staff`);
 
+export const getFacilityClinicians = async (
+  facilitySlug: string
+): Promise<FacilityStaffAccount[]> =>
+  apiClient.get<FacilityStaffAccount[]>(`/facilities/${facilitySlug}/clinicians`);
+
 export const getStaffByLoginId = async (
   facilitySlug: string,
   loginId: string
@@ -261,6 +266,46 @@ export const createStaffAccount = async ({
 
   return apiClient.post<FacilityStaffAccount>(
     `/facilities/${facilitySlug}/staff`,
+    payload
+  );
+};
+
+export const updateStaffAccount = async ({
+  facilitySlug,
+  loginId,
+  fullName,
+  role,
+  department,
+  email,
+  phone,
+  password,
+  mustChangePassword,
+  isActive,
+}: {
+  facilitySlug: string;
+  loginId: string;
+  fullName?: string;
+  role?: StaffRole;
+  department?: string;
+  email?: string;
+  phone?: string;
+  password?: string;
+  mustChangePassword?: boolean;
+  isActive?: boolean;
+}) => {
+  const payload = {
+    fullName: fullName?.trim() || undefined,
+    role,
+    department: department?.trim() || undefined,
+    email: email?.trim() ? email.trim().toLowerCase() : undefined,
+    phone: phone?.trim() || undefined,
+    password: password?.trim() || undefined,
+    mustChangePassword,
+    isActive,
+  };
+
+  return apiClient.put<FacilityStaffAccount>(
+    `/facilities/${facilitySlug}/staff/${normalizeLoginValue(loginId)}`,
     payload
   );
 };
