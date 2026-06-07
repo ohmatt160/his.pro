@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.extensions import db_session, get_db
@@ -58,6 +58,7 @@ async def get_suppliers(
 @router.post("", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier(
     data: SupplierCreate,
+    request: Request,
     current_user: User = Depends(role_required("ADMIN", "PHARMACIST", "STORE_KEEPER")),
     db: Session = Depends(get_db),
 ):
@@ -90,6 +91,7 @@ async def create_supplier(
         resource_id=supplier.id,
         facility_slug=facility_slug,
         details={"name": supplier.name},
+        request=request,
     )
 
     return _supplier_response(supplier)
@@ -116,6 +118,7 @@ async def get_supplier(
 async def update_supplier(
     supplier_id: str,
     data: SupplierUpdate,
+    request: Request,
     current_user: User = Depends(role_required("ADMIN", "PHARMACIST", "STORE_KEEPER")),
     db: Session = Depends(get_db),
 ):
@@ -159,6 +162,7 @@ async def update_supplier(
         resource_id=supplier.id,
         facility_slug=facility_slug,
         details={"fields": sorted(payload.keys())},
+        request=request,
     )
 
     return _supplier_response(supplier)
@@ -167,6 +171,7 @@ async def update_supplier(
 @router.delete("/{supplier_id}", response_model=MessageResponse)
 async def deactivate_supplier(
     supplier_id: str,
+    request: Request,
     current_user: User = Depends(role_required("ADMIN", "PHARMACIST", "STORE_KEEPER")),
     db: Session = Depends(get_db),
 ):
@@ -188,6 +193,7 @@ async def deactivate_supplier(
         resource_id=supplier.id,
         facility_slug=facility_slug,
         details={"name": supplier.name},
+        request=request,
     )
 
     return MessageResponse(message="Supplier deactivated successfully")

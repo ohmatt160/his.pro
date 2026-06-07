@@ -8,6 +8,27 @@ class AuditLogService:
     """Service for audit logging operations"""
 
     @staticmethod
+    def _request_ip(request):
+        if not request:
+            return None
+
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip() or None
+
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip.strip() or None
+
+        return request.client.host if request.client else None
+
+    @staticmethod
+    def _request_user_agent(request):
+        if not request:
+            return None
+        return request.headers.get("user-agent")
+
+    @staticmethod
     def log_action(
         user_id,
         action,
@@ -17,6 +38,7 @@ class AuditLogService:
         ip_address=None,
         user_agent=None,
         facility_slug=None,
+        request=None,
     ):
         """Log a user action"""
         try:
@@ -27,8 +49,8 @@ class AuditLogService:
                 resource_id=resource_id,
                 facility_slug=facility_slug,
                 details=details or {},
-                ip_address=ip_address,
-                user_agent=user_agent
+                ip_address=ip_address or AuditLogService._request_ip(request),
+                user_agent=user_agent or AuditLogService._request_user_agent(request),
             )
             db.session.add(audit_log)
             db.session.commit()

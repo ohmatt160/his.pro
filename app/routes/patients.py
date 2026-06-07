@@ -79,7 +79,8 @@ async def get_patients(
             facility_slug=facility_slug,
             page=page,
             per_page=per_page,
-            search=search
+            search=search,
+            current_user=current_user,
         )
 
         # Serialize patients
@@ -172,6 +173,9 @@ async def get_patient(
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
 
+        if not PatientService.user_can_access_patient(patient_id, facility_slug, current_user):
+            raise HTTPException(status_code=403, detail="You are not authorized to access this patient")
+
         return build_patient_response(patient)
 
     except HTTPException:
@@ -197,6 +201,9 @@ async def get_patient_timeline(
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
 
+        if not PatientService.user_can_access_patient(patient_id, facility_slug, current_user):
+            raise HTTPException(status_code=403, detail="You are not authorized to access this patient")
+
         events = PatientTimelineService.build_patient_timeline(patient, facility_slug)
         return PatientTimelineResponse(
             patient=build_patient_response(patient),
@@ -215,7 +222,7 @@ async def get_patient_timeline(
 async def update_patient(
     patient_id: str,
     patient_data: PatientUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """
@@ -233,6 +240,9 @@ async def update_patient(
 
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
+
+        if not PatientService.user_can_access_patient(patient_id, facility_slug, current_user):
+            raise HTTPException(status_code=403, detail="You are not authorized to access this patient")
 
         # Sanitize fields
         data = patient_data.model_dump(exclude_unset=True)

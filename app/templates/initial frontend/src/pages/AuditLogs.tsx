@@ -6,8 +6,10 @@ import {
   ClipboardList,
   FileSearch,
   History,
+  MonitorSmartphone,
   Search,
   ShieldCheck,
+  Wifi,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -35,6 +37,38 @@ type AuditLog = {
   created_at: string;
 };
 
+const parseClient = (userAgent?: string | null) => {
+  if (!userAgent) {
+    return "Unknown client";
+  }
+
+  const browser =
+    /Edg\//.test(userAgent)
+      ? "Edge"
+      : /Chrome\//.test(userAgent) && !/Chromium\//.test(userAgent)
+        ? "Chrome"
+        : /Safari\//.test(userAgent) && /Version\//.test(userAgent)
+          ? "Safari"
+          : /Firefox\//.test(userAgent)
+            ? "Firefox"
+            : "Browser";
+
+  const device =
+    /iPhone/i.test(userAgent)
+      ? "iPhone"
+      : /iPad/i.test(userAgent)
+        ? "iPad"
+        : /Android/i.test(userAgent)
+          ? "Android"
+          : /Windows/i.test(userAgent)
+            ? "Windows"
+            : /Macintosh|Mac OS X/i.test(userAgent)
+              ? "Mac"
+              : "Device";
+
+  return `${browser} on ${device}`;
+};
+
 const AuditLogs = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
@@ -56,6 +90,9 @@ const AuditLogs = () => {
         log.action.toLowerCase().includes(query) ||
         (log.resource_type || "").toLowerCase().includes(query) ||
         (log.resource_id || "").toLowerCase().includes(query) ||
+        (log.ip_address || "").toLowerCase().includes(query) ||
+        parseClient(log.user_agent).toLowerCase().includes(query) ||
+        (log.user_agent || "").toLowerCase().includes(query) ||
         details.includes(query);
       return matchesResource && matchesSearch;
     });
@@ -167,7 +204,7 @@ const AuditLogs = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.02 }}
-                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 lg:grid-cols-[1fr_.8fr_1fr]"
+                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 xl:grid-cols-[1fr_.8fr_1fr_1fr]"
                   >
                     <div>
                       <p className="font-semibold text-foreground">{log.action}</p>
@@ -181,6 +218,18 @@ const AuditLogs = () => {
                       </p>
                       <p className="truncate text-xs text-muted-foreground">
                         {log.resource_id || "No resource id"}
+                      </p>
+                    </div>
+                    <div className="space-y-2 text-xs text-muted-foreground">
+                      <p className="flex min-w-0 items-center gap-2">
+                        <Wifi className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="truncate">{log.ip_address || "No IP captured"}</span>
+                      </p>
+                      <p className="flex min-w-0 items-center gap-2">
+                        <MonitorSmartphone className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="truncate" title={log.user_agent || undefined}>
+                          {parseClient(log.user_agent)}
+                        </span>
                       </p>
                     </div>
                     <pre className="max-h-20 overflow-hidden whitespace-pre-wrap rounded-lg bg-muted/50 p-2 text-xs text-muted-foreground">

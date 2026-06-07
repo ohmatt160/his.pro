@@ -1,29 +1,15 @@
-import { useEffect, useMemo, useState, type ElementType } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Activity,
-  BedDouble,
-  Bell,
-  CalendarDays,
   Check,
   Copy,
   Eye,
   EyeOff,
-  FileHeart,
-  FlaskConical,
-  Layers,
-  LayoutDashboard,
   Link2,
-  LogOut,
-  Package,
-  Pill,
-  Receipt,
-  ScanLine,
   Search,
   Settings,
   Shield,
-  Stethoscope,
   UserCheck,
   UserPlus,
   Users,
@@ -52,7 +38,6 @@ import {
   createStaffAccount,
   getDefaultDepartmentForRole,
   getFacilityLoginLink,
-  getFacilityLoginPath,
   getFacilityStaff,
   getStaffRoleLabel,
   staffRoles,
@@ -60,34 +45,7 @@ import {
   type FacilityStaffAccount,
   type StaffRole,
 } from "@/lib/facility-staff";
-import {
-  getFacilityDashboardPath,
-  getFacilityWorkspace,
-} from "@/lib/facility-workspace";
-
-const moduleIcons: Record<string, ElementType> = {
-  reception: Users,
-  records: FileHeart,
-  consultations: Stethoscope,
-  nursing: BedDouble,
-  lab: FlaskConical,
-  pharmacy: Pill,
-  billing: Receipt,
-  radiology: ScanLine,
-  inventory: Package,
-};
-
-const moduleLabels: Record<string, string> = {
-  reception: "Reception & Registration",
-  records: "Shared Patient Record",
-  consultations: "Doctors & Consultations",
-  nursing: "Nursing & Wards",
-  lab: "Laboratory",
-  pharmacy: "Pharmacy",
-  billing: "Billing & Claims",
-  radiology: "Radiology",
-  inventory: "Inventory & Stores",
-};
+import { getFacilityWorkspace } from "@/lib/facility-workspace";
 
 const roleBadgeColors: Record<StaffRole, string> = {
   admin: "bg-slate-100 text-slate-700 border-slate-200",
@@ -135,9 +93,7 @@ const item = {
 };
 
 const StaffAccess = () => {
-  const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const { logout } = useAuth();
   const [workspace, setWorkspace] = useState<
     | {
         facilityName: string;
@@ -240,13 +196,6 @@ const StaffAccess = () => {
     );
   }
 
-  const fullName = workspace.fullName || "Admin";
-  const selectedModules =
-    workspace.selectedModules?.length > 0
-      ? workspace.selectedModules
-      : ["reception", "records", "consultations", "billing"];
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
-  const facilityLoginPath = getFacilityLoginPath(facilitySlug);
   const loginLink = getFacilityLoginLink(facilitySlug);
 
   const handleCopy = async (value: string, field: string) => {
@@ -352,85 +301,9 @@ const StaffAccess = () => {
     }
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate(facilityLoginPath, { replace: true });
-  };
-
   return (
-    <div className="min-h-screen bg-background flex">
-      <motion.aside
-        initial={{ x: -260 }}
-        animate={{ x: 0 }}
-        transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        className="hidden w-64 flex-col border-r border-border bg-card lg:flex"
-      >
-        <div className="border-b border-border p-5">
-          <Link to="/" className="text-xl font-extrabold tracking-tight">
-            <span className="text-gradient">HIS</span>
-            <span className="text-foreground">.Pro</span>
-          </Link>
-          <p className="mt-1 text-xs capitalize text-muted-foreground">
-            {workspace.facilityType} Dashboard
-          </p>
-        </div>
-
-        <nav className="flex-1 space-y-1 p-3">
-          <SidebarLink
-            icon={LayoutDashboard}
-            label="Dashboard"
-            to={dashboardPath}
-          />
-          <SidebarLink icon={Users} label="Staff & Access" active />
-          <SidebarLink icon={Activity} label="Analytics" />
-          <SidebarLink icon={CalendarDays} label="Appointments" />
-          <div className="px-3 pb-1 pt-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Modules
-            </p>
-          </div>
-          {selectedModules.map((moduleId) => {
-            const Icon = moduleIcons[moduleId] || Layers;
-
-            return (
-              <SidebarLink
-                key={moduleId}
-                icon={Icon}
-                label={moduleLabels[moduleId] || moduleId}
-              />
-            );
-          })}
-        </nav>
-
-        <div className="space-y-1 border-t border-border p-3">
-          <SidebarLink icon={Settings} label="Settings" />
-          <SidebarLink icon={LogOut} label="Log Out" onClick={handleLogout} />
-        </div>
-      </motion.aside>
-
-      <div className="flex min-h-screen flex-1 flex-col">
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex h-16 items-center justify-between border-b border-border bg-card/80 px-6 backdrop-blur-lg"
-        >
-          <div className="flex items-center gap-3">
-            <div className="text-xl font-extrabold tracking-tight lg:hidden">
-              <span className="text-gradient">HIS</span>
-              <span className="text-foreground">.Pro</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-            </Button>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full gradient-hero text-sm font-bold text-primary-foreground">
-              {fullName.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        </motion.header>
-
-        <main className="flex-1 overflow-auto p-6">
+    <div className="min-h-screen bg-background">
+        <main className="p-6">
           <motion.div
             variants={container}
             initial="hidden"
@@ -750,7 +623,6 @@ const StaffAccess = () => {
             </motion.div>
           </motion.div>
         </main>
-      </div>
 
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent className="sm:max-w-md">
@@ -1069,42 +941,6 @@ const StaffAccess = () => {
         </DialogContent>
       </Dialog>
     </div>
-  );
-};
-
-const SidebarLink = ({
-  icon: Icon,
-  label,
-  active,
-  to,
-  onClick,
-}: {
-  icon: ElementType;
-  label: string;
-  active?: boolean;
-  to?: string;
-  onClick?: () => void;
-}) => {
-  const className = `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-    active
-      ? "bg-primary/10 text-primary"
-      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-  }`;
-
-  if (to) {
-    return (
-      <Link to={to} className={className}>
-        <Icon className="h-4 w-4 shrink-0" />
-        {label}
-      </Link>
-    );
-  }
-
-  return (
-    <button type="button" onClick={onClick} className={className}>
-      <Icon className="h-4 w-4 shrink-0" />
-      {label}
-    </button>
   );
 };
 

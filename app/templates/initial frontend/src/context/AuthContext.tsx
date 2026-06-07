@@ -66,10 +66,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         let profile: AuthUser;
-        try {
-          profile = await getProfile();
-        } catch {
+        if (!apiClient.getToken()) {
           profile = await refreshProfile();
+        } else {
+          try {
+            profile = await getProfile();
+          } catch {
+            profile = await refreshProfile();
+          }
         }
 
         if (!isMounted) {

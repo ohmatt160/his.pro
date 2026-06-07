@@ -3,7 +3,7 @@ Facility Routes - FastAPI Version
 Converted from Flask-RESTx facility_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, Body
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -462,6 +462,7 @@ async def update_facility_staff_member(
     facility_slug: str,
     login_id: str,
     data: FacilityStaffUpdate,
+    request: Request,
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
@@ -526,6 +527,19 @@ async def update_facility_staff_member(
     db_session.commit()
     db_session.refresh(member)
 
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_STAFF",
+        resource_type="user",
+        resource_id=member.id,
+        facility_slug=facility.slug,
+        details={
+            "login_id": member.username,
+            "fields": sorted(payload.keys()),
+        },
+        request=request,
+    )
+
     return build_staff_response(
         member,
         temporary_password=temporary_password,
@@ -551,6 +565,7 @@ async def get_facility(
 async def update_facility(
     facility_id: str,
     data: FacilityUpdate,
+    request: Request,
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
@@ -586,6 +601,7 @@ async def update_facility(
         resource_id=facility.id,
         facility_slug=facility.slug,
         details={"fields": sorted(data.model_dump(exclude_unset=True).keys())},
+        request=request,
     )
 
     return build_facility_response(facility)
@@ -617,6 +633,7 @@ async def deactivate_facility(
 @router.put("/{facility_id}/modules", response_model=FacilityResponse)
 async def update_facility_modules(
     facility_id: str,
+    request: Request,
     payload: List[str] | FacilityModulesUpdate = Body(...),
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
@@ -640,6 +657,7 @@ async def update_facility_modules(
         resource_id=facility.id,
         facility_slug=facility.slug,
         details={"modules": normalized_modules},
+        request=request,
     )
 
     return build_facility_response(facility)

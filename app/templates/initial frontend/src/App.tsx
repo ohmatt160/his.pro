@@ -8,6 +8,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import AppShell from "@/components/AppShell";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ModuleRoute from "@/components/ModuleRoute";
+import { routeRoles } from "@/lib/role-access";
 
 const Alerts = lazy(() => import("./pages/Alerts.tsx"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs.tsx"));
@@ -90,7 +91,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/patients"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.patients}>
                     <ModuleRoute module="reception">
                       <WithAppShell>
                         <Patients />
@@ -102,7 +103,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/patients/:patientId/timeline"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.patients}>
                     <ModuleRoute module="reception">
                       <WithAppShell>
                         <PatientTimeline />
@@ -114,7 +115,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/appointments"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.appointments}>
                     <ModuleRoute module="reception">
                       <WithAppShell>
                         <Appointments />
@@ -126,7 +127,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/billing"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.billing}>
                     <ModuleRoute module="billing">
                       <WithAppShell>
                         <Billing />
@@ -138,7 +139,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/laboratory"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.laboratory}>
                     <ModuleRoute module="lab">
                       <WithAppShell>
                         <Laboratory />
@@ -150,7 +151,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/pharmacy"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.pharmacy}>
                     <ModuleRoute module="pharmacy">
                       <WithAppShell>
                         <Pharmacy />
@@ -162,7 +163,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/radiology"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.radiology}>
                     <ModuleRoute module="radiology">
                       <WithAppShell>
                         <Radiology />
@@ -174,7 +175,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/inventory"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.inventory}>
                     <ModuleRoute module="inventory">
                       <WithAppShell>
                         <Inventory />
@@ -186,7 +187,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/records"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.records}>
                     <ModuleRoute module="records">
                       <WithAppShell>
                         <MedicalRecords />
@@ -198,7 +199,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/alerts"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.alerts}>
                     <WithAppShell>
                       <Alerts />
                     </WithAppShell>
@@ -228,7 +229,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/suppliers"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.inventory}>
                     <ModuleRoute module="inventory">
                       <WithAppShell>
                         <Suppliers />
@@ -240,7 +241,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/queue"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.queue}>
                     <ModuleRoute module="reception">
                       <WithAppShell>
                         <Queue />
@@ -252,7 +253,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/consultations"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.consultations}>
                     <ModuleRoute module="consultations">
                       <WithAppShell>
                         <Consultations />
@@ -264,7 +265,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/wards"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.wards}>
                     <ModuleRoute module="nursing">
                       <WithAppShell>
                         <Wards />
@@ -276,7 +277,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/reports"
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute allowedRoles={routeRoles.reports}>
                     <ModuleRoute module="reports">
                       <WithAppShell>
                         <Reports />

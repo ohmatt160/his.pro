@@ -39,10 +39,10 @@ import {
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 
 type ReportBundle = {
-  summary: FacilityReportSummary;
+  summary: FacilityReportSummary | null;
   revenue: RevenueDetailReport | null;
-  departments: DepartmentActivityReport;
-  operations: OperationsReport;
+  departments: DepartmentActivityReport | null;
+  operations: OperationsReport | null;
   inventory: InventoryDetailReport | null;
 };
 
@@ -73,15 +73,36 @@ const Reports = () => {
     setError("");
     try {
       const query = new URLSearchParams(range).toString();
-      const [summary, revenue, departments, operations, inventory] =
-        await Promise.all([
+      const [summaryResult, revenueResult, departmentsResult, operationsResult, inventoryResult] =
+        await Promise.allSettled([
           apiClient.get<FacilityReportSummary>(`/reports/summary?${query}`),
-          apiClient.get<RevenueDetailReport>(`/reports/revenue?${query}`).catch(() => null),
+          apiClient.get<RevenueDetailReport>(`/reports/revenue?${query}`),
           apiClient.get<DepartmentActivityReport>(`/reports/departments?${query}`),
           apiClient.get<OperationsReport>(`/reports/operations?${query}`),
-          apiClient.get<InventoryDetailReport>("/reports/inventory").catch(() => null),
+          apiClient.get<InventoryDetailReport>("/reports/inventory"),
         ]);
-      setReports({ summary, revenue, departments, operations, inventory });
+
+      const failed = [
+        summaryResult.status === "rejected" ? "overview" : "",
+        revenueResult.status === "rejected" ? "revenue" : "",
+        departmentsResult.status === "rejected" ? "departments" : "",
+        operationsResult.status === "rejected" ? "operations" : "",
+        inventoryResult.status === "rejected" ? "inventory" : "",
+      ].filter(Boolean);
+
+      setReports({
+        summary: summaryResult.status === "fulfilled" ? summaryResult.value : null,
+        revenue: revenueResult.status === "fulfilled" ? revenueResult.value : null,
+        departments: departmentsResult.status === "fulfilled" ? departmentsResult.value : null,
+        operations: operationsResult.status === "fulfilled" ? operationsResult.value : null,
+        inventory: inventoryResult.status === "fulfilled" ? inventoryResult.value : null,
+      });
+
+      setError(
+        failed.length
+          ? `Some report sections could not be loaded: ${failed.join(", ")}. Try Run again.`
+          : ""
+      );
     } catch (reportError) {
       setError(reportError instanceof Error ? reportError.message : "Reports could not be loaded.");
     } finally {
@@ -96,7 +117,8 @@ const Reports = () => {
   const sections = useMemo(
     () =>
       reports
-        ? [
+        ? reports.summary
+          ? [
             { label: "Patients", section: reports.summary.patients, icon: Users, to: paths.patients },
             { label: "Appointments", section: reports.summary.appointments, icon: CalendarDays, to: paths.appointments },
             { label: "Queue", section: reports.summary.queue, icon: Activity, to: paths.queue },
@@ -106,6 +128,7 @@ const Reports = () => {
             { label: "Radiology", section: reports.summary.radiology, icon: ScanLine, to: paths.radiology },
             { label: "Alerts", section: reports.summary.alerts, icon: Bell, to: paths.audit },
           ]
+          : []
         : [],
     [paths, reports]
   );
@@ -147,7 +170,7 @@ const Reports = () => {
                 <p className="text-sm text-muted-foreground">
                   {loading
                     ? "Loading report..."
-                    : reports?.summary.generated_at
+                    : reports?.summary?.generated_at
                       ? `Generated ${new Date(reports.summary.generated_at).toLocaleString()}`
                       : "Choose a date range"}
                 </p>
@@ -179,11 +202,15 @@ const Reports = () => {
           </TabsList>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {sections.map((item) => (
-                <ReportMetric key={item.label} {...item} />
-              ))}
-            </div>
+            {reports?.summary ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {sections.map((item) => (
+                  <ReportMetric key={item.label} {...item} />
+                ))}
+              </div>
+            ) : (
+              <UnavailablePanel title="Overview unavailable" message="The overview report could not be loaded. Other tabs may still be available." />
+            )}
             {reports && (
               <div className="grid gap-6 lg:grid-cols-3">
                 {reports.revenue ? (
@@ -196,7 +223,11 @@ const Reports = () => {
                 ) : (
                   <UnavailableCard title="Inventory" message="Inventory reporting is limited to inventory users and admins." />
                 )}
-                <ClinicalCard departments={reports.departments.departments} consultationsPath={paths.consultations} />
+                {reports.departments ? (
+                  <ClinicalCard departments={reports.departments.departments} consultationsPath={paths.consultations} />
+                ) : (
+                  <UnavailableCard title="Clinical Throughput" message="Department activity could not be loaded." />
+                )}
               </div>
             )}
           </TabsContent>
@@ -212,11 +243,23 @@ const Reports = () => {
           </TabsContent>
 
           <TabsContent value="departments">
-            {reports && <DepartmentPanel rows={reports.departments.departments} />}
+            {reports && (
+              reports.departments ? (
+                <DepartmentPanel rows={reports.departments.departments} />
+              ) : (
+                <UnavailablePanel title="Department reporting" message="Department activity could not be loaded." />
+              )
+            )}
           </TabsContent>
 
           <TabsContent value="operations">
-            {reports && <OperationsPanel operations={reports.operations} />}
+            {reports && (
+              reports.operations ? (
+                <OperationsPanel operations={reports.operations} />
+              ) : (
+                <UnavailablePanel title="Operations reporting" message="Operations activity could not be loaded." />
+              )
+            )}
           </TabsContent>
 
           <TabsContent value="inventory">

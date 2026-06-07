@@ -3,7 +3,7 @@ User Profile Routes - FastAPI Version
 Converted from Flask-RESTx user_profile_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
@@ -49,6 +49,7 @@ async def get_current_user_profile(
 @router.put("/me", response_model=UserResponse)
 async def update_current_user(
     data: UserUpdate,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -70,6 +71,7 @@ async def update_current_user(
         resource_id=current_user.id,
         facility_slug=current_user.facility_slug,
         details={"fields": sorted(payload.keys())},
+        request=request,
     )
 
     return UserResponse(
@@ -91,6 +93,7 @@ async def update_current_user(
 @router.post("/me/change-password", response_model=MessageResponse)
 async def change_password(
     data: ChangePasswordRequest,
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -108,6 +111,7 @@ async def change_password(
         resource_id=current_user.id,
         facility_slug=current_user.facility_slug,
         details={},
+        request=request,
     )
 
     return MessageResponse(message=message)

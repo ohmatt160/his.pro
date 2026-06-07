@@ -24,6 +24,7 @@ import { useAuth } from "@/context/AuthContext";
 import { getFacilityLoginPath, getStaffAccessPath } from "@/lib/facility-staff";
 import { getFacilityWorkspace, type SavedFacilityWorkspace } from "@/lib/facility-workspace";
 import { isModuleEnabled, normalizeModules } from "@/lib/modules";
+import { roleAllows, routeRoles, type WorkspaceRole } from "@/lib/role-access";
 import { apiClient } from "@/api/client";
 
 type DashboardStats = {
@@ -41,24 +42,25 @@ const navItems: Array<{
   module?: Parameters<typeof isModuleEnabled>[1];
   path: (slug: string) => string;
   adminOnly?: boolean;
+  roles?: WorkspaceRole[];
 }> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug) => `/dashboard/${slug}` },
-  { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: getStaffAccessPath, adminOnly: true },
-  { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts` },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug) => `/dashboard/${slug}`, roles: routeRoles.admin },
+  { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: getStaffAccessPath, roles: routeRoles.admin },
+  { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts`, roles: routeRoles.alerts },
   { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug) => `/dashboard/${slug}/audit-logs`, adminOnly: true },
-  { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug) => `/dashboard/${slug}/reports` },
-  { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug) => `/dashboard/${slug}/patients` },
-  { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug) => `/dashboard/${slug}/queue` },
-  { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug) => `/dashboard/${slug}/appointments` },
-  { id: "consultations", label: "Consultations", icon: Stethoscope, module: "consultations", path: (slug) => `/dashboard/${slug}/consultations` },
-  { id: "wards", label: "Wards", icon: BedDouble, module: "nursing", path: (slug) => `/dashboard/${slug}/wards` },
-  { id: "records", label: "Medical Records", icon: FileHeart, module: "records", path: (slug) => `/dashboard/${slug}/records` },
-  { id: "billing", label: "Billing", icon: Receipt, module: "billing", path: (slug) => `/dashboard/${slug}/billing` },
-  { id: "lab", label: "Laboratory", icon: FlaskConical, module: "lab", path: (slug) => `/dashboard/${slug}/laboratory` },
-  { id: "pharmacy", label: "Pharmacy", icon: Pill, module: "pharmacy", path: (slug) => `/dashboard/${slug}/pharmacy` },
-  { id: "radiology", label: "Radiology", icon: ScanLine, module: "radiology", path: (slug) => `/dashboard/${slug}/radiology` },
-  { id: "inventory", label: "Inventory", icon: Package, module: "inventory", path: (slug) => `/dashboard/${slug}/inventory` },
-  { id: "suppliers", label: "Suppliers", icon: Truck, module: "inventory", path: (slug) => `/dashboard/${slug}/suppliers` },
+  { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug) => `/dashboard/${slug}/reports`, roles: routeRoles.reports },
+  { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug) => `/dashboard/${slug}/patients`, roles: routeRoles.patients },
+  { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug) => `/dashboard/${slug}/queue`, roles: routeRoles.queue },
+  { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug) => `/dashboard/${slug}/appointments`, roles: routeRoles.appointments },
+  { id: "consultations", label: "Consultations", icon: Stethoscope, module: "consultations", path: (slug) => `/dashboard/${slug}/consultations`, roles: routeRoles.consultations },
+  { id: "wards", label: "Wards", icon: BedDouble, module: "nursing", path: (slug) => `/dashboard/${slug}/wards`, roles: routeRoles.wards },
+  { id: "records", label: "Medical Records", icon: FileHeart, module: "records", path: (slug) => `/dashboard/${slug}/records`, roles: routeRoles.records },
+  { id: "billing", label: "Billing", icon: Receipt, module: "billing", path: (slug) => `/dashboard/${slug}/billing`, roles: routeRoles.billing },
+  { id: "lab", label: "Laboratory", icon: FlaskConical, module: "lab", path: (slug) => `/dashboard/${slug}/laboratory`, roles: routeRoles.laboratory },
+  { id: "pharmacy", label: "Pharmacy", icon: Pill, module: "pharmacy", path: (slug) => `/dashboard/${slug}/pharmacy`, roles: routeRoles.pharmacy },
+  { id: "radiology", label: "Radiology", icon: ScanLine, module: "radiology", path: (slug) => `/dashboard/${slug}/radiology`, roles: routeRoles.radiology },
+  { id: "inventory", label: "Inventory", icon: Package, module: "inventory", path: (slug) => `/dashboard/${slug}/inventory`, roles: routeRoles.inventory },
+  { id: "suppliers", label: "Suppliers", icon: Truck, module: "inventory", path: (slug) => `/dashboard/${slug}/suppliers`, roles: routeRoles.inventory },
   { id: "settings", label: "Settings", icon: Settings, path: (slug) => `/dashboard/${slug}/settings`, adminOnly: true },
 ];
 
@@ -86,7 +88,7 @@ const AppShell = ({ children }: AppShellProps) => {
     if (entry.adminOnly && user?.role !== "admin") {
       return false;
     }
-    return !entry.module || isModuleEnabled(selectedModules, entry.module);
+    return roleAllows(user?.role, entry.roles) && (!entry.module || isModuleEnabled(selectedModules, entry.module));
   });
 
   const handleLogout = () => {

@@ -3,7 +3,7 @@ Alert Routes - FastAPI Version
 Converted from Flask-RESTx alert_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy import or_
@@ -91,6 +91,7 @@ async def get_alerts(
 @router.post("", response_model=AlertResponse, status_code=status.HTTP_201_CREATED)
 async def create_alert(
     data: AlertCreate,
+    request: Request,
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
@@ -136,6 +137,7 @@ async def create_alert(
             "recipient_id": alert.recipient_id,
             "title": alert.title,
         },
+        request=request,
     )
 
     return _alert_response(alert)
@@ -144,6 +146,7 @@ async def create_alert(
 @router.post("/role", response_model=List[AlertResponse], status_code=status.HTTP_201_CREATED)
 async def create_role_alert(
     data: RoleAlertCreate,
+    request: Request,
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
@@ -184,6 +187,7 @@ async def create_role_alert(
         resource_id=None,
         facility_slug=facility_slug,
         details={"recipient_role": data.recipient_role, "count": len(alerts), "title": data.title},
+        request=request,
     )
 
     return [_alert_response(alert) for alert in alerts]

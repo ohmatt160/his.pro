@@ -318,7 +318,7 @@ async def check_in_patient(
 @router.put("/{queue_id}/start", response_model=QueueResponse)
 async def start_visit(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Start patient visit"""
@@ -360,7 +360,7 @@ async def start_visit(
 @router.put("/{queue_id}/complete", response_model=QueueResponse)
 async def complete_visit(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Complete patient visit"""
@@ -372,8 +372,11 @@ async def complete_visit(
     if not entry:
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
-    if entry.status != 'in_progress':
-        raise HTTPException(status_code=400, detail="Patient visit is not in progress")
+    if entry.status not in {'waiting', 'in_progress'}:
+        raise HTTPException(status_code=400, detail="Patient cannot be cleared from the queue")
+
+    if entry.status == 'waiting':
+        entry.start_visit()
 
     entry.complete_visit()
     entry.save()

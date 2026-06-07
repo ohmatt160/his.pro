@@ -84,8 +84,17 @@ const Queue = () => {
   );
 
   const updateQueue = async (entry: QueueEntry, action: "checkin" | "start" | "complete") => {
-    await apiClient.put<QueueEntry>(`/queue/${entry.id}/${action}`, {});
-    await loadQueue();
+    setError("");
+    try {
+      await apiClient.put<QueueEntry>(`/queue/${entry.id}/${action}`, {});
+      await loadQueue();
+    } catch (queueError) {
+      setError(
+        queueError instanceof Error
+          ? queueError.message
+          : "Queue action could not be completed."
+      );
+    }
   };
 
   return (
@@ -184,6 +193,14 @@ const Queue = () => {
                           >
                             <Play className="h-4 w-4" /> Start
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() => updateQueue(entry, "complete")}
+                          >
+                            <CheckCircle2 className="h-4 w-4" /> Clear
+                          </Button>
                         </>
                       )}
                       {entry.status === "in_progress" && (
@@ -192,7 +209,7 @@ const Queue = () => {
                           className="gradient-cta gap-2 border-0 text-primary-foreground"
                           onClick={() => updateQueue(entry, "complete")}
                         >
-                          <CheckCircle2 className="h-4 w-4" /> Complete
+                          <CheckCircle2 className="h-4 w-4" /> Clear
                         </Button>
                       )}
                     </div>
