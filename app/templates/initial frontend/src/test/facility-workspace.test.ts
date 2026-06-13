@@ -3,6 +3,8 @@ import {
   getFacilityWorkspace,
   getFacilityPlatformLink,
   saveFacilityWorkspace,
+  updateCachedFacilityWorkspace,
+  WORKSPACE_UPDATED_EVENT,
 } from "../lib/facility-workspace";
 import { getFacilityLoginPath } from "../lib/facility-staff";
 
@@ -129,5 +131,36 @@ describe("facility workspace API", () => {
       "/api/v1/facilities/workspace/sunrise-medical-centre"
     );
     expect(workspace?.selectedModules).toEqual(["reception", "records", "reports"]);
+  });
+
+  it("updates cached modules and notifies open workspace UI", () => {
+    const listener = vi.fn();
+    window.addEventListener(WORKSPACE_UPDATED_EVENT, listener);
+    window.localStorage.setItem(
+      "hispro.workspace.sunrise-medical-centre",
+      JSON.stringify({
+        facilityName: "Sunrise Medical Centre",
+        facilityType: "hospital",
+        country: "Nigeria",
+        fullName: "Dr. Amina Yusuf",
+        email: "admin@sunrise.test",
+        phone: "+234 800 000 0000",
+        selectedModules: ["reception", "records"],
+        facilitySlug: "sunrise-medical-centre",
+        createdAt: "2026-05-31T10:00:00",
+      })
+    );
+
+    const workspace = updateCachedFacilityWorkspace("sunrise-medical-centre", {
+      selectedModules: ["reception", "billing"],
+    });
+
+    expect(workspace?.selectedModules).toEqual(["reception", "billing"]);
+    expect(
+      JSON.parse(window.localStorage.getItem("hispro.workspace.sunrise-medical-centre") || "{}")
+        .selectedModules
+    ).toEqual(["reception", "billing"]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    window.removeEventListener(WORKSPACE_UPDATED_EVENT, listener);
   });
 });

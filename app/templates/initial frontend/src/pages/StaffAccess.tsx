@@ -82,6 +82,13 @@ const emptyEditStaff = {
   isActive: true,
 };
 
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const isValidOptionalEmail = (value: string) => {
+  const trimmed = value.trim();
+  return !trimmed || emailPattern.test(trimmed);
+};
+
 const container = {
   hidden: {},
   show: { transition: { staggerChildren: 0.07 } },
@@ -212,6 +219,10 @@ const StaffAccess = () => {
     if (!newStaff.fullName.trim() || !newStaff.department.trim()) {
       return;
     }
+    if (!isValidOptionalEmail(newStaff.email)) {
+      setStaffError("Enter a valid work email address or leave it blank.");
+      return;
+    }
 
     setCreatingStaff(true);
     setStaffError("");
@@ -265,6 +276,10 @@ const StaffAccess = () => {
 
   const handleUpdateStaff = async () => {
     if (!editingStaff || !editStaff.fullName.trim() || !editStaff.department.trim()) {
+      return;
+    }
+    if (!isValidOptionalEmail(editStaff.email)) {
+      setStaffError("Enter a valid work email address or leave it blank.");
       return;
     }
 

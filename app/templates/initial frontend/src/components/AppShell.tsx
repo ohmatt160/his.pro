@@ -22,7 +22,11 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { getFacilityLoginPath, getStaffAccessPath } from "@/lib/facility-staff";
-import { getFacilityWorkspace, type SavedFacilityWorkspace } from "@/lib/facility-workspace";
+import {
+  getFacilityWorkspace,
+  WORKSPACE_UPDATED_EVENT,
+  type SavedFacilityWorkspace,
+} from "@/lib/facility-workspace";
 import { isModuleEnabled, normalizeModules } from "@/lib/modules";
 import { roleAllows, routeRoles, type WorkspaceRole } from "@/lib/role-access";
 import { apiClient } from "@/api/client";
@@ -79,7 +83,26 @@ const AppShell = ({ children }: AppShellProps) => {
       return;
     }
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
-    apiClient.get<DashboardStats>("/dashboard/stats").then(setStats).catch(() => setStats(null));
+    apiClient
+      .get<DashboardStats>(
+        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}`
+      )
+      .then(setStats)
+      .catch(() => setStats(null));
+  }, [facilitySlug]);
+
+  useEffect(() => {
+    const handleWorkspaceUpdated = (event: Event) => {
+      const workspaceDetail = (event as CustomEvent<SavedFacilityWorkspace>).detail;
+      if (workspaceDetail?.facilitySlug === facilitySlug) {
+        setWorkspace(workspaceDetail);
+      }
+    };
+
+    window.addEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
+    return () => {
+      window.removeEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
+    };
   }, [facilitySlug]);
 
   const selectedModules = normalizeModules(workspace?.selectedModules?.length ? workspace.selectedModules : defaultModules);

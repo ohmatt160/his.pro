@@ -9,6 +9,7 @@ export type AuthUser = {
 };
 
 const USER_STORAGE_KEY = "hispro.auth.user";
+export const AUTH_EXPIRED_EVENT = "hispro:auth-expired";
 let inMemoryAuthToken: string | null = null;
 let refreshRequest: Promise<string | null> | null = null;
 
@@ -78,6 +79,12 @@ export const clearUser = () => {
   window.localStorage.removeItem(USER_STORAGE_KEY);
 };
 
+const notifyAuthExpired = () => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+  }
+};
+
 const toHeaders = (headers?: HeadersInit, authToken?: string | null) => {
   const normalized = new Headers(headers);
 
@@ -114,7 +121,26 @@ const parseErrorMessage = async (response: Response) => {
       message?: unknown;
     };
 
-    const message = payload.detail || payload.error || payload.message;
+    const rawError =
+      payload.error && typeof payload.error === "object"
+        ? (payload.error as { message?: unknown; details?: unknown })
+        : null;
+    const message =
+      payload.detail ||
+      rawError?.message ||
+      payload.error ||
+      payload.message;
+    const details = rawError?.details;
+
+    if (Array.isArray(details)) {
+      const firstDetail = details[0] as { loc?: unknown[]; msg?: unknown } | undefined;
+      const field = firstDetail?.loc?.at(-1);
+      if (typeof firstDetail?.msg === "string" && typeof field === "string") {
+        return `${field.replaceAll("_", " ")}: ${firstDetail.msg}`;
+      }
+      return "Please check the form and try again.";
+    }
+
     if (typeof message === "string") {
       return message;
     }
@@ -168,6 +194,7 @@ const refreshAccessToken = async () => {
         if (!response.ok) {
           clearToken();
           clearUser();
+          notifyAuthExpired();
           return null;
         }
 
@@ -182,6 +209,7 @@ const refreshAccessToken = async () => {
       .catch(() => {
         clearToken();
         clearUser();
+        notifyAuthExpired();
         return null;
       })
       .finally(() => {
@@ -246,6 +274,8 @@ export const request = async <T>(
         body,
         credentials: fetchOptions.credentials ?? "include",
       });
+    } else {
+      notifyAuthExpired();
     }
   }
 

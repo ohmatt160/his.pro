@@ -48,7 +48,7 @@ from app.middleware.jwt import JWTMiddleware
 from app.middleware.module_access import ModuleAccessMiddleware
 from app.middleware.security import InputValidationMiddleware, SecurityHeadersMiddleware
 from app.utils.error_handlers import register_error_handlers
-from app.utils.schema import ensure_sqlite_schema_current
+from app.utils.schema import ensure_database_schema_current
 from app.services.email_service import EmailService
 from app.services.tenant_service import backfill_facility_ids, register_tenant_hooks
 from app.extensions import db_session
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
     # Initialize database using existing engine from extensions.
     try:
         Base.metadata.create_all(bind=engine)
-        ensure_sqlite_schema_current(engine)
+        ensure_database_schema_current(engine)
         backfill_facility_ids()
         print("[OK] Database tables initialized")
     except Exception as e:

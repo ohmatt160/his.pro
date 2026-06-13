@@ -5,7 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { apiClient, type AuthUser } from "@/api/client";
+import { AUTH_EXPIRED_EVENT, apiClient, type AuthUser } from "@/api/client";
 import { refreshProfile } from "@/lib/auth-session";
 import {
   authenticateStaff,
@@ -115,29 +115,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       return;
     }
 
+    const expireSession = (message: string) => {
+      apiClient.clearToken();
+      apiClient.clearUser();
+      window.localStorage.removeItem(LAST_ACTIVITY_KEY);
+      setTokenState(null);
+      setUserState(null);
+      setSessionMessage(message);
+    };
     const onActivity = () => markActivity();
     const onFocus = () => {
       if (hasTimedOut()) {
         apiClient.post("/auth/logout").catch(() => undefined);
-        apiClient.clearToken();
-        apiClient.clearUser();
-        setTokenState(null);
-        setUserState(null);
-        setSessionMessage("Your session expired after being idle. Please sign in again.");
+        expireSession("Your session expired after being idle. Please sign in again.");
         return;
       }
       markActivity();
+    };
+    const onAuthExpired = () => {
+      expireSession("Your session expired. Please sign in again.");
     };
 
     const events = ["click", "keydown", "mousemove", "touchstart", "scroll"];
     events.forEach((eventName) => window.addEventListener(eventName, onActivity, { passive: true }));
     window.addEventListener("focus", onFocus);
+    window.addEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
     document.addEventListener("visibilitychange", onFocus);
     markActivity();
 
     return () => {
       events.forEach((eventName) => window.removeEventListener(eventName, onActivity));
       window.removeEventListener("focus", onFocus);
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
       document.removeEventListener("visibilitychange", onFocus);
     };
   }, [user]);

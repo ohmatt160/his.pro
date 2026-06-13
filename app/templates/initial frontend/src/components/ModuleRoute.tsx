@@ -1,6 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useParams } from "react-router-dom";
-import { getFacilityWorkspace } from "@/lib/facility-workspace";
+import {
+  getFacilityWorkspace,
+  WORKSPACE_UPDATED_EVENT,
+  type SavedFacilityWorkspace,
+} from "@/lib/facility-workspace";
 import { canAccessModule, type FacilityModuleId } from "@/lib/modules";
 import { useAuth } from "@/context/AuthContext";
 
@@ -46,6 +50,28 @@ const ModuleRoute = ({
 
     return () => {
       mounted = false;
+    };
+  }, [facilitySlug, module, user?.role]);
+
+  useEffect(() => {
+    const handleWorkspaceUpdated = (event: Event) => {
+      const workspace = (event as CustomEvent<SavedFacilityWorkspace>).detail;
+      if (workspace?.facilitySlug !== facilitySlug) {
+        return;
+      }
+
+      setAllowed(
+        canAccessModule({
+          modules: workspace.selectedModules,
+          moduleId: module,
+          role: user?.role,
+        })
+      );
+    };
+
+    window.addEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
+    return () => {
+      window.removeEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
     };
   }, [facilitySlug, module, user?.role]);
 

@@ -37,6 +37,7 @@ type BackendTokenResponse = {
 };
 
 const WORKSPACE_STORAGE_PREFIX = "hispro.workspace.";
+export const WORKSPACE_UPDATED_EVENT = "hispro:workspace-updated";
 
 export const createFacilitySlug = (facilityName: string) =>
   facilityName
@@ -70,6 +71,16 @@ const cacheWorkspace = (workspace: SavedFacilityWorkspace) => {
     getWorkspaceStorageKey(workspace.facilitySlug),
     JSON.stringify(workspace)
   );
+};
+
+const notifyWorkspaceUpdated = (workspace: SavedFacilityWorkspace) => {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(WORKSPACE_UPDATED_EVENT, {
+        detail: workspace,
+      })
+    );
+  }
 };
 
 const getCachedWorkspace = (facilitySlug: string) => {
@@ -187,4 +198,29 @@ export const getFacilityWorkspace = async (
   } catch {
     return null;
   }
+};
+
+export const updateCachedFacilityWorkspace = (
+  facilitySlug: string,
+  updates: Partial<FacilityWorkspaceData>
+) => {
+  const cachedWorkspace = getCachedWorkspace(facilitySlug);
+  if (!cachedWorkspace) {
+    return null;
+  }
+
+  const workspace: SavedFacilityWorkspace = {
+    ...cachedWorkspace,
+    ...updates,
+    facilitySlug: cachedWorkspace.facilitySlug,
+  };
+
+  cacheWorkspace(workspace);
+  notifyWorkspaceUpdated(workspace);
+  return workspace;
+};
+
+export const setCachedFacilityWorkspace = (workspace: SavedFacilityWorkspace) => {
+  cacheWorkspace(workspace);
+  notifyWorkspaceUpdated(workspace);
 };

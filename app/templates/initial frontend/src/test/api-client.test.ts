@@ -140,6 +140,31 @@ describe("api client", () => {
     );
   });
 
+  it("formats structured validation errors without dumping raw JSON", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: "Validation error",
+            code: 2001,
+            status: 400,
+            details: [
+              {
+                loc: ["body", "email"],
+                msg: "value is not a valid email address",
+              },
+            ],
+          },
+        }),
+        { status: 400 }
+      )
+    );
+
+    await expect(request("/facilities/demo/staff", { method: "POST" })).rejects.toThrow(
+      "email: value is not a valid email address"
+    );
+  });
+
   it("refreshes once and retries protected requests after a 401", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(
@@ -170,6 +195,29 @@ describe("api client", () => {
     const retryHeaders = getFetchMock().mock.calls[2][1].headers as Headers;
     expect(retryHeaders.get("Authorization")).toBe("Bearer refreshed-token");
     expect(apiClient.getToken()).toBe("refreshed-token");
+  });
+
+  it("clears auth and emits an expiry event when refresh fails", async () => {
+    const expiredListener = vi.fn();
+    window.addEventListener("hispro:auth-expired", expiredListener);
+    setToken("expired-token");
+    setUser({
+      facilitySlug: "sunrise-clinic",
+      loginId: "ADM-001",
+      role: "admin",
+      fullName: "Admin",
+    });
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Expired" }), { status: 401 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ detail: "Invalid refresh" }), { status: 401 }));
+
+    await expect(request("/patients")).rejects.toThrow("Expired");
+
+    expect(apiClient.getToken()).toBeNull();
+    expect(apiClient.getUser()).toBeNull();
+    expect(expiredListener).toHaveBeenCalled();
+    window.removeEventListener("hispro:auth-expired", expiredListener);
   });
 
   it("rejects successful responses with invalid JSON", async () => {

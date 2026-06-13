@@ -93,3 +93,36 @@ def ensure_sqlite_schema_current(engine: Engine) -> None:
             logger.info("Adding missing SQLite column %s.%s", table_name, column_name)
             connection.execute(text(statement))
 
+
+def ensure_database_schema_current(engine: Engine) -> None:
+    """
+    Apply conservative startup schema compatibility repairs.
+
+    SQLite receives additive column updates for local/dev databases. PostgreSQL
+    gets safe widening fixes for columns that older deployments created too
+    narrowly.
+    """
+    ensure_sqlite_schema_current(engine)
+
+    if engine.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if "users" not in existing_tables:
+        return
+
+    users_columns = {column["name"]: column for column in inspector.get_columns("users")}
+    password_hash = users_columns.get("password_hash")
+    if not password_hash:
+        return
+
+    current_length = getattr(password_hash["type"], "length", None)
+    if current_length is not None and current_length >= 255:
+        return
+
+    with engine.begin() as connection:
+        logger.info("Widening users.password_hash to VARCHAR(255)")
+        connection.execute(
+            text("ALTER TABLE users ALTER COLUMN password_hash TYPE VARCHAR(255)")
+        )

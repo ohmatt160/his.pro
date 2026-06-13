@@ -31,7 +31,10 @@ import {
   getActiveSessions,
   type ActiveSession,
 } from "@/lib/auth-session";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import {
+  setCachedFacilityWorkspace,
+  getFacilityDashboardPath,
+} from "@/lib/facility-workspace";
 import { moduleCatalog, normalizeModules, type FacilityModuleId } from "@/lib/modules";
 import {
   addSettledError,
@@ -182,7 +185,22 @@ const Settings = () => {
         moduleSelection
       );
       setFacility(updated);
-      setModuleSelection(normalizeModules(updated.modules));
+      const selectedModules = normalizeModules(updated.modules);
+      setModuleSelection(selectedModules);
+      setCachedFacilityWorkspace({
+        facilityName: updated.name,
+        facilityType: updated.type,
+        country: updated.country || "",
+        fullName:
+          `${profile?.first_name || ""} ${profile?.last_name || ""}`.trim() ||
+          profile?.username ||
+          "Admin",
+        email: updated.email || profile?.email || "",
+        phone: updated.phone || profile?.phone || "",
+        selectedModules,
+        facilitySlug: updated.slug,
+        createdAt: new Date().toISOString(),
+      });
       setModulesStatus("Modules saved.");
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Module update failed.");
