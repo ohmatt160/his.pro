@@ -74,7 +74,9 @@ const App = () => (
                 path="/dashboard/:facilitySlug"
                 element={
                   <ProtectedRoute requireAdmin>
-                    <Dashboard />
+                    <WithAppShell>
+                      <Dashboard />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />
@@ -290,7 +292,9 @@ const App = () => (
                 path="/portal/:facilitySlug"
                 element={
                   <ProtectedRoute>
-                    <StaffPortal />
+                    <WithAppShell>
+                      <StaffPortal />
+                    </WithAppShell>
                   </ProtectedRoute>
                 }
               />

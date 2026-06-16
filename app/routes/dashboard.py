@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
 import logging
 
@@ -24,6 +25,26 @@ from app.schemas.dashboard import DashboardStats
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
+
+
+def _empty_dashboard_stats(facility_slug: str) -> dict:
+    return {
+        'facility_slug': facility_slug,
+        'patient_count': 0,
+        'today_appointments': 0,
+        'pending_lab_orders': 0,
+        'pending_radiology_orders': 0,
+        'low_inventory_items': 0,
+        'active_alerts': 0,
+        'queue_status': {
+            'waiting': 0,
+            'in_progress': 0,
+            'completed': 0,
+            'no_show': 0,
+        },
+        'active_queue_count': 0,
+        'generated_at': datetime.utcnow().isoformat(),
+    }
 
 
 @router.get("/stats")
@@ -108,6 +129,10 @@ async def get_dashboard_stats(
 
     except HTTPException:
         raise
+    except SQLAlchemyError as e:
+        logger.warning("[Dashboard] Returning empty stats for %s after database read failed: %s", facility_slug, e, exc_info=True)
+        db_session.rollback()
+        return _empty_dashboard_stats(facility_slug)
     except Exception as e:
         logger.error(f"[Dashboard] Exception: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}")

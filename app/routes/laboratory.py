@@ -141,7 +141,7 @@ async def get_lab_orders(
         # Verify patient belongs to facility
         patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         orders = LabService.get_lab_orders_by_patient(patient_id, facility_slug)
     elif status:
         orders = LabService.get_lab_orders_by_status(status, facility_slug)

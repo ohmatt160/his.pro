@@ -58,7 +58,7 @@ async def get_records(
         # Verify patient belongs to facility
         patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         records = MedicalRecordService.get_medical_records_by_patient(patient_id, facility_slug)
     else:
         records = MedicalRecordService.get_medical_records_by_facility(facility_slug)

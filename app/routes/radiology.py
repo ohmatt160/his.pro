@@ -82,7 +82,7 @@ async def get_radiology_orders(
             facility_slug=current_user.facility_slug,
         ).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         query = query.filter_by(patient_id=patient_id)
 
     query = query.order_by(Radiology.request_date.desc())

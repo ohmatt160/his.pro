@@ -69,7 +69,7 @@ async def list_patient_notifications(
     if patient_id:
         patient = db_session.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         query = query.filter_by(patient_id=patient_id)
     if status_filter:
         query = query.filter_by(status=status_filter.upper())
@@ -111,4 +111,3 @@ async def mark_patient_notification_read(
     db_session.commit()
     db_session.refresh(updated)
     return _response(updated)
-

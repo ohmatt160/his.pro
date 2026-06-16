@@ -91,7 +91,7 @@ async def get_invoices(
         # Verify patient belongs to facility
         patient = db_session.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         query = query.filter_by(patient_id=patient_id)
     elif status:
         query = query.filter_by(status=status)

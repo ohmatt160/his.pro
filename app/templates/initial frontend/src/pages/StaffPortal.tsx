@@ -1020,98 +1020,7 @@ const StaffPortal = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
-      <motion.aside
-        initial={{ x: -260 }}
-        animate={{ x: 0 }}
-        transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        className="hidden w-64 flex-col border-r border-border bg-card lg:flex"
-      >
-        <div className="border-b border-border p-5">
-          <Link to="/" className="text-xl font-extrabold tracking-tight">
-            <span className="text-gradient">HIS</span>
-            <span className="text-foreground">.Pro</span>
-          </Link>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {workspace.facilityName}
-          </p>
-        </div>
-
-        <nav className="flex-1 space-y-1 p-3">
-          {sidebarMain.map((entry, index) => (
-            <SidebarLink
-              key={entry.label}
-              icon={entry.icon}
-              label={entry.label}
-              badge={entry.badge}
-              active={index === 0}
-              to={routeForPortalLabel(staff.role, entry.label, facilitySlug)}
-            />
-          ))}
-          <div className="px-3 pb-1 pt-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Tools
-            </p>
-          </div>
-          {sidebarTools.map((entry) => (
-            <SidebarLink
-              key={entry.label}
-              icon={entry.icon}
-              label={entry.label}
-              badge={entry.badge}
-              to={routeForPortalLabel(staff.role, entry.label, facilitySlug)}
-            />
-          ))}
-        </nav>
-
-        <div className="space-y-1 border-t border-border p-3">
-          <SidebarLink icon={Settings} label="My Portal" to={`/portal/${facilitySlug}`} active />
-          <SidebarLink icon={LogOut} label="Sign Out" onClick={handleLogout} />
-        </div>
-      </motion.aside>
-
-      <div className="flex min-h-screen flex-1 flex-col">
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex h-16 items-center justify-between border-b border-border bg-card/80 px-6 backdrop-blur-lg"
-        >
-          <div className="flex items-center gap-3">
-            <div className="text-xl font-extrabold tracking-tight lg:hidden">
-              <span className="text-gradient">HIS</span>
-              <span className="text-foreground">.Pro</span>
-            </div>
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder={config.searchPlaceholder}
-                className="h-9 w-72 border-0 bg-muted/50 pl-9"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-destructive" />
-            </Button>
-            <div className="flex items-center gap-2.5">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full gradient-hero text-xs font-bold text-primary-foreground">
-                {initials}
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-sm font-semibold leading-tight text-foreground">
-                  {staff.fullName}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {getStaffRoleLabel(staff.role)} · {staff.department}
-                </p>
-              </div>
-            </div>
-          </div>
-        </motion.header>
-
-        <main className="flex-1 overflow-auto p-6">
+        <main className="min-h-screen overflow-auto bg-background p-6">
           <motion.div
             variants={container}
             initial="hidden"
@@ -1377,8 +1286,6 @@ const StaffPortal = () => {
             </div>
           </motion.div>
         </main>
-      </div>
-    </div>
   );
 };
 

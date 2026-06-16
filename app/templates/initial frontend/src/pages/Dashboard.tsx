@@ -267,90 +267,7 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Sidebar */}
-      <motion.aside
-        initial={{ x: -260 }}
-        animate={{ x: 0 }}
-        transition={{ type: "spring", stiffness: 200, damping: 25 }}
-        className="hidden lg:flex flex-col w-64 border-r border-border bg-card"
-      >
-        <div className="p-5 border-b border-border">
-          <Link to="/" className="text-xl font-extrabold tracking-tight">
-            <span className="text-gradient">HIS</span>
-            <span className="text-foreground">.Pro</span>
-          </Link>
-          <p className="text-xs text-muted-foreground mt-1 capitalize">{facilityType} Dashboard</p>
-        </div>
-
-        <nav className="flex-1 p-3 space-y-1">
-          <SidebarLink icon={LayoutDashboard} label="Dashboard" to={dashboardPath} active={location.pathname === dashboardPath} />
-          {staffAccessPath && (
-            <SidebarLink icon={ShieldCheck} label="Staff & Access" to={staffAccessPath} active={location.pathname === staffAccessPath} />
-          )}
-          {alertsPath && <SidebarLink icon={Bell} label="Alerts" to={alertsPath} active={location.pathname === alertsPath} badge={dashboardStats?.active_alerts} />}
-          {auditLogsPath && <SidebarLink icon={ClipboardList} label="Audit Logs" to={auditLogsPath} active={location.pathname === auditLogsPath} />}
-          {reportsPath && <SidebarLink icon={Activity} label="Reports" to={reportsPath} active={location.pathname === reportsPath} />}
-          {patientsPath && <SidebarLink icon={Users} label="Patients" to={patientsPath} active={location.pathname === patientsPath} />}
-          {queuePath && <SidebarLink icon={ClipboardList} label="Reception Queue" to={queuePath} active={location.pathname === queuePath} />}
-          {consultationsPath && <SidebarLink icon={Stethoscope} label="Consultations" to={consultationsPath} active={location.pathname === consultationsPath} />}
-          {wardsPath && <SidebarLink icon={BedDouble} label="Wards" to={wardsPath} active={location.pathname === wardsPath} />}
-          {recordsPath && <SidebarLink icon={FileHeart} label="Medical Records" to={recordsPath} active={location.pathname === recordsPath} />}
-          {appointmentsPath && <SidebarLink icon={CalendarDays} label="Appointments" to={appointmentsPath} active={location.pathname === appointmentsPath} />}
-          {billingPath && <SidebarLink icon={Receipt} label="Billing" to={billingPath} active={location.pathname === billingPath} />}
-          {laboratoryPath && <SidebarLink icon={FlaskConical} label="Laboratory" to={laboratoryPath} active={location.pathname === laboratoryPath} />}
-          {pharmacyPath && <SidebarLink icon={Pill} label="Pharmacy" to={pharmacyPath} active={location.pathname === pharmacyPath} />}
-          {radiologyPath && <SidebarLink icon={ScanLine} label="Radiology" to={radiologyPath} active={location.pathname === radiologyPath} />}
-          {inventoryPath && <SidebarLink icon={Package} label="Inventory" to={inventoryPath} active={location.pathname === inventoryPath} />}
-          {suppliersPath && <SidebarLink icon={Truck} label="Suppliers" to={suppliersPath} active={location.pathname === suppliersPath} />}
-        </nav>
-
-        <div className="p-3 border-t border-border space-y-1">
-          {settingsPath && <SidebarLink icon={Settings} label="Settings" to={settingsPath} />}
-          <SidebarLink icon={LogOut} label="Log Out" onClick={handleLogout} />
-        </div>
-      </motion.aside>
-
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-h-screen">
-        {/* Top bar */}
-        <motion.header
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="h-16 border-b border-border bg-card/80 backdrop-blur-lg flex items-center justify-between px-6"
-        >
-          <div className="flex items-center gap-3">
-            <div className="lg:hidden text-xl font-extrabold tracking-tight">
-              <span className="text-gradient">HIS</span>
-              <span className="text-foreground">.Pro</span>
-            </div>
-            <div className="relative hidden sm:block">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search…" className="pl-9 h-9 w-64 bg-muted/50 border-0" />
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            {staffAccessPath && (
-              <Button asChild variant="outline" className="hidden sm:inline-flex">
-                <Link to={staffAccessPath}>Staff & Access</Link>
-              </Button>
-            )}
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="h-5 w-5 text-muted-foreground" />
-              {Boolean(dashboardStats?.active_alerts) && (
-                <span className="absolute top-1 right-1 rounded-full bg-accent px-1.5 text-[10px] font-bold text-accent-foreground">
-                  {dashboardStats?.active_alerts}
-                </span>
-              )}
-            </Button>
-            <div className="w-9 h-9 rounded-full gradient-hero flex items-center justify-center text-primary-foreground font-bold text-sm">
-              {fullName.charAt(0).toUpperCase()}
-            </div>
-          </div>
-        </motion.header>
-
-        {/* Content */}
-        <main className="flex-1 p-6 overflow-auto">
+        <main className="min-h-screen overflow-auto bg-background p-6">
           <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
             {/* Welcome */}
             <motion.div variants={item}>
@@ -594,8 +511,6 @@ const Dashboard = () => {
             </motion.div>
           </motion.div>
         </main>
-      </div>
-    </div>
   );
 };
 

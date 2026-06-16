@@ -140,6 +140,15 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertGreaterEqual(len(active_sessions.json()), 1)
             self.assertTrue(any(session["is_current"] for session in active_sessions.json()))
 
+            empty_dashboard = await client.get(
+                "/api/v1/dashboard/stats?facility_slug=sunrise-medical-centre",
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+
+            self.assertEqual(empty_dashboard.status_code, 200, empty_dashboard.text)
+            self.assertEqual(empty_dashboard.json()["patient_count"], 0)
+            self.assertEqual(empty_dashboard.json()["active_queue_count"], 0)
+
             facility_update = await client.put(
                 "/api/v1/facilities/sunrise-medical-centre",
                 json={
@@ -232,6 +241,37 @@ class SetupEndpointTest(unittest.TestCase):
                     "reports",
                 ],
             )
+
+            for report_path in [
+                "/api/v1/reports/summary?date_from=2026-01-01&date_to=2026-12-31",
+                "/api/v1/reports/revenue?date_from=2026-01-01&date_to=2026-12-31",
+                "/api/v1/reports/departments?date_from=2026-01-01&date_to=2026-12-31",
+                "/api/v1/reports/operations?date_from=2026-01-01&date_to=2026-12-31",
+                "/api/v1/reports/inventory",
+            ]:
+                empty_report = await client.get(
+                    report_path,
+                    headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+                )
+                self.assertEqual(empty_report.status_code, 200, empty_report.text)
+
+            missing_patient_id = "missing-patient-id"
+            for list_path in [
+                f"/api/v1/appointments?patient_id={missing_patient_id}",
+                f"/api/v1/billing/invoices?patient_id={missing_patient_id}",
+                f"/api/v1/emr?patient_id={missing_patient_id}",
+                f"/api/v1/laboratory/orders?patient_id={missing_patient_id}",
+                f"/api/v1/pharmacy/prescriptions?patient_id={missing_patient_id}",
+                f"/api/v1/radiology?patient_id={missing_patient_id}",
+                f"/api/v1/patient-notifications?patient_id={missing_patient_id}",
+                f"/api/v1/order-workflow?patient_id={missing_patient_id}",
+            ]:
+                empty_list = await client.get(
+                    list_path,
+                    headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+                )
+                self.assertEqual(empty_list.status_code, 200, empty_list.text)
+                self.assertEqual(empty_list.json(), [])
 
             staff_payload = {
                 "fullName": "Nurse Ada Okafor",

@@ -195,7 +195,7 @@ async def get_prescriptions(
     if patient_id:
         patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         prescriptions = PharmacyService.get_prescriptions_by_patient(patient_id, facility_slug)
     elif status == 'PENDING':
         prescriptions = PharmacyService.get_pending_prescriptions(facility_slug)

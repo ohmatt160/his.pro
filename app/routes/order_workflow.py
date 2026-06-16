@@ -52,7 +52,7 @@ async def list_order_workflow_events(
     if patient_id:
         patient = db_session.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
+            return []
         query = query.filter_by(patient_id=patient_id)
     if order_type:
         query = query.filter_by(order_type=order_type)
@@ -63,4 +63,3 @@ async def list_order_workflow_events(
 
     events = query.order_by(OrderWorkflowEvent.occurred_at.desc()).limit(300).all()
     return [_response(event) for event in events]
-

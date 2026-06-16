@@ -43,12 +43,12 @@ async def get_appointments(
             # Verify patient belongs to facility
             patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
             if not patient:
-                raise HTTPException(status_code=404, detail="Patient not found")
+                return []
             appointments = AppointmentService.get_appointments_by_patient(patient_id, facility_slug)
         elif doctor_id:
             doctor = db.query(User).filter_by(id=doctor_id, facility_slug=facility_slug, is_active=True).first()
             if not doctor:
-                raise HTTPException(status_code=404, detail="Doctor or staff member not found")
+                return []
             appointments = AppointmentService.get_appointments_by_doctor(
                 doctor_id,
                 facility_slug=facility_slug,

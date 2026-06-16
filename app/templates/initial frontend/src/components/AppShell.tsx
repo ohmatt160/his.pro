@@ -49,6 +49,7 @@ const navItems: Array<{
   roles?: WorkspaceRole[];
 }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug) => `/dashboard/${slug}`, roles: routeRoles.admin },
+  { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug) => `/portal/${slug}`, roles: ["doctor", "nurse", "reception", "pharmacist", "lab"] },
   { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: getStaffAccessPath, roles: routeRoles.admin },
   { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts`, roles: routeRoles.alerts },
   { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug) => `/dashboard/${slug}/audit-logs`, adminOnly: true },
