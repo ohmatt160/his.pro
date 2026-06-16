@@ -2,10 +2,10 @@
 Database schema compatibility helpers.
 
 SQLAlchemy's create_all() creates missing tables, but it does not add columns to
-tables that already exist. During local development that can leave SQLite
-databases behind the current models. This module applies only additive, safe
-column updates for SQLite so startup reflects the model shape without requiring
-manual ALTER TABLE commands.
+tables that already exist. During development and early production deploys that
+can leave databases behind the current models. This module applies conservative
+additive repairs so startup reflects the model shape without destructive schema
+changes.
 """
 
 from __future__ import annotations
@@ -94,18 +94,74 @@ def ensure_sqlite_schema_current(engine: Engine) -> None:
             connection.execute(text(statement))
 
 
+def ensure_postgresql_additive_schema_current(engine: Engine) -> None:
+    """
+    Add missing nullable/defaulted model columns to existing PostgreSQL tables.
+
+    This is intentionally additive only. It does not drop columns, rename
+    columns, change constraints, or rewrite data. It is here to keep small
+    hosted deployments from breaking when a new model column is introduced
+    before a full migration system is in place.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    planned_updates: list[tuple[str, str, str]] = []
+
+    for table in Base.metadata.sorted_tables:
+        if table.name not in existing_tables:
+            continue
+
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table.name)
+        }
+
+        for column in table.columns:
+            if column.name in existing_columns:
+                continue
+
+            if not _can_add_column(column):
+                logger.warning(
+                    "Skipping automatic PostgreSQL schema sync for %s.%s; "
+                    "column is not safe to add automatically.",
+                    table.name,
+                    column.name,
+                )
+                continue
+
+            planned_updates.append(
+                (
+                    table.name,
+                    column.name,
+                    f"ALTER TABLE {_quote_identifier(table.name)} "
+                    f"ADD COLUMN {_compile_column(column, engine)}",
+                )
+            )
+
+    if not planned_updates:
+        return
+
+    with engine.begin() as connection:
+        for table_name, column_name, statement in planned_updates:
+            logger.info("Adding missing PostgreSQL column %s.%s", table_name, column_name)
+            connection.execute(text(statement))
+
+
 def ensure_database_schema_current(engine: Engine) -> None:
     """
     Apply conservative startup schema compatibility repairs.
 
-    SQLite receives additive column updates for local/dev databases. PostgreSQL
-    gets safe widening fixes for columns that older deployments created too
-    narrowly.
+    SQLite and PostgreSQL receive additive column updates. PostgreSQL also gets
+    safe widening fixes for columns that older deployments created too narrowly.
     """
     ensure_sqlite_schema_current(engine)
 
     if engine.dialect.name != "postgresql":
         return
+
+    ensure_postgresql_additive_schema_current(engine)
 
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
