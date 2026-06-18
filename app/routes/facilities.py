@@ -202,7 +202,7 @@ def next_staff_login_id(facility: Facility, role: str) -> str:
         )
         .count()
     )
-    return f"{prefix}-{existing_count + 1:03d}"
+    return f"{facility.slug}-{prefix}-{existing_count + 1:03d}"
 
 
 def build_staff_response(

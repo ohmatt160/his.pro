@@ -13,6 +13,7 @@ import { routeRoles } from "@/lib/role-access";
 const Alerts = lazy(() => import("./pages/Alerts.tsx"));
 const AuditLogs = lazy(() => import("./pages/AuditLogs.tsx"));
 const Billing = lazy(() => import("./pages/Billing.tsx"));
+const Chat = lazy(() => import("./pages/Chat.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
 const Appointments = lazy(() => import("./pages/Appointments.tsx"));
 const GetStarted = lazy(() => import("./pages/GetStarted.tsx"));
@@ -204,6 +205,16 @@ const App = () => (
                   <ProtectedRoute allowedRoles={routeRoles.alerts}>
                     <WithAppShell>
                       <Alerts />
+                    </WithAppShell>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/:facilitySlug/chat"
+                element={
+                  <ProtectedRoute allowedRoles={routeRoles.chat}>
+                    <WithAppShell>
+                      <Chat />
                     </WithAppShell>
                   </ProtectedRoute>
                 }

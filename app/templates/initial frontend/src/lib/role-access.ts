@@ -27,4 +27,5 @@ export const routeRoles = {
   inventory: ["admin", "pharmacist"],
   reports: ["admin"],
   alerts: ["admin", "doctor", "nurse", "reception", "pharmacist", "lab"],
+  chat: ["admin", "doctor", "nurse", "reception", "pharmacist", "lab"],
 } satisfies Record<string, WorkspaceRole[]>;

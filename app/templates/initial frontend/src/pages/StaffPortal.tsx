@@ -851,7 +851,8 @@ export const routeForPortalLabel = (
   if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return `${base}/records`;
   if (normalized.includes("stock") || normalized.includes("inventory")) return `${base}/inventory`;
   if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return `${base}/billing`;
-  if (normalized.includes("message") || normalized.includes("alert")) return `${base}/alerts`;
+  if (normalized.includes("message")) return `${base}/chat`;
+  if (normalized.includes("alert")) return `${base}/alerts`;
 
   if (role === "doctor") return `${base}/consultations`;
   if (role === "nurse") return `${base}/wards`;

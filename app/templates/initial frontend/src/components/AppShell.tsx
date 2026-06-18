@@ -10,6 +10,7 @@ import {
   FlaskConical,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   Package,
   Pill,
   Receipt,
@@ -51,6 +52,7 @@ const navItems: Array<{
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug) => `/dashboard/${slug}`, roles: routeRoles.admin },
   { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug) => `/portal/${slug}`, roles: ["doctor", "nurse", "reception", "pharmacist", "lab"] },
   { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: getStaffAccessPath, roles: routeRoles.admin },
+  { id: "chat", label: "Messages", icon: MessageSquare, path: (slug) => `/dashboard/${slug}/chat`, roles: routeRoles.chat },
   { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts`, roles: routeRoles.alerts },
   { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug) => `/dashboard/${slug}/audit-logs`, adminOnly: true },
   { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug) => `/dashboard/${slug}/reports`, roles: routeRoles.reports },
@@ -78,6 +80,7 @@ const AppShell = ({ children }: AppShellProps) => {
   const { user, logout } = useAuth();
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
     if (!facilitySlug) {
@@ -90,7 +93,21 @@ const AppShell = ({ children }: AppShellProps) => {
       )
       .then(setStats)
       .catch(() => setStats(null));
+    apiClient
+      .get<{ unread_count: number }>("/chat/unread-count")
+      .then((result) => setUnreadMessages(result.unread_count))
+      .catch(() => setUnreadMessages(0));
   }, [facilitySlug]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      apiClient
+        .get<{ unread_count: number }>("/chat/unread-count")
+        .then((result) => setUnreadMessages(result.unread_count))
+        .catch(() => undefined);
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const handleWorkspaceUpdated = (event: Event) => {
@@ -134,7 +151,7 @@ const AppShell = ({ children }: AppShellProps) => {
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {visibleNav.map((entry) => {
             const to = entry.path(facilitySlug);
-            const badge = entry.id === "alerts" ? stats?.active_alerts : undefined;
+            const badge = entry.id === "alerts" ? stats?.active_alerts : entry.id === "chat" ? unreadMessages : undefined;
             return (
               <SidebarLink
                 key={entry.id}

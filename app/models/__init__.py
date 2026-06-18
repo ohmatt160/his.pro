@@ -18,6 +18,7 @@ from app.models.user_session import UserSession
 from app.models.ward import WardAdmission, WardBed
 from app.models.patient_notification import PatientNotification
 from app.models.order_workflow import OrderWorkflowEvent
+from app.models.staff_chat import ChatConversation, ChatMessage
 
 # Export all models
 __all__ = [
@@ -50,4 +51,6 @@ __all__ = [
     'WardBed',
     'PatientNotification',
     'OrderWorkflowEvent',
+    'ChatConversation',
+    'ChatMessage',
 ]

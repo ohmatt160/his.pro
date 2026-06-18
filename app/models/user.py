@@ -22,6 +22,7 @@ class User(BaseModel):
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     must_change_password = Column(Boolean, default=False)
     last_password_change = Column(DateTime, nullable=True)
+    last_active = Column(DateTime, nullable=True)
 
     # Relationships
     patients = relationship('Patient', backref='created_by_user', lazy=True, foreign_keys='Patient.created_by')

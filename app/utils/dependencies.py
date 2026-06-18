@@ -8,6 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import List
 import logging
+from datetime import datetime
 
 from app.extensions import get_db, engine
 from app.models.user import User
@@ -70,6 +71,9 @@ async def get_current_user(
                 db.flush()
 
         # Attach user to request state for middleware
+        user.last_active = datetime.utcnow()
+        db.add(user)
+        db.flush()
         request.state.user_id = user.id
         request.state.user = token_data
         request.state.tenant_id = str(user.facility_id) if user.facility_id else token_data.get("tid")
