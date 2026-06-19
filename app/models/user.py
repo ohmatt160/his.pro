@@ -1,6 +1,6 @@
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -18,6 +18,8 @@ class User(BaseModel):
     last_name = Column(String(100))
     phone = Column(String(20))
     department = Column(String(100))
+    department_id = Column(String(36), nullable=True, index=True)
+    departments = Column(JSON, default=list)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     must_change_password = Column(Boolean, default=False)

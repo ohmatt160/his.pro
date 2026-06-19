@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
+import { apiClient } from "@/api/client";
 import {
   createStaffAccount,
   getDefaultDepartmentForRole,
@@ -46,6 +47,12 @@ import {
   type StaffRole,
 } from "@/lib/facility-staff";
 import { getFacilityWorkspace } from "@/lib/facility-workspace";
+
+type FacilityDepartment = {
+  id: string;
+  name: string;
+  location?: string;
+};
 
 const roleBadgeColors: Record<StaffRole, string> = {
   admin: "bg-slate-100 text-slate-700 border-slate-200",
@@ -115,6 +122,7 @@ const StaffAccess = () => {
     | undefined
   >(undefined);
   const [staffList, setStaffList] = useState<FacilityStaffAccount[]>([]);
+  const [facilityDepartments, setFacilityDepartments] = useState<FacilityDepartment[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -123,6 +131,7 @@ const StaffAccess = () => {
   const [updatingStaff, setUpdatingStaff] = useState(false);
   const [editingStaff, setEditingStaff] = useState<FacilityStaffAccount | null>(null);
   const [editStaff, setEditStaff] = useState(emptyEditStaff);
+  const [editStaffDepartmentId, setEditStaffDepartmentId] = useState("");
   const [justCreated, setJustCreated] = useState<FacilityStaffAccount | null>(
     null
   );
@@ -130,6 +139,7 @@ const StaffAccess = () => {
     fullName: "",
     role: "doctor" as StaffRole,
     department: getDefaultDepartmentForRole("doctor"),
+    departmentId: "",
     email: "",
     phone: "",
   });
@@ -140,6 +150,10 @@ const StaffAccess = () => {
     }
 
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
+    apiClient
+      .get<FacilityDepartment[]>(`/facilities/${facilitySlug}/departments`)
+      .then(setFacilityDepartments)
+      .catch(() => setFacilityDepartments([]));
     getFacilityStaff(facilitySlug)
       .then((staff) => {
         setStaffList(staff);
@@ -180,6 +194,10 @@ const StaffAccess = () => {
       );
     });
   }, [searchQuery, staffList]);
+
+  const selectableDepartments = facilityDepartments.length > 0
+    ? facilityDepartments
+    : departmentOptions.map((name) => ({ id: name, name }));
 
   if (!workspace) {
     return (
@@ -232,6 +250,8 @@ const StaffAccess = () => {
         fullName: newStaff.fullName.trim(),
         role: newStaff.role,
         department: newStaff.department.trim(),
+        departmentId: newStaff.departmentId || undefined,
+        departmentIds: newStaff.departmentId ? [newStaff.departmentId] : undefined,
         email: newStaff.email.trim(),
         phone: newStaff.phone.trim(),
         createdBy: workspace?.fullName,
@@ -245,6 +265,7 @@ const StaffAccess = () => {
         fullName: "",
         role: "doctor",
         department: getDefaultDepartmentForRole("doctor"),
+        departmentId: "",
         email: "",
         phone: "",
       });
@@ -272,6 +293,7 @@ const StaffAccess = () => {
       mustChangePassword: true,
       isActive: member.status === "active",
     });
+    setEditStaffDepartmentId(member.departmentId || "");
   };
 
   const handleUpdateStaff = async () => {
@@ -292,6 +314,8 @@ const StaffAccess = () => {
         fullName: editStaff.fullName,
         role: editingStaff.role === "admin" ? undefined : editStaff.role,
         department: editStaff.department,
+        departmentId: editStaffDepartmentId || undefined,
+        departmentIds: editStaffDepartmentId ? [editStaffDepartmentId] : undefined,
         email: editStaff.email,
         phone: editStaff.phone,
         password: editStaff.password || undefined,
@@ -302,6 +326,7 @@ const StaffAccess = () => {
       setStaffList(updatedStaff);
       setEditingStaff(null);
       setEditStaff(emptyEditStaff);
+      setEditStaffDepartmentId("");
       if (updated.temporaryPassword) {
         setJustCreated(updated);
       }
@@ -683,6 +708,7 @@ const StaffAccess = () => {
                       ...previous,
                       role,
                       department: getDefaultDepartmentForRole(role),
+                      departmentId: "",
                     }));
                   }}
                 >
@@ -704,21 +730,23 @@ const StaffAccess = () => {
                   Department *
                 </Label>
                 <Select
-                  value={newStaff.department}
-                  onValueChange={(value) =>
+                  value={newStaff.departmentId || newStaff.department}
+                  onValueChange={(value) => {
+                    const department = facilityDepartments.find((item) => item.id === value);
                     setNewStaff((previous) => ({
                       ...previous,
-                      department: value,
-                    }))
-                  }
+                      department: department?.name || value,
+                      departmentId: department?.id || "",
+                    }));
+                  }}
                 >
                   <SelectTrigger className="mt-1.5">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {departmentOptions.map((department) => (
-                      <SelectItem key={department} value={department}>
-                        {department}
+                    {selectableDepartments.map((department) => (
+                      <SelectItem key={department.id} value={department.id}>
+                        {department.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -825,6 +853,7 @@ const StaffAccess = () => {
                       role,
                       department: getDefaultDepartmentForRole(role),
                     }));
+                    setEditStaffDepartmentId("");
                   }}
                 >
                   <SelectTrigger className="mt-1.5">
@@ -872,18 +901,20 @@ const StaffAccess = () => {
                 Department *
               </Label>
               <Select
-                value={editStaff.department}
-                onValueChange={(value) =>
-                  setEditStaff((previous) => ({ ...previous, department: value }))
-                }
+                value={editStaffDepartmentId || editStaff.department}
+                onValueChange={(value) => {
+                  const department = facilityDepartments.find((item) => item.id === value);
+                  setEditStaff((previous) => ({ ...previous, department: department?.name || value }));
+                  setEditStaffDepartmentId(department?.id || "");
+                }}
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departmentOptions.map((department) => (
-                    <SelectItem key={department} value={department}>
-                      {department}
+                  {selectableDepartments.map((department) => (
+                    <SelectItem key={department.id} value={department.id}>
+                      {department.name}
                     </SelectItem>
                   ))}
                 </SelectContent>

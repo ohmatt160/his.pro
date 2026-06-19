@@ -42,6 +42,8 @@ from app.routes.audit_logs import router as audit_logs_router
 from app.routes.files import router as files_router
 from app.routes.tasks import router as tasks_router
 from app.routes.staff_chat import router as staff_chat_router
+from app.routes.referrals import router as referrals_router
+from app.routes.public_profile import router as public_profile_router
 
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
@@ -226,6 +228,8 @@ def create_app() -> FastAPI:
     app.include_router(files_router, prefix="/api/v1")
     app.include_router(tasks_router, prefix="/api/v1")
     app.include_router(staff_chat_router, prefix="/api/v1")
+    app.include_router(referrals_router, prefix="/api/v1")
+    app.include_router(public_profile_router, prefix="/api/v1")
 
     # Static mounts (assets first, then root SPA fallback)
     if os.path.isdir(ASSETS_DIR):

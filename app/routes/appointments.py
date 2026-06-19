@@ -31,6 +31,7 @@ router = APIRouter(prefix="/appointments", tags=["appointments"])
 async def get_appointments(
     patient_id: Optional[str] = Query(None),
     doctor_id: Optional[str] = Query(None),
+    department_id: Optional[str] = Query(None, max_length=36),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -56,7 +57,17 @@ async def get_appointments(
         else:
             # Get all appointments for facility
             from app.models.appointment import Appointment
-            appointments = db.query(Appointment).filter_by(facility_slug=facility_slug).order_by(Appointment.scheduled_time.desc()).all()
+            query = db.query(Appointment).filter_by(facility_slug=facility_slug)
+            if current_user.department_id and current_user.role != "ADMIN":
+                query = query.filter_by(department_id=current_user.department_id)
+            elif department_id and current_user.role == "ADMIN":
+                query = query.filter_by(department_id=department_id)
+            appointments = query.order_by(Appointment.scheduled_time.desc()).all()
+
+        if current_user.department_id and current_user.role != "ADMIN":
+            appointments = [a for a in appointments if a.department_id == current_user.department_id]
+        elif department_id and current_user.role == "ADMIN":
+            appointments = [a for a in appointments if a.department_id == department_id]
 
         return [
             AppointmentResponse(
@@ -70,6 +81,7 @@ async def get_appointments(
                 reason=a.reason,
                 notes=a.notes,
                 facility_slug=a.facility_slug,
+                department_id=a.department_id,
                 created_at=a.created_at.isoformat() if a.created_at else "",
                 updated_at=a.updated_at.isoformat() if a.updated_at else None
             ) for a in appointments
@@ -104,6 +116,7 @@ async def create_appointment(
 
         payload = data.model_dump()
         payload['facility_slug'] = facility_slug
+        payload['department_id'] = current_user.department_id or payload.get('department_id') or patient.department_id or doctor.department_id
 
         # Sanitize
         if payload.get('reason'):
@@ -137,6 +150,7 @@ async def create_appointment(
             reason=appointment.reason,
             notes=appointment.notes,
             facility_slug=appointment.facility_slug,
+            department_id=appointment.department_id,
             created_at=appointment.created_at.isoformat() if appointment.created_at else "",
             updated_at=appointment.updated_at.isoformat() if appointment.updated_at else None
         )
@@ -175,6 +189,7 @@ async def get_appointment(
             reason=appointment.reason,
             notes=appointment.notes,
             facility_slug=appointment.facility_slug,
+            department_id=appointment.department_id,
             created_at=appointment.created_at.isoformat() if appointment.created_at else "",
             updated_at=appointment.updated_at.isoformat() if appointment.updated_at else None
         )
@@ -220,6 +235,7 @@ async def update_appointment(
             reason=updated_appointment.reason,
             notes=updated_appointment.notes,
             facility_slug=updated_appointment.facility_slug,
+            department_id=updated_appointment.department_id,
             created_at=updated_appointment.created_at.isoformat() if updated_appointment.created_at else "",
             updated_at=updated_appointment.updated_at.isoformat() if updated_appointment.updated_at else None
         )

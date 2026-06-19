@@ -54,6 +54,11 @@ type Patient = {
   created_at: string;
 };
 
+type Department = {
+  id: string;
+  name: string;
+};
+
 type PatientListResponse = {
   patients: Patient[];
   total: number;
@@ -85,6 +90,14 @@ const Patients = () => {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [referralPatient, setReferralPatient] = useState<Patient | null>(null);
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [referralForm, setReferralForm] = useState({
+    to_department_id: "",
+    reason: "",
+    priority: "routine",
+    notes: "",
+  });
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
 
@@ -115,6 +128,10 @@ const Patients = () => {
       setTotal(0);
       setLoading(false);
     });
+    apiClient
+      .get<Department[]>(`/facilities/${facilitySlug}/departments`)
+      .then(setDepartments)
+      .catch(() => setDepartments([]));
   }, []);
 
   const filteredSummary = useMemo(() => {
@@ -166,6 +183,38 @@ const Patients = () => {
           ? createError.message
           : "Patient registration failed."
       );
+    }
+  };
+
+  const openReferral = (patient: Patient) => {
+    setReferralPatient(patient);
+    setReferralForm({
+      to_department_id: departments[0]?.id || "",
+      reason: "",
+      priority: "routine",
+      notes: "",
+    });
+    setError("");
+  };
+
+  const sendReferral = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!referralPatient || !referralForm.to_department_id || !referralForm.reason.trim()) {
+      setError("Choose a department and enter a referral reason.");
+      return;
+    }
+    try {
+      await apiClient.post("/referrals", {
+        patient_id: referralPatient.id,
+        to_department_id: referralForm.to_department_id,
+        reason: referralForm.reason.trim(),
+        priority: referralForm.priority,
+        notes: referralForm.notes.trim() || undefined,
+      });
+      setReferralPatient(null);
+      setReferralForm({ to_department_id: "", reason: "", priority: "routine", notes: "" });
+    } catch (referralError) {
+      setError(referralError instanceof Error ? referralError.message : "Referral could not be sent.");
     }
   };
 
@@ -269,11 +318,18 @@ const Patients = () => {
                       <Info icon={Phone} value={patient.phone || "No phone"} />
                       {patient.email && <Info icon={Mail} value={patient.email} />}
                     </div>
-                    <Button asChild variant="outline" size="sm" className="gap-2 self-start">
-                      <Link to={`/dashboard/${facilitySlug}/patients/${patient.id}/timeline`}>
-                        <ClipboardList className="h-4 w-4" /> Timeline
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap gap-2 self-start">
+                      {departments.length > 0 && (
+                        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => openReferral(patient)}>
+                          <Users className="h-4 w-4" /> Refer
+                        </Button>
+                      )}
+                      <Button asChild variant="outline" size="sm" className="gap-2">
+                        <Link to={`/dashboard/${facilitySlug}/patients/${patient.id}/timeline`}>
+                          <ClipboardList className="h-4 w-4" /> Timeline
+                        </Link>
+                      </Button>
+                    </div>
                   </motion.div>
                 ))}
               </div>
@@ -342,6 +398,65 @@ const Patients = () => {
               </Button>
               <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
                 Register Patient
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(referralPatient)} onOpenChange={(open) => !open && setReferralPatient(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Refer Patient</DialogTitle>
+            <DialogDescription>
+              Send {referralPatient?.full_name || "this patient"} to another department.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={sendReferral} className="space-y-4 pt-2">
+            <div>
+              <Label>Receiving Department</Label>
+              <Select
+                value={referralForm.to_department_id}
+                onValueChange={(to_department_id) => setReferralForm((current) => ({ ...current, to_department_id }))}
+              >
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue placeholder="Select department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((department) => (
+                    <SelectItem key={department.id} value={department.id}>
+                      {department.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Field label="Reason" value={referralForm.reason} onChange={(reason) => setReferralForm((current) => ({ ...current, reason }))} required />
+            <div>
+              <Label>Priority</Label>
+              <Select value={referralForm.priority} onValueChange={(priority) => setReferralForm((current) => ({ ...current, priority }))}>
+                <SelectTrigger className="mt-1.5">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="routine">Routine</SelectItem>
+                  <SelectItem value="urgent">Urgent</SelectItem>
+                  <SelectItem value="emergency">Emergency</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Field label="Notes" value={referralForm.notes} onChange={(notes) => setReferralForm((current) => ({ ...current, notes }))} />
+            {error && (
+              <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {error}
+              </p>
+            )}
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setReferralPatient(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
+                Send Referral
               </Button>
             </div>
           </form>

@@ -29,7 +29,8 @@ class PatientService:
             emergency_contact_name=data.get('emergency_contact_name'),
             emergency_contact_phone=data.get('emergency_contact_phone'),
             created_by=user_id,
-            facility_slug=facility_slug
+            facility_slug=facility_slug,
+            department_id=data.get('department_id'),
         )
         patient.save()
         return patient
@@ -44,7 +45,7 @@ class PatientService:
         return Patient.query.get(patient_id)
     
     @staticmethod
-    def get_all_patients(facility_slug=None, page=1, per_page=20, search=None, current_user=None):
+    def get_all_patients(facility_slug=None, page=1, per_page=20, search=None, current_user=None, department_id=None):
         """Get paginated list of patients with optional facility filtering"""
         query = Patient.query
 
@@ -60,6 +61,7 @@ class PatientService:
                 Patient.last_name.ilike(f'%{search}%')
             )
 
+        query = PatientService.apply_department_filter(query, current_user, department_id)
         query = PatientService.apply_patient_access_filter(query, facility_slug, current_user)
 
         query = query.order_by(Patient.created_at.desc())
@@ -122,6 +124,21 @@ class PatientService:
                 Patient.id.in_(authored_records),
             )
         )
+
+    @staticmethod
+    def apply_department_filter(query, current_user, requested_department_id=None):
+        """Scope multi-clinic staff to their assigned department while preserving single hospitals."""
+        if not current_user:
+            return query.filter(False)
+
+        role = (current_user.role or "").upper()
+        if current_user.department_id and role != "ADMIN":
+            return query.filter(Patient.department_id == current_user.department_id)
+
+        if requested_department_id and role == "ADMIN":
+            return query.filter(Patient.department_id == requested_department_id)
+
+        return query
 
     @staticmethod
     def user_can_access_patient(patient_id, facility_slug, current_user):

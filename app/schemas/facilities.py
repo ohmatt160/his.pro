@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -28,6 +28,26 @@ class FacilityModulesUpdate(BaseModel):
     modules: List[str] = Field(default_factory=list)
 
 
+class DepartmentCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=120)
+    location: Optional[str] = Field(None, max_length=200)
+    phone_extension: Optional[str] = Field(None, max_length=30)
+    services: List[str] = Field(default_factory=list)
+    is_visible: bool = False
+
+
+class DepartmentUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=120)
+    location: Optional[str] = Field(None, max_length=200)
+    phone_extension: Optional[str] = Field(None, max_length=30)
+    services: Optional[List[str]] = None
+    is_visible: Optional[bool] = None
+
+
+class FacilitySettingsUpdate(BaseModel):
+    hospital_type: Literal["single", "multi_clinic"]
+
+
 class FacilityResponse(BaseModel):
     id: str
     tenant_id: str
@@ -38,6 +58,8 @@ class FacilityResponse(BaseModel):
     address: Optional[str]
     phone: Optional[str]
     email: Optional[str]
+    hospital_type: str = "single"
+    departments: List[dict] = Field(default_factory=list)
     modules: List[str]
     settings: dict
     is_active: bool

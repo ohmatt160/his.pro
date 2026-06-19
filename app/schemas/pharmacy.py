@@ -60,6 +60,7 @@ class PrescriptionCreate(BaseModel):
     patient_id: str = Field(...)
     items: List[PrescriptionItemCreate] = Field(..., min_items=1)
     notes: Optional[str] = Field(None)
+    department_id: Optional[str] = Field(None, max_length=36)
 
 
 class PrescriptionResponse(BaseModel):
@@ -71,6 +72,7 @@ class PrescriptionResponse(BaseModel):
     filled_by: Optional[str]
     filled_at: Optional[str]
     facility_slug: Optional[str]
+    department_id: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
 

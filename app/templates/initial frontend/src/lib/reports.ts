@@ -116,9 +116,9 @@ export const defaultReportRange = (today = new Date()) => {
 };
 
 export const formatMoney = (value: number) =>
-  new Intl.NumberFormat("en-NG", {
+  new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "NGN",
+    currency: "USD",
     maximumFractionDigits: 0,
   }).format(value);
 

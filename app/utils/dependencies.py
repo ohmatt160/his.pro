@@ -99,7 +99,7 @@ def role_required(*roles: List[str]):
     Returns:
         FastAPI dependency function
     """
-    def dependency(user: User = Depends(get_current_user)) -> User:
+    async def dependency(user: User = Depends(get_current_user)) -> User:
         if user.role not in roles:
             logger.warning(f"User {user.username} with role {user.role} attempted to access restricted endpoint. Required roles: {roles}")
             raise HTTPException(

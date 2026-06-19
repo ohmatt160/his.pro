@@ -73,6 +73,7 @@ def _prescription_response(prescription) -> PrescriptionResponse:
         filled_by=str(prescription.dispensed_by) if prescription.dispensed_by else None,
         filled_at=prescription.dispensed_date.isoformat() if prescription.dispensed_date else None,
         facility_slug=prescription.facility_slug,
+        department_id=prescription.department_id,
         created_at=prescription.created_at.isoformat() if prescription.created_at else "",
         updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
     )
@@ -185,6 +186,7 @@ async def add_inventory(
 async def get_prescriptions(
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
+    department_id: Optional[str] = Query(None, max_length=36),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
@@ -201,7 +203,17 @@ async def get_prescriptions(
         prescriptions = PharmacyService.get_pending_prescriptions(facility_slug)
     else:
         from app.models.pharmacy import Prescription
-        prescriptions = db.query(Prescription).filter_by(facility_slug=facility_slug).order_by(Prescription.created_at.desc()).all()
+        query = db.query(Prescription).filter_by(facility_slug=facility_slug)
+        if current_user.department_id and current_user.role != "ADMIN":
+            query = query.filter_by(department_id=current_user.department_id)
+        elif department_id and current_user.role == "ADMIN":
+            query = query.filter_by(department_id=department_id)
+        prescriptions = query.order_by(Prescription.created_at.desc()).all()
+
+    if current_user.department_id and current_user.role != "ADMIN":
+        prescriptions = [p for p in prescriptions if p.department_id == current_user.department_id]
+    elif department_id and current_user.role == "ADMIN":
+        prescriptions = [p for p in prescriptions if p.department_id == department_id]
 
     return [_prescription_response(p) for p in prescriptions]
 
@@ -229,6 +241,7 @@ async def create_prescription(
 
     payload = data.model_dump()
     payload['facility_slug'] = facility_slug
+    payload['department_id'] = current_user.department_id or payload.get('department_id') or patient.department_id
 
     prescription = PharmacyService.create_prescription(payload, current_user.id)
     OrderWorkflowService.record(

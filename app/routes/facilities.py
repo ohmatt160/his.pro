@@ -10,9 +10,18 @@ from typing import Optional, List
 import logging
 import secrets
 import string
+import uuid
 
 from app.extensions import get_db, db_session
-from app.schemas.facilities import FacilityResponse, FacilityCreate, FacilityUpdate, FacilityModulesUpdate
+from app.schemas.facilities import (
+    DepartmentCreate,
+    DepartmentUpdate,
+    FacilityResponse,
+    FacilityCreate,
+    FacilityUpdate,
+    FacilityModulesUpdate,
+    FacilitySettingsUpdate,
+)
 from app.schemas.users import MessageResponse, FacilityStaffCreate, FacilityStaffUpdate, FacilityStaffResponse
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
@@ -78,6 +87,8 @@ def build_facility_response(facility: Facility) -> FacilityResponse:
         address=facility.address,
         phone=facility.phone,
         email=facility.email,
+        hospital_type=facility.hospital_type or "single",
+        departments=facility.departments or [],
         modules=normalize_facility_modules(facility.modules, facility.type),
         settings=facility.settings or {},
         is_active=facility.is_active,
@@ -109,6 +120,8 @@ def create_facility_record(data: FacilityCreate) -> Facility:
         address=data.address or '',
         phone=data.phone or '',
         email=data.email or '',
+        hospital_type="single",
+        departments=[],
         modules=normalize_facility_modules(data.modules, data.type),
         settings=data.settings or {}
     )
@@ -221,6 +234,8 @@ def build_staff_response(
         fullName=full_name,
         role=BACKEND_TO_FRONTEND_ROLE.get(user.role, "reception"),
         department=user.department or "",
+        departmentId=user.department_id,
+        departmentIds=user.departments or [],
         email=user.email,
         phone=user.phone or "—",
         loginId=user.username,
@@ -260,6 +275,56 @@ def get_current_admin_facility(current_user: User) -> Facility:
     if not facility:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
     return facility
+
+
+def normalize_departments(facility: Facility) -> list[dict]:
+    return list(facility.departments or [])
+
+
+def find_department(facility: Facility, dept_id: str) -> dict | None:
+    return next((dept for dept in normalize_departments(facility) if dept.get("id") == dept_id), None)
+
+
+def department_slug(name: str, departments: list[dict]) -> str:
+    base_slug = Validators.generate_slug(name)
+    existing = {dept.get("slug") for dept in departments}
+    slug = base_slug
+    suffix = 2
+    while slug in existing:
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    return slug
+
+
+def department_payload(data: DepartmentCreate | DepartmentUpdate, existing: dict | None = None, departments: list[dict] | None = None) -> dict:
+    payload = existing.copy() if existing else {}
+    incoming = data.model_dump(exclude_unset=True)
+    if "name" in incoming:
+        name = Validators.sanitize_string(incoming["name"])
+        payload["name"] = name
+        if not existing:
+            payload["slug"] = department_slug(name, departments or [])
+    for field in ["location", "phone_extension"]:
+        if field in incoming:
+            payload[field] = Validators.sanitize_string(incoming.get(field) or "")
+    if "services" in incoming:
+        payload["services"] = [Validators.sanitize_string(str(service)) for service in (incoming.get("services") or [])]
+    if "is_visible" in incoming:
+        payload["is_visible"] = bool(incoming["is_visible"])
+    if not existing:
+        payload["id"] = str(uuid.uuid4())
+        payload.setdefault("location", "")
+        payload.setdefault("phone_extension", "")
+        payload.setdefault("services", [])
+        payload.setdefault("is_visible", False)
+    return payload
+
+
+def require_department(facility: Facility, dept_id: str) -> dict:
+    department = find_department(facility, dept_id)
+    if not department:
+        raise HTTPException(status_code=404, detail="Department not found")
+    return department
 
 
 @router.get("", response_model=List[FacilityResponse])
@@ -316,6 +381,149 @@ async def get_public_facility_workspace(
     """Return non-sensitive workspace metadata needed before login."""
     facility = get_facility_or_404(facility_slug)
     return build_facility_response(facility)
+
+
+@router.put("/{facility_slug}/settings", response_model=FacilityResponse)
+async def update_facility_settings(
+    facility_slug: str,
+    data: FacilitySettingsUpdate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    """Switch a facility between single-hospital and multi-clinic operation."""
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    facility.hospital_type = data.hospital_type
+    if data.hospital_type == "multi_clinic" and facility.departments is None:
+        facility.departments = []
+    facility.save()
+    db_session.commit()
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_FACILITY_SETTINGS",
+        resource_type="facility",
+        resource_id=facility.id,
+        facility_slug=facility.slug,
+        details={"hospital_type": facility.hospital_type},
+        request=request,
+    )
+    return build_facility_response(facility)
+
+
+@router.get("/{facility_slug}/departments")
+async def list_departments(
+    facility_slug: str,
+    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
+    db: Session = Depends(get_db)
+):
+    facility = get_facility_or_404(facility_slug)
+    if current_user.facility_slug != facility.slug and str(current_user.facility_id or "") != str(facility.id):
+        raise HTTPException(status_code=403, detail="Cannot access another facility")
+    return normalize_departments(facility)
+
+
+@router.post("/{facility_slug}/departments", status_code=status.HTTP_201_CREATED)
+async def add_department(
+    facility_slug: str,
+    data: DepartmentCreate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    departments = normalize_departments(facility)
+    department = department_payload(data, departments=departments)
+    facility.departments = departments + [department]
+    if facility.hospital_type != "multi_clinic":
+        facility.hospital_type = "multi_clinic"
+    facility.save()
+    db_session.commit()
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="CREATE_DEPARTMENT",
+        resource_type="department",
+        resource_id=department["id"],
+        facility_slug=facility.slug,
+        details={"name": department["name"]},
+        request=request,
+    )
+    return department
+
+
+@router.put("/{facility_slug}/departments/{dept_id}")
+async def update_department(
+    facility_slug: str,
+    dept_id: str,
+    data: DepartmentUpdate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    departments = normalize_departments(facility)
+    existing = require_department(facility, dept_id)
+    updated = department_payload(data, existing=existing, departments=departments)
+    facility.departments = [updated if dept.get("id") == dept_id else dept for dept in departments]
+    facility.save()
+    db_session.commit()
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_DEPARTMENT",
+        resource_type="department",
+        resource_id=dept_id,
+        facility_slug=facility.slug,
+        details={"fields": sorted(data.model_dump(exclude_unset=True).keys())},
+        request=request,
+    )
+    return updated
+
+
+@router.delete("/{facility_slug}/departments/{dept_id}", response_model=MessageResponse)
+async def remove_department(
+    facility_slug: str,
+    dept_id: str,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db)
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    require_department(facility, dept_id)
+    staff = (
+        db_session.query(User)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.is_active == True,
+        )
+        .all()
+    )
+    assigned = [
+        member for member in staff
+        if member.department_id == dept_id or dept_id in (member.departments or [])
+    ]
+    if assigned:
+        raise HTTPException(status_code=400, detail="Cannot remove a department with active staff assigned")
+
+    facility.departments = [dept for dept in normalize_departments(facility) if dept.get("id") != dept_id]
+    facility.save()
+    db_session.commit()
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="DELETE_DEPARTMENT",
+        resource_type="department",
+        resource_id=dept_id,
+        facility_slug=facility.slug,
+        details={},
+        request=request,
+    )
+    return MessageResponse(message="Department removed successfully")
 
 
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])
@@ -391,6 +599,12 @@ async def create_facility_staff(
 
     full_name = Validators.sanitize_string(data.fullName)
     department = Validators.sanitize_string(data.department)
+    department_id = data.departmentId
+    department_ids = data.departmentIds or ([department_id] if department_id else [])
+    if department_id:
+        require_department(facility, department_id)
+    for assigned_department_id in department_ids:
+        require_department(facility, assigned_department_id)
     first_name, last_name = split_full_name(full_name)
     login_id = next_staff_login_id(facility, role)
     email = str(data.email).lower() if data.email else f"{login_id.lower()}@{facility_slug}.hispro.local"
@@ -414,6 +628,8 @@ async def create_facility_staff(
         last_name=last_name,
         phone=phone,
         department=department,
+        department_id=department_id,
+        departments=department_ids,
         facility_id=facility.id,
         facility_slug=facility_slug,
         must_change_password=True,
@@ -496,6 +712,19 @@ async def update_facility_staff_member(
 
     if "department" in payload and payload["department"] is not None:
         member.department = Validators.sanitize_string(payload["department"])
+
+    if "departmentId" in payload:
+        department_id = payload["departmentId"]
+        if department_id:
+            require_department(facility, department_id)
+        member.department_id = department_id
+        if payload.get("departmentIds") is None:
+            member.departments = [department_id] if department_id else []
+
+    if "departmentIds" in payload and payload["departmentIds"] is not None:
+        for assigned_department_id in payload["departmentIds"]:
+            require_department(facility, assigned_department_id)
+        member.departments = payload["departmentIds"]
 
     if "phone" in payload:
         member.phone = Validators.sanitize_string(payload["phone"] or "—")

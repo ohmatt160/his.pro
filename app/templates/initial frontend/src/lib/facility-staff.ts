@@ -14,6 +14,8 @@ export type FacilityStaffAccount = {
   fullName: string;
   role: StaffRole;
   department: string;
+  departmentId?: string | null;
+  departmentIds?: string[];
   email: string;
   phone: string;
   loginId: string;
@@ -244,11 +246,15 @@ export const createStaffAccount = async ({
   phone,
   password,
   createdBy,
+  departmentId,
+  departmentIds,
 }: {
   facilitySlug: string;
   fullName: string;
   role: StaffRole;
   department?: string;
+  departmentId?: string;
+  departmentIds?: string[];
   email: string;
   phone?: string;
   password?: string;
@@ -258,6 +264,8 @@ export const createStaffAccount = async ({
     fullName,
     role,
     department: department || getDefaultDepartmentForRole(role),
+    departmentId,
+    departmentIds,
     email: email.trim() ? email.trim().toLowerCase() : undefined,
     phone: phone?.trim() || undefined,
     password,
@@ -281,12 +289,16 @@ export const updateStaffAccount = async ({
   password,
   mustChangePassword,
   isActive,
+  departmentId,
+  departmentIds,
 }: {
   facilitySlug: string;
   loginId: string;
   fullName?: string;
   role?: StaffRole;
   department?: string;
+  departmentId?: string;
+  departmentIds?: string[];
   email?: string;
   phone?: string;
   password?: string;
@@ -297,6 +309,8 @@ export const updateStaffAccount = async ({
     fullName: fullName?.trim() || undefined,
     role,
     department: department?.trim() || undefined,
+    departmentId,
+    departmentIds,
     email: email?.trim() ? email.trim().toLowerCase() : undefined,
     phone: phone?.trim() || undefined,
     password: password?.trim() || undefined,

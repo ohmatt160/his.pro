@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import BaseModel, Field, EmailStr
 
@@ -33,6 +33,8 @@ class UserResponse(BaseModel):
     first_name: Optional[str]
     last_name: Optional[str]
     phone: Optional[str] = None
+    department_id: Optional[str] = None
+    departments: List[str] = []
     facility_id: Optional[str] = None
     facility_slug: Optional[str]
     is_active: bool
@@ -63,6 +65,8 @@ class FacilityStaffCreate(BaseModel):
     fullName: str = Field(..., min_length=2, max_length=200)
     role: str = Field(..., pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
     department: str = Field(..., min_length=2, max_length=100)
+    departmentId: Optional[str] = Field(None, max_length=36)
+    departmentIds: List[str] = Field(default_factory=list)
     email: Optional[EmailStr] = Field(None)
     phone: Optional[str] = Field(None, max_length=20)
     password: Optional[str] = Field(None, min_length=8)
@@ -73,6 +77,8 @@ class FacilityStaffUpdate(BaseModel):
     fullName: Optional[str] = Field(None, min_length=2, max_length=200)
     role: Optional[str] = Field(None, pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
     department: Optional[str] = Field(None, min_length=2, max_length=100)
+    departmentId: Optional[str] = Field(None, max_length=36)
+    departmentIds: Optional[List[str]] = None
     email: Optional[EmailStr] = Field(None)
     phone: Optional[str] = Field(None, max_length=20)
     password: Optional[str] = Field(None, min_length=8)
@@ -87,6 +93,8 @@ class FacilityStaffResponse(BaseModel):
     fullName: str
     role: str
     department: str
+    departmentId: Optional[str] = None
+    departmentIds: List[str] = []
     email: str
     phone: str
     loginId: str

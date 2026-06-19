@@ -16,6 +16,7 @@ class PatientCreate(BaseModel):
     medical_history: Optional[dict] = Field(default_factory=dict)
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=20)
+    department_id: Optional[str] = Field(None, max_length=36)
 
 
 class PatientUpdate(BaseModel):
@@ -30,6 +31,7 @@ class PatientUpdate(BaseModel):
     medical_history: Optional[dict] = None
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=20)
+    department_id: Optional[str] = Field(None, max_length=36)
 
 
 class PatientResponse(BaseModel):
@@ -47,6 +49,7 @@ class PatientResponse(BaseModel):
     emergency_contact_phone: Optional[str]
     created_by: str
     facility_slug: Optional[str]
+    department_id: Optional[str] = None
     is_active: bool
     created_at: str
     updated_at: Optional[str]

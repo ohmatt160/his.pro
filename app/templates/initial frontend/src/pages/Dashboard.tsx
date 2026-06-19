@@ -31,6 +31,13 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import {
   getFacilityLoginPath,
@@ -58,6 +65,12 @@ type DashboardStats = {
   active_queue_count: number;
 };
 
+type FacilityDepartment = {
+  id: string;
+  name: string;
+  location?: string;
+};
+
 const container = {
   hidden: {},
   show: { transition: { staggerChildren: 0.08 } },
@@ -81,6 +94,8 @@ const Dashboard = () => {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(
     null
   );
+  const [departments, setDepartments] = useState<FacilityDepartment[]>([]);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState("all");
 
   useEffect(() => {
     if (!workspace && facilitySlug) {
@@ -102,13 +117,16 @@ const Dashboard = () => {
       return;
     }
 
+    const departmentQuery =
+      selectedDepartmentId !== "all" ? `&department_id=${encodeURIComponent(selectedDepartmentId)}` : "";
+
     apiClient
       .get<DashboardStats>(
-        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}`
+        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${departmentQuery}`
       )
       .then(setDashboardStats)
       .catch(() => setDashboardStats(null));
-  }, [facilitySlug, user]);
+  }, [facilitySlug, user, selectedDepartmentId]);
 
   useEffect(() => {
     if (!facilitySlug || !user || user.role !== "ADMIN") {
@@ -124,9 +142,12 @@ const Dashboard = () => {
         phone?: string | null;
         email?: string | null;
         modules?: string[];
+        hospital_type?: string;
+        departments?: FacilityDepartment[];
         created_at?: string;
       }>(`/facilities/${facilitySlug}`)
       .then((facility) => {
+        setDepartments(facility.hospital_type === "multi_clinic" ? facility.departments || [] : []);
         setWorkspace((current) => ({
           facilityName: facility.name,
           facilityType: facility.type,
@@ -271,12 +292,33 @@ const Dashboard = () => {
           <motion.div variants={container} initial="hidden" animate="show" className="space-y-6">
             {/* Welcome */}
             <motion.div variants={item}>
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-                Welcome, <span className="text-gradient">{fullName.split(" ")[0]}</span> 👋
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                Your HIS for <strong className="text-foreground">{facilityName}</strong> is ready.
-              </p>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                    Welcome, <span className="text-gradient">{fullName.split(" ")[0]}</span>
+                  </h1>
+                  <p className="text-muted-foreground mt-1">
+                    Your HIS for <strong className="text-foreground">{facilityName}</strong> is ready.
+                  </p>
+                </div>
+                {departments.length > 0 && user?.role === "admin" && (
+                  <div className="w-full sm:w-72">
+                    <Select value={selectedDepartmentId} onValueChange={setSelectedDepartmentId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select department" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Departments</SelectItem>
+                        {departments.map((department) => (
+                          <SelectItem key={department.id} value={department.id}>
+                            {department.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
             </motion.div>
 
             {/* Stats */}

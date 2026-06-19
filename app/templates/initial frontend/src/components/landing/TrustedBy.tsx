@@ -1,9 +1,9 @@
 const logos = [
-  "City Clinic Lagos",
+  "City Clinic",
   "MedCare Kenya",
   "HealthFirst Ghana",
   "Sunrise Hospital",
-  "AfriMed Solutions",
+  "MediCore Solutions",
   "CarePoint Rwanda",
   "VitalHealth Tanzania",
   "PrimeCare Uganda",
@@ -13,7 +13,7 @@ const TrustedBy = () => (
   <section className="py-12 border-y border-border/50 bg-muted/30">
     <div className="container mx-auto px-4 text-center mb-6">
       <p className="text-sm font-medium text-muted-foreground">
-        Trusted by <span className="text-foreground font-semibold">50+</span> healthcare providers across Africa
+        Trusted by <span className="text-foreground font-semibold">50+</span> healthcare providers worldwide
       </p>
     </div>
     <div className="overflow-hidden">

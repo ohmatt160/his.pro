@@ -27,6 +27,7 @@ const Patients = lazy(() => import("./pages/Patients.tsx"));
 const PatientTimeline = lazy(() => import("./pages/PatientTimeline.tsx"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy.tsx"));
 const Queue = lazy(() => import("./pages/Queue.tsx"));
+const PublicProfile = lazy(() => import("./pages/PublicProfile.tsx"));
 const Radiology = lazy(() => import("./pages/Radiology.tsx"));
 const Reports = lazy(() => import("./pages/Reports.tsx"));
 const SettingUp = lazy(() => import("./pages/SettingUp.tsx"));
@@ -309,6 +310,26 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/dashboard/:facilitySlug/public-profile"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <WithAppShell>
+                      <PublicProfile />
+                    </WithAppShell>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/dashboard/:facilitySlug/public-profile/:section"
+                element={
+                  <ProtectedRoute requireAdmin>
+                    <WithAppShell>
+                      <PublicProfile />
+                    </WithAppShell>
+                  </ProtectedRoute>
+                }
+              />
               <Route path="/workspace-ready/:facilitySlug" element={<WorkspaceReady />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
@@ -321,3 +342,5 @@ const App = () => (
 );
 
 export default App;
+
+

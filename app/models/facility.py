@@ -14,6 +14,8 @@ class Facility(BaseModel):
     address = Column(Text)
     phone = Column(String(20))
     email = Column(String(120))
+    hospital_type = Column(String(20), default="single")  # single/multi_clinic
+    departments = Column(JSON, default=list)
     modules = Column(JSON, default=list)  # list of enabled modules
     settings = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)

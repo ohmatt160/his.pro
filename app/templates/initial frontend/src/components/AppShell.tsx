@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ClipboardList,
   FileHeart,
+  Globe,
   FlaskConical,
   LayoutDashboard,
   LogOut,
@@ -56,6 +57,7 @@ const navItems: Array<{
   { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts`, roles: routeRoles.alerts },
   { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug) => `/dashboard/${slug}/audit-logs`, adminOnly: true },
   { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug) => `/dashboard/${slug}/reports`, roles: routeRoles.reports },
+  { id: "public-profile", label: "Public Profile", icon: Globe, path: (slug) => `/dashboard/${slug}/public-profile`, roles: routeRoles.admin },
   { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug) => `/dashboard/${slug}/patients`, roles: routeRoles.patients },
   { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug) => `/dashboard/${slug}/queue`, roles: routeRoles.queue },
   { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug) => `/dashboard/${slug}/appointments`, roles: routeRoles.appointments },
@@ -213,3 +215,4 @@ const SidebarLink = ({
 );
 
 export default AppShell;
+

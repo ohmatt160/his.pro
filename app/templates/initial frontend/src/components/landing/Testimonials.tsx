@@ -5,7 +5,7 @@ const testimonials = [
   {
     quote: "HIS.Pro transformed how we manage patient flow. Our waiting times dropped by 40% in the first month.",
     name: "Dr. Amina Yusuf",
-    title: "Medical Director, City Clinic Lagos",
+    title: "Medical Director, City Clinic",
     initials: "AY",
   },
   {
@@ -15,7 +15,7 @@ const testimonials = [
     initials: "JO",
   },
   {
-    quote: "Finally, a system built for African healthcare realities. Fast, reliable, and affordable.",
+    quote: "Finally, a system built for modern healthcare realities. Fast, reliable, and affordable.",
     name: "Dr. Sarah Mensah",
     title: "CEO, HealthFirst Ghana",
     initials: "SM",

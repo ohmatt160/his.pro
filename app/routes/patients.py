@@ -50,7 +50,8 @@ def build_patient_response(patient) -> PatientResponse:
         is_active=patient.is_active,
         created_at=patient.created_at.isoformat() if patient.created_at else "",
         updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
-        full_name=patient.full_name
+        full_name=patient.full_name,
+        department_id=patient.department_id,
     )
 
 
@@ -59,6 +60,7 @@ async def get_patients(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, max_length=100),
+    department_id: Optional[str] = Query(None, max_length=36),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -81,6 +83,7 @@ async def get_patients(
             per_page=per_page,
             search=search,
             current_user=current_user,
+            department_id=department_id,
         )
 
         # Serialize patients
@@ -129,6 +132,8 @@ async def create_patient(
             data['emergency_contact_name'] = Validators.sanitize_string(data['emergency_contact_name'])
         if data.get('emergency_contact_phone'):
             data['emergency_contact_phone'] = Validators.sanitize_string(data['emergency_contact_phone'])
+        if current_user.department_id:
+            data['department_id'] = current_user.department_id
 
         logger.info(f"[Patient] Creating patient with data: {data}")
 

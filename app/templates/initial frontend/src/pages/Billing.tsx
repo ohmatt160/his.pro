@@ -103,9 +103,9 @@ const emptyPaymentForm = {
 const paymentMethods: PaymentMethod[] = ["CASH", "CARD", "TRANSFER", "INSURANCE"];
 
 const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-NG", {
+  new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "NGN",
+    currency: "USD",
     maximumFractionDigits: 0,
   }).format(value || 0);
 

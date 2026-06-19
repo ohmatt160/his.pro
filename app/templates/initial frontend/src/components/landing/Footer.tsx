@@ -41,7 +41,7 @@ const Footer = () => (
       </div>
       <div className="border-t border-border pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-          Made with <Heart className="h-3.5 w-3.5 text-destructive fill-destructive" /> for African Healthcare
+          Made with <Heart className="h-3.5 w-3.5 text-destructive fill-destructive" /> for Global Healthcare
         </p>
         <p className="text-sm text-muted-foreground">
           © {new Date().getFullYear()} HIS.Pro. All rights reserved.

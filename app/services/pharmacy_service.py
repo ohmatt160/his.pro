@@ -130,6 +130,7 @@ class PharmacyService:
             patient_id=data['patient_id'],
             prescribed_by=prescribed_by_id,
             facility_slug=data.get('facility_slug'),
+            department_id=data.get('department_id'),
             notes=data.get('notes'),
             prescription_date=datetime.utcnow()
         )

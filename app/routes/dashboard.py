@@ -50,6 +50,7 @@ def _empty_dashboard_stats(facility_slug: str) -> dict:
 @router.get("/stats")
 async def get_dashboard_stats(
     facility_slug: str = Query(...),
+    department_id: str | None = Query(None, max_length=36),
     current_user: User = Depends(get_current_user)
 ):
     """Get dashboard statistics for a facility"""
@@ -66,15 +67,23 @@ async def get_dashboard_stats(
         def count_query(model, **filters):
             return db_session.query(model).filter_by(**filters).count()
 
+        effective_department_id = current_user.department_id if current_user.role != "ADMIN" else department_id
+
         # 1. Patient count
-        patient_count = count_query(Patient, facility_slug=facility_slug)
+        patient_query = db_session.query(Patient).filter_by(facility_slug=facility_slug)
+        if effective_department_id:
+            patient_query = patient_query.filter_by(department_id=effective_department_id)
+        patient_count = patient_query.count()
 
         # 2. Today's appointments
-        today_appointments = db_session.query(Appointment).filter(
+        appointment_query = db_session.query(Appointment).filter(
             Appointment.facility_slug == facility_slug,
             Appointment.appointment_date >= today_start,
             Appointment.appointment_date < today_end
-        ).count()
+        )
+        if effective_department_id:
+            appointment_query = appointment_query.filter(Appointment.department_id == effective_department_id)
+        today_appointments = appointment_query.count()
 
         # 3. Pending lab orders
         pending_lab_orders = db_session.query(LabOrder).filter(

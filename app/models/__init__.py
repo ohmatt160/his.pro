@@ -19,6 +19,8 @@ from app.models.ward import WardAdmission, WardBed
 from app.models.patient_notification import PatientNotification
 from app.models.order_workflow import OrderWorkflowEvent
 from app.models.staff_chat import ChatConversation, ChatMessage
+from app.models.referral import Referral
+from app.models.hospital_listing import HospitalListing
 
 # Export all models
 __all__ = [
@@ -53,4 +55,6 @@ __all__ = [
     'OrderWorkflowEvent',
     'ChatConversation',
     'ChatMessage',
+    'Referral',
+    'HospitalListing',
 ]
