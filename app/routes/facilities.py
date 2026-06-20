@@ -1103,12 +1103,28 @@ async def update_facility_staff_member(
 @router.get("/{facility_id}", response_model=FacilityResponse)
 async def get_facility(
     facility_id: str,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
-    """Get facility by ID or slug (admin only)"""
-    facility = get_current_admin_facility(current_user)
-    if facility_id not in {facility.id, facility.slug}:
+    """Get facility by ID or slug for the current facility context."""
+    facility = (
+        db_session.query(Facility)
+        .filter(
+            Facility.is_active == True,
+            or_(Facility.id == facility_id, Facility.slug == facility_id),
+        )
+        .first()
+    )
+    if not facility:
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    if current_user.facility_id:
+        if str(current_user.facility_id) != str(facility.id):
+            raise HTTPException(status_code=404, detail="Facility not found")
+    elif current_user.facility_slug != facility.slug:
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    if facility_id not in {str(facility.id), facility.slug}:
         raise HTTPException(status_code=404, detail="Facility not found")
 
     return build_facility_response(facility)

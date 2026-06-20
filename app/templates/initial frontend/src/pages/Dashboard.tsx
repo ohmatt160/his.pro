@@ -68,7 +68,9 @@ type DashboardStats = {
 type FacilityDepartment = {
   id: string;
   name: string;
+  slug?: string;
   location?: string;
+  modules?: string[];
 };
 
 const container = {
@@ -95,6 +97,7 @@ const Dashboard = () => {
     null
   );
   const [departments, setDepartments] = useState<FacilityDepartment[]>([]);
+  const [currentBranch, setCurrentBranch] = useState<FacilityDepartment | null>(null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("all");
 
   useEffect(() => {
@@ -117,19 +120,19 @@ const Dashboard = () => {
       return;
     }
 
-    const departmentQuery =
-      selectedDepartmentId !== "all" ? `&department_id=${encodeURIComponent(selectedDepartmentId)}` : "";
+    const scopedBranchId = user.branchId || (selectedDepartmentId !== "all" ? selectedDepartmentId : "");
+    const branchQuery = scopedBranchId ? `&branch_id=${encodeURIComponent(scopedBranchId)}` : "";
 
     apiClient
       .get<DashboardStats>(
-        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${departmentQuery}`
+        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${branchQuery}`
       )
       .then(setDashboardStats)
       .catch(() => setDashboardStats(null));
   }, [facilitySlug, user, selectedDepartmentId]);
 
   useEffect(() => {
-    if (!facilitySlug || !user || user.role !== "ADMIN") {
+    if (!facilitySlug || !user || !["admin", "branch_admin"].includes(user.role)) {
       return;
     }
 
@@ -144,18 +147,24 @@ const Dashboard = () => {
         modules?: string[];
         hospital_type?: string;
         departments?: FacilityDepartment[];
+        branches?: FacilityDepartment[];
         created_at?: string;
       }>(`/facilities/${facilitySlug}`)
       .then((facility) => {
-        setDepartments(facility.hospital_type === "multi_clinic" ? facility.departments || [] : []);
+        const branchList = facility.branches || facility.departments || [];
+        const activeBranch = user.branchId
+          ? branchList.find((branch) => branch.id === user.branchId) || null
+          : null;
+        setDepartments(facility.hospital_type === "multi_clinic" ? branchList : []);
+        setCurrentBranch(activeBranch);
         setWorkspace((current) => ({
-          facilityName: facility.name,
-          facilityType: facility.type,
+          facilityName: activeBranch ? `${activeBranch.name} · ${facility.name}` : facility.name,
+          facilityType: activeBranch ? "branch" : facility.type,
           country: facility.country || current?.country || "",
-          fullName: current?.fullName || user.fullName || "Admin",
-          email: facility.email || current?.email || user.email || "",
+          fullName: user.fullName || current?.fullName || "Admin",
+          email: user.email || facility.email || current?.email || "",
           phone: facility.phone || current?.phone || "",
-          selectedModules: normalizeModules(facility.modules),
+          selectedModules: normalizeModules(activeBranch?.modules?.length ? activeBranch.modules : facility.modules),
           facilitySlug: facility.slug,
           createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
         }));
@@ -252,7 +261,7 @@ const Dashboard = () => {
   const facilityName = (data.facilityName as string) || "My Facility";
   const facilityType = (data.facilityType as string) || "clinic";
   const country = (data.country as string) || "—";
-  const fullName = (data.fullName as string) || "Admin";
+  const fullName = user?.fullName || (data.fullName as string) || "Admin";
   const email = (data.email as string) || "—";
   const phone = (data.phone as string) || "—";
   const updatedStats = [
@@ -352,16 +361,16 @@ const Dashboard = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-3 text-sm">
-                    <InfoRow icon={Building2} label="Name" value={facilityName} />
+                    <InfoRow icon={Building2} label={currentBranch ? "Branch" : "Name"} value={facilityName} />
                     <InfoRow icon={Layers} label="Type" value={facilityType} capitalize />
                     <InfoRow icon={Globe} label="Country" value={country} />
-                    <InfoRow icon={User} label="Admin" value={fullName} />
+                    <InfoRow icon={User} label={user?.role === "branch_admin" ? "Branch Admin" : "Admin"} value={fullName} />
                     <InfoRow icon={Mail} label="Email" value={email} />
                     {phone !== "—" && <InfoRow icon={Phone} label="Phone" value={phone} />}
                     {resolvedFacilitySlug && (
                       <div className="pt-3">
                         <Button asChild variant="outline" className="w-full justify-center">
-                          <Link to={facilityLoginPath}>Open facility login</Link>
+                          <Link to={facilityLoginPath}>{currentBranch ? "Open main facility login" : "Open facility login"}</Link>
                         </Button>
                       </div>
                     )}

@@ -37,6 +37,13 @@ type DashboardStats = {
   active_alerts: number;
 };
 
+type FacilityBranch = {
+  id: string;
+  name: string;
+  slug?: string;
+  modules?: string[];
+};
+
 type AppShellProps = {
   children: ReactNode;
 };
@@ -82,6 +89,7 @@ const AppShell = ({ children }: AppShellProps) => {
   const { user, logout } = useAuth();
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [currentBranch, setCurrentBranch] = useState<FacilityBranch | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
@@ -90,8 +98,16 @@ const AppShell = ({ children }: AppShellProps) => {
     }
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
     apiClient
+      .get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`)
+      .then((branches) => {
+        const branch = user?.branchId ? branches.find((item) => item.id === user.branchId) || null : null;
+        setCurrentBranch(branch);
+      })
+      .catch(() => setCurrentBranch(null));
+    const branchQuery = user?.branchId ? `&branch_id=${encodeURIComponent(user.branchId)}` : "";
+    apiClient
       .get<DashboardStats>(
-        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}`
+        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${branchQuery}`
       )
       .then(setStats)
       .catch(() => setStats(null));
@@ -99,7 +115,7 @@ const AppShell = ({ children }: AppShellProps) => {
       .get<{ unread_count: number }>("/chat/unread-count")
       .then((result) => setUnreadMessages(result.unread_count))
       .catch(() => setUnreadMessages(0));
-  }, [facilitySlug]);
+  }, [facilitySlug, user?.branchId]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -125,10 +141,10 @@ const AppShell = ({ children }: AppShellProps) => {
     };
   }, [facilitySlug]);
 
-  const selectedModules = normalizeModules(workspace?.selectedModules?.length ? workspace.selectedModules : defaultModules);
-  const facilityType = workspace?.facilityType || "facility";
+  const selectedModules = normalizeModules(currentBranch?.modules?.length ? currentBranch.modules : workspace?.selectedModules?.length ? workspace.selectedModules : defaultModules);
+  const facilityType = currentBranch ? currentBranch.name : workspace?.facilityType || "facility";
   const visibleNav = navItems.filter((entry) => {
-    if (entry.adminOnly && user?.role !== "admin") {
+    if (entry.adminOnly && !["admin", "branch_admin"].includes(user?.role || "")) {
       return false;
     }
     return roleAllows(user?.role, entry.roles) && (!entry.module || isModuleEnabled(selectedModules, entry.module));
