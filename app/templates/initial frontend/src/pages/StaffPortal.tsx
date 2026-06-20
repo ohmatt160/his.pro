@@ -897,7 +897,7 @@ const StaffPortal = () => {
       return;
     }
 
-    if (user.role === "admin") {
+    if (user.role === "admin" || user.role === "branch_admin") {
       navigate(getFacilityDashboardPath(facilitySlug), {
         replace: true,
         state: workspace,
@@ -906,7 +906,7 @@ const StaffPortal = () => {
   }, [facilitySlug, isLoading, navigate, user, workspace]);
 
   useEffect(() => {
-    if (!user || user.role === "admin" || user.facilitySlug !== facilitySlug) {
+    if (!user || user.role === "admin" || user.role === "branch_admin" || user.facilitySlug !== facilitySlug) {
       setTasks([]);
       return;
     }
@@ -924,7 +924,7 @@ const StaffPortal = () => {
     );
   }
 
-  if (!workspace || !user || user.role === "admin") {
+  if (!workspace || !user || user.role === "admin" || user.role === "branch_admin") {
     return null;
   }
 

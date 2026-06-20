@@ -37,6 +37,7 @@ import { useAuth } from "@/context/AuthContext";
 import { apiClient } from "@/api/client";
 import {
   createStaffAccount,
+  getBranchLoginLink,
   getDefaultDepartmentForRole,
   getFacilityLoginLink,
   getFacilityStaff,
@@ -60,6 +61,7 @@ type FacilityBranch = {
 
 const roleBadgeColors: Record<StaffRole, string> = {
   admin: "bg-slate-100 text-slate-700 border-slate-200",
+  branch_admin: "bg-teal-100 text-teal-700 border-teal-200",
   doctor: "bg-blue-100 text-blue-700 border-blue-200",
   nurse: "bg-emerald-100 text-emerald-700 border-emerald-200",
   reception: "bg-amber-100 text-amber-700 border-amber-200",
@@ -200,6 +202,31 @@ const StaffAccess = () => {
   }, [searchQuery, staffList]);
 
   const branchOptions = facilityDepartments;
+  const branchById = useMemo(
+    () => new Map(branchOptions.map((branch) => [branch.id, branch])),
+    [branchOptions]
+  );
+
+  const loginLink = getFacilityLoginLink(facilitySlug);
+  const getLoginLinkForBranch = (branchId?: string | null) => {
+    const branch = branchId ? branchById.get(branchId) : undefined;
+    if (!branch) {
+      return loginLink;
+    }
+
+    if (branch.login_url_path) {
+      const origin =
+        typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+      return `${origin}${branch.login_url_path}`;
+    }
+
+    return branch.slug ? getBranchLoginLink(facilitySlug, branch.slug) : loginLink;
+  };
+
+  const getStaffLoginLink = (staff?: FacilityStaffAccount | null) =>
+    getLoginLinkForBranch(staff?.branchId || staff?.departmentId);
+
+  const justCreatedLoginLink = getStaffLoginLink(justCreated);
 
   if (!workspace) {
     return (
@@ -222,8 +249,6 @@ const StaffAccess = () => {
       </div>
     );
   }
-
-  const loginLink = getFacilityLoginLink(facilitySlug);
 
   const handleCopy = async (value: string, field: string) => {
     try {
@@ -413,7 +438,7 @@ const StaffAccess = () => {
                   <div className="mb-2 flex items-center gap-2">
                     <Link2 className="h-4 w-4 text-primary" />
                     <p className="text-xs font-medium text-muted-foreground">
-                      Staff Login Link
+                      Default Login Link
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -496,7 +521,7 @@ const StaffAccess = () => {
                       <div className="grid gap-3 sm:grid-cols-3">
                         <CredentialBlock
                           label="Login Link"
-                          value={loginLink}
+                          value={justCreatedLoginLink}
                           field="cred-link"
                           copiedField={copiedField}
                           onCopy={handleCopy}
@@ -520,7 +545,7 @@ const StaffAccess = () => {
 
                       <p className="mt-3 text-[11px] text-muted-foreground">
                         Share these credentials securely so the staff member can
-                        sign in through the facility login page.
+                        sign in through the assigned branch login page.
                       </p>
                     </CardContent>
                   </Card>

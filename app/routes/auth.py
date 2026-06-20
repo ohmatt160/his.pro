@@ -23,6 +23,7 @@ from app.services.session_service import SessionService
 from app.utils.validators import Validators
 from app.middleware.jwt import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES, verify_token
 from app.models.user import User
+from app.models.branch import Branch
 from app.models.user_session import UserSession
 from app.extensions import get_db
 
@@ -79,6 +80,46 @@ def _get_token_from_request(
         return credentials.credentials
     return request.cookies.get(cookie_name)
 
+
+
+def _user_branch_values(user: User) -> set[str]:
+    values = {str(value) for value in (user.branch_ids or []) if value}
+    values.update(str(value) for value in (user.departments or []) if value)
+    if user.branch_id:
+        values.add(str(user.branch_id))
+    if user.department_id:
+        values.add(str(user.department_id))
+    return values
+
+
+def _user_has_branch_assignment(user: User) -> bool:
+    return bool(_user_branch_values(user))
+
+
+def _validate_requested_branch(user: User, facility_slug: str | None, branch_slug: str | None, db: Session) -> None:
+    role = (user.role or "").upper()
+    if not branch_slug:
+        if role != "ADMIN" and _user_has_branch_assignment(user):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return
+
+    if not facility_slug:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    branch = (
+        db.query(Branch)
+        .filter_by(facility_slug=facility_slug, slug=branch_slug, is_active=True)
+        .first()
+    )
+    if not branch:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if role == "ADMIN":
+        return
+
+    allowed = _user_branch_values(user)
+    if str(branch.id) not in allowed and str(branch.slug) not in allowed:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
 def build_token_response(user: User, request: Request | None = None) -> TokenResponse:
     from app.middleware.jwt import create_access_token, create_refresh_token
@@ -218,9 +259,12 @@ async def login_user(
         
         # Validate facility access if requested
         requested_facility = request.query_params.get('facility_slug')
+        requested_branch = request.query_params.get('branch_slug')
         if requested_facility and user.facility_slug != requested_facility:
             logger.warning(f"[Login] User {user.username} tried to access wrong facility")
             raise HTTPException(status_code=401, detail="Invalid credentials")
+
+        _validate_requested_branch(user, requested_facility or user.facility_slug, requested_branch, db)
         
         logger.info(f"[Login] User {user.username} logged in successfully")
         

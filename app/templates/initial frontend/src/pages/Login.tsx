@@ -35,7 +35,7 @@ const features = [
 
 const Login = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [searchParams] = useSearchParams();
   const { user, login, logout, sessionMessage, clearSessionMessage } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
@@ -62,10 +62,10 @@ const Login = () => {
   const signedInToThisFacility = Boolean(
     user && facilitySlug && user.facilitySlug === facilitySlug
   );
-  const signedInDestination =
-    user?.role === "admin"
-      ? getFacilityDashboardPath(facilitySlug)
-      : getStaffPortalPath(facilitySlug);
+  const isWorkspaceAdmin = user?.role === "admin" || user?.role === "branch_admin";
+  const signedInDestination = isWorkspaceAdmin
+    ? getFacilityDashboardPath(facilitySlug)
+    : getStaffPortalPath(facilitySlug);
 
   const handleContinueSession = () => {
     navigate(signedInDestination, { replace: true });
@@ -124,11 +124,12 @@ const Login = () => {
     try {
       const account = await login({
         facilitySlug,
+        branchSlug: branchSlug || undefined,
         login: loginValue,
         password,
       });
 
-      if (account.role === "admin") {
+      if (account.role === "admin" || account.role === "branch_admin") {
         navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
         return;
       }

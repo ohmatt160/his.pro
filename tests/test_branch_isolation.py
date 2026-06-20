@@ -52,6 +52,7 @@ class BranchIsolationTest(unittest.TestCase):
                 )
                 self.assertEqual(east.status_code, 201, east.text)
                 east_id = east.json()["id"]
+                east_slug = east.json()["slug"]
 
                 west = await client.post(
                     "/api/v1/facilities/campus-hospital/branches",
@@ -64,9 +65,22 @@ class BranchIsolationTest(unittest.TestCase):
                 )
                 self.assertEqual(west.status_code, 201, west.text)
                 west_id = west.json()["id"]
+                west_slug = west.json()["slug"]
 
-                east_admin = await create_branch_admin(client, owner_headers, east_id, "east.admin@example.com")
-                west_admin = await create_branch_admin(client, owner_headers, west_id, "west.admin@example.com")
+                east_admin = await create_branch_admin(client, owner_headers, east_id, "east.admin@example.com", east_slug)
+                west_admin = await create_branch_admin(client, owner_headers, west_id, "west.admin@example.com", west_slug)
+
+                wrong_branch_login = await client.post(
+                    f"/api/v1/auth/login?facility_slug=campus-hospital&branch_slug={east_slug}",
+                    json={"username": "west-admin", "password": "BranchPass2026"},
+                )
+                self.assertEqual(wrong_branch_login.status_code, 401, wrong_branch_login.text)
+
+                generic_branch_login = await client.post(
+                    "/api/v1/auth/login?facility_slug=campus-hospital",
+                    json={"username": "east-admin", "password": "BranchPass2026"},
+                )
+                self.assertEqual(generic_branch_login.status_code, 401, generic_branch_login.text)
 
                 patient = await client.post(
                     "/api/v1/patients",
@@ -123,7 +137,7 @@ class BranchIsolationTest(unittest.TestCase):
             self.assertEqual(facility.status_code, 200, facility.text)
             return headers
 
-        async def create_branch_admin(client, owner_headers, branch_id, email):
+        async def create_branch_admin(client, owner_headers, branch_id, email, branch_slug):
             staff = await client.post(
                 "/api/v1/facilities/campus-hospital/staff",
                 json={
@@ -139,7 +153,7 @@ class BranchIsolationTest(unittest.TestCase):
             self.assertEqual(staff.status_code, 201, staff.text)
             body = staff.json()
             login = await client.post(
-                "/api/v1/auth/login",
+                f"/api/v1/auth/login?facility_slug=campus-hospital&branch_slug={branch_slug}",
                 json={"username": body["loginId"], "password": "BranchPass2026"},
             )
             self.assertEqual(login.status_code, 200, login.text)
@@ -150,3 +164,6 @@ class BranchIsolationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+

@@ -165,6 +165,16 @@ export const getFacilityLoginLink = (facilitySlug: string) => {
   return `${origin}${getFacilityLoginPath(facilitySlug)}`;
 };
 
+export const getBranchLoginPath = (facilitySlug: string, branchSlug: string) =>
+  `/${facilitySlug}/branches/${branchSlug}/login`;
+
+export const getBranchLoginLink = (facilitySlug: string, branchSlug: string) => {
+  const origin =
+    typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+
+  return `${origin}${getBranchLoginPath(facilitySlug, branchSlug)}`;
+};
+
 export const getStaffPortalPath = (facilitySlug: string) =>
   `/portal/${facilitySlug}`;
 
@@ -173,15 +183,22 @@ export const getStaffAccessPath = (facilitySlug: string) =>
 
 export const authenticateStaff = async ({
   facilitySlug,
+  branchSlug,
   login,
   password,
 }: {
   facilitySlug: string;
+  branchSlug?: string;
   login: string;
   password: string;
 }) => {
+  const query = new URLSearchParams({ facility_slug: facilitySlug });
+  if (branchSlug) {
+    query.set("branch_slug", branchSlug);
+  }
+
   const auth = await apiClient.post<BackendTokenResponse>(
-    `/auth/login?facility_slug=${encodeURIComponent(facilitySlug)}`,
+    `/auth/login?${query.toString()}`,
     {
       username: login,
       password,

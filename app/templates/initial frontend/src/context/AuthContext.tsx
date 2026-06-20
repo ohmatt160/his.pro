@@ -17,6 +17,7 @@ const LAST_ACTIVITY_KEY = "hispro:last-activity-at";
 
 type LoginCredentials = {
   facilitySlug: string;
+  branchSlug?: string;
   login: string;
   password: string;
 };
@@ -151,12 +152,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [user]);
 
-  const login = async ({ facilitySlug, login, password }: LoginCredentials) => {
+  const login = async ({ facilitySlug, branchSlug, login, password }: LoginCredentials) => {
     setLoading(true);
 
     try {
       const response = await authenticateStaff({
         facilitySlug,
+        branchSlug,
         login,
         password,
       });
