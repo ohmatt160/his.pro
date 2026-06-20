@@ -2,6 +2,7 @@ import { apiClient, type AuthUser } from "@/api/client";
 
 export type StaffRole =
   | "admin"
+  | "branch_admin"
   | "doctor"
   | "nurse"
   | "reception"
@@ -16,6 +17,8 @@ export type FacilityStaffAccount = {
   department: string;
   departmentId?: string | null;
   departmentIds?: string[];
+  branchId?: string | null;
+  branchIds?: string[];
   email: string;
   phone: string;
   loginId: string;
@@ -57,6 +60,8 @@ type BackendUser = {
   last_name?: string | null;
   facility_id?: string | null;
   facility_slug?: string | null;
+  branch_id?: string | null;
+  branch_ids?: string[] | null;
 };
 
 const roleMetadata: Record<
@@ -64,8 +69,13 @@ const roleMetadata: Record<
   { label: string; prefix: string; department: string }
 > = {
   admin: {
-    label: "Facility Admin",
+    label: "Main Facility Admin",
     prefix: "ADM",
+    department: "Administration",
+  },
+  branch_admin: {
+    label: "Branch Admin",
+    prefix: "BADM",
     department: "Administration",
   },
   doctor: {
@@ -109,6 +119,10 @@ const normalizeLoginValue = (value: string) => value.trim().toUpperCase();
 const normalizeBackendRole = (role: string): StaffRole => {
   const normalized = role.toLowerCase();
 
+  if (normalized === "branch_admin") {
+    return "branch_admin";
+  }
+
   if (normalized === "lab_tech") {
     return "lab";
   }
@@ -132,6 +146,8 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
     id: user.id,
     facilityId: user.facility_id || undefined,
     facilitySlug: user.facility_slug || "",
+    branchId: user.branch_id || undefined,
+    branchIds: user.branch_ids || [],
     loginId: user.username,
     role,
     fullName: fullName || user.username,
@@ -248,6 +264,8 @@ export const createStaffAccount = async ({
   createdBy,
   departmentId,
   departmentIds,
+  branchId,
+  branchIds,
 }: {
   facilitySlug: string;
   fullName: string;
@@ -255,6 +273,8 @@ export const createStaffAccount = async ({
   department?: string;
   departmentId?: string;
   departmentIds?: string[];
+  branchId?: string;
+  branchIds?: string[];
   email: string;
   phone?: string;
   password?: string;
@@ -266,6 +286,8 @@ export const createStaffAccount = async ({
     department: department || getDefaultDepartmentForRole(role),
     departmentId,
     departmentIds,
+    branchId: branchId || departmentId,
+    branchIds: branchIds || departmentIds,
     email: email.trim() ? email.trim().toLowerCase() : undefined,
     phone: phone?.trim() || undefined,
     password,
@@ -291,6 +313,8 @@ export const updateStaffAccount = async ({
   isActive,
   departmentId,
   departmentIds,
+  branchId,
+  branchIds,
 }: {
   facilitySlug: string;
   loginId: string;
@@ -299,6 +323,8 @@ export const updateStaffAccount = async ({
   department?: string;
   departmentId?: string;
   departmentIds?: string[];
+  branchId?: string;
+  branchIds?: string[];
   email?: string;
   phone?: string;
   password?: string;
@@ -311,6 +337,8 @@ export const updateStaffAccount = async ({
     department: department?.trim() || undefined,
     departmentId,
     departmentIds,
+    branchId: branchId || departmentId,
+    branchIds: branchIds || departmentIds,
     email: email?.trim() ? email.trim().toLowerCase() : undefined,
     phone: phone?.trim() || undefined,
     password: password?.trim() || undefined,

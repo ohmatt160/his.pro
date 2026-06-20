@@ -21,6 +21,7 @@ class Facility(BaseModel):
     is_active = Column(Boolean, default=True)
 
     # Relationships
+    branches = relationship('Branch', back_populates='facility', lazy=True, foreign_keys='Branch.facility_slug')
     users = relationship('User', backref='facility', lazy=True, foreign_keys='User.facility_slug')
     patients = relationship('Patient', backref='facility', lazy=True, foreign_keys='Patient.facility_slug')
     appointments = relationship('Appointment', backref='facility', lazy=True, foreign_keys='Appointment.facility_slug')

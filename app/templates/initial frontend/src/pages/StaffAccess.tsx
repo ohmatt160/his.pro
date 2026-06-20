@@ -48,10 +48,14 @@ import {
 } from "@/lib/facility-staff";
 import { getFacilityWorkspace } from "@/lib/facility-workspace";
 
-type FacilityDepartment = {
+type FacilityBranch = {
   id: string;
   name: string;
+  slug?: string;
   location?: string;
+  modules?: string[];
+  login_url_path?: string;
+  dashboard_url_path?: string;
 };
 
 const roleBadgeColors: Record<StaffRole, string> = {
@@ -122,7 +126,7 @@ const StaffAccess = () => {
     | undefined
   >(undefined);
   const [staffList, setStaffList] = useState<FacilityStaffAccount[]>([]);
-  const [facilityDepartments, setFacilityDepartments] = useState<FacilityDepartment[]>([]);
+  const [facilityDepartments, setFacilityDepartments] = useState<FacilityBranch[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -151,7 +155,7 @@ const StaffAccess = () => {
 
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
     apiClient
-      .get<FacilityDepartment[]>(`/facilities/${facilitySlug}/departments`)
+      .get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`)
       .then(setFacilityDepartments)
       .catch(() => setFacilityDepartments([]));
     getFacilityStaff(facilitySlug)
@@ -195,9 +199,7 @@ const StaffAccess = () => {
     });
   }, [searchQuery, staffList]);
 
-  const selectableDepartments = facilityDepartments.length > 0
-    ? facilityDepartments
-    : departmentOptions.map((name) => ({ id: name, name }));
+  const branchOptions = facilityDepartments;
 
   if (!workspace) {
     return (
@@ -250,8 +252,8 @@ const StaffAccess = () => {
         fullName: newStaff.fullName.trim(),
         role: newStaff.role,
         department: newStaff.department.trim(),
-        departmentId: newStaff.departmentId || undefined,
-        departmentIds: newStaff.departmentId ? [newStaff.departmentId] : undefined,
+        branchId: newStaff.departmentId || undefined,
+        branchIds: newStaff.departmentId ? [newStaff.departmentId] : undefined,
         email: newStaff.email.trim(),
         phone: newStaff.phone.trim(),
         createdBy: workspace?.fullName,
@@ -293,7 +295,7 @@ const StaffAccess = () => {
       mustChangePassword: true,
       isActive: member.status === "active",
     });
-    setEditStaffDepartmentId(member.departmentId || "");
+    setEditStaffDepartmentId(member.branchId || member.departmentId || "");
   };
 
   const handleUpdateStaff = async () => {
@@ -314,8 +316,8 @@ const StaffAccess = () => {
         fullName: editStaff.fullName,
         role: editingStaff.role === "admin" ? undefined : editStaff.role,
         department: editStaff.department,
-        departmentId: editStaffDepartmentId || undefined,
-        departmentIds: editStaffDepartmentId ? [editStaffDepartmentId] : undefined,
+        branchId: editStaffDepartmentId || undefined,
+        branchIds: editStaffDepartmentId ? [editStaffDepartmentId] : undefined,
         email: editStaff.email,
         phone: editStaff.phone,
         password: editStaff.password || undefined,
@@ -582,7 +584,12 @@ const StaffAccess = () => {
                         <div className="col-span-1" />
                       </div>
 
-                      {filteredStaff.map((member, index) => (
+                      {filteredStaff.map((member, index) => {
+                        const branchName = member.branchId
+                          ? branchOptions.find((branch) => branch.id === member.branchId)?.name
+                          : "";
+
+                        return (
                         <motion.div
                           key={member.staffRecordId}
                           initial={{ opacity: 0, y: 8 }}
@@ -625,6 +632,11 @@ const StaffAccess = () => {
 
                           <div className="col-span-2 hidden text-sm text-muted-foreground md:block">
                             {member.department}
+                            {branchName && (
+                              <span className="mt-1 block text-[11px] text-muted-foreground">
+                                {branchName}
+                              </span>
+                            )}
                           </div>
 
                           <div className="col-span-2 hidden md:block">
@@ -655,7 +667,8 @@ const StaffAccess = () => {
                             </Button>
                           </div>
                         </motion.div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>
@@ -708,7 +721,6 @@ const StaffAccess = () => {
                       ...previous,
                       role,
                       department: getDefaultDepartmentForRole(role),
-                      departmentId: "",
                     }));
                   }}
                 >
@@ -730,29 +742,54 @@ const StaffAccess = () => {
                   Department *
                 </Label>
                 <Select
-                  value={newStaff.departmentId || newStaff.department}
-                  onValueChange={(value) => {
-                    const department = facilityDepartments.find((item) => item.id === value);
-                    setNewStaff((previous) => ({
-                      ...previous,
-                      department: department?.name || value,
-                      departmentId: department?.id || "",
-                    }));
-                  }}
+                  value={newStaff.department}
+                  onValueChange={(value) =>
+                    setNewStaff((previous) => ({ ...previous, department: value }))
+                  }
                 >
                   <SelectTrigger className="mt-1.5">
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {selectableDepartments.map((department) => (
-                      <SelectItem key={department.id} value={department.id}>
-                        {department.name}
+                    {departmentOptions.map((department) => (
+                      <SelectItem key={department} value={department}>
+                        {department}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+
+            {branchOptions.length > 0 && (
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Branch / Clinic
+                </Label>
+                <Select
+                  value={newStaff.departmentId || "none"}
+                  onValueChange={(value) =>
+                    setNewStaff((previous) => ({
+                      ...previous,
+                      departmentId: value === "none" ? "" : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="Select branch or clinic" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No branch assigned</SelectItem>
+                    {branchOptions.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -853,7 +890,6 @@ const StaffAccess = () => {
                       role,
                       department: getDefaultDepartmentForRole(role),
                     }));
-                    setEditStaffDepartmentId("");
                   }}
                 >
                   <SelectTrigger className="mt-1.5">
@@ -901,25 +937,49 @@ const StaffAccess = () => {
                 Department *
               </Label>
               <Select
-                value={editStaffDepartmentId || editStaff.department}
-                onValueChange={(value) => {
-                  const department = facilityDepartments.find((item) => item.id === value);
-                  setEditStaff((previous) => ({ ...previous, department: department?.name || value }));
-                  setEditStaffDepartmentId(department?.id || "");
-                }}
+                value={editStaff.department}
+                onValueChange={(value) =>
+                  setEditStaff((previous) => ({ ...previous, department: value }))
+                }
               >
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {selectableDepartments.map((department) => (
-                    <SelectItem key={department.id} value={department.id}>
-                      {department.name}
+                  {departmentOptions.map((department) => (
+                    <SelectItem key={department} value={department}>
+                      {department}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
+
+            {branchOptions.length > 0 && (
+              <div>
+                <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Branch / Clinic
+                </Label>
+                <Select
+                  value={editStaffDepartmentId || "none"}
+                  onValueChange={(value) =>
+                    setEditStaffDepartmentId(value === "none" ? "" : value)
+                  }
+                >
+                  <SelectTrigger className="mt-1.5">
+                    <SelectValue placeholder="Select branch or clinic" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No branch assigned</SelectItem>
+                    {branchOptions.map((branch) => (
+                      <SelectItem key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div>
               <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -1048,3 +1108,4 @@ const CredentialBlock = ({
 };
 
 export default StaffAccess;
+

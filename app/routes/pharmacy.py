@@ -24,6 +24,7 @@ from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.pharmacy_service import PharmacyService
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
@@ -74,6 +75,7 @@ def _prescription_response(prescription) -> PrescriptionResponse:
         filled_at=prescription.dispensed_date.isoformat() if prescription.dispensed_date else None,
         facility_slug=prescription.facility_slug,
         department_id=prescription.department_id,
+        branch_id=prescription.branch_id or prescription.department_id,
         created_at=prescription.created_at.isoformat() if prescription.created_at else "",
         updated_at=prescription.updated_at.isoformat() if prescription.updated_at else None
     )
@@ -86,7 +88,7 @@ def _prescription_response(prescription) -> PrescriptionResponse:
 @router.get("/medications", response_model=List[MedicationResponse])
 async def get_medications(
     active_only: bool = Query(True),
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -99,7 +101,7 @@ async def get_medications(
 @router.post("/medications", response_model=MedicationResponse, status_code=status.HTTP_201_CREATED)
 async def create_medication(
     data: MedicationCreate,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -116,7 +118,7 @@ async def create_medication(
 @router.get("/medications/{medication_id}", response_model=MedicationResponse)
 async def get_medication(
     medication_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     medication = PharmacyService.get_medication_by_id(medication_id)
@@ -133,7 +135,7 @@ async def get_medication(
 async def update_medication(
     medication_id: str,
     data: MedicationCreate,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     medication = PharmacyService.get_medication_by_id(medication_id)
@@ -153,7 +155,7 @@ async def update_medication(
 @router.get("/inventory/{medication_id}", response_model=InventoryResponse)
 async def get_inventory(
     medication_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -169,7 +171,7 @@ async def get_inventory(
 async def add_inventory(
     medication_id: str,
     data: InventoryCreate,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -187,7 +189,8 @@ async def get_prescriptions(
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None, max_length=36),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'PHARMACIST')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -204,16 +207,13 @@ async def get_prescriptions(
     else:
         from app.models.pharmacy import Prescription
         query = db.query(Prescription).filter_by(facility_slug=facility_slug)
-        if current_user.department_id and current_user.role != "ADMIN":
-            query = query.filter_by(department_id=current_user.department_id)
-        elif department_id and current_user.role == "ADMIN":
-            query = query.filter_by(department_id=department_id)
+        branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+        query = apply_branch_filter(query, Prescription, branch_scope_id)
         prescriptions = query.order_by(Prescription.created_at.desc()).all()
 
-    if current_user.department_id and current_user.role != "ADMIN":
-        prescriptions = [p for p in prescriptions if p.department_id == current_user.department_id]
-    elif department_id and current_user.role == "ADMIN":
-        prescriptions = [p for p in prescriptions if p.department_id == department_id]
+    branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+    if branch_scope_id:
+        prescriptions = [p for p in prescriptions if belongs_to_branch(p, branch_scope_id)]
 
     return [_prescription_response(p) for p in prescriptions]
 
@@ -222,7 +222,7 @@ async def get_prescriptions(
 @router.post("/prescriptions", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_prescription(
     data: PrescriptionCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -241,7 +241,10 @@ async def create_prescription(
 
     payload = data.model_dump()
     payload['facility_slug'] = facility_slug
-    payload['department_id'] = current_user.department_id or payload.get('department_id') or patient.department_id
+    resolved_branch_id = current_user.branch_id or payload.get('branch_id') or patient.branch_id
+    legacy_branch_id = current_user.department_id or payload.get('department_id') or patient.department_id
+    payload['branch_id'] = resolved_branch_id or legacy_branch_id
+    payload['department_id'] = payload.get('department_id') or legacy_branch_id
 
     prescription = PharmacyService.create_prescription(payload, current_user.id)
     OrderWorkflowService.record(
@@ -264,7 +267,7 @@ async def create_prescription(
 @router.get("/prescriptions/{prescription_id}", response_model=PrescriptionResponse)
 async def get_prescription(
     prescription_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'PHARMACIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
@@ -273,16 +276,27 @@ async def get_prescription(
     if not prescription or prescription.facility_slug != facility_slug:
         raise HTTPException(status_code=404, detail="Prescription not found")
 
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(prescription, branch_scope_id):
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
     return _prescription_response(prescription)
 
 
 @router.post("/prescriptions/{prescription_id}/dispense", response_model=PrescriptionResponse)
 async def dispense_prescription(
     prescription_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'PHARMACIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
+    existing_prescription = PharmacyService.get_prescription_by_id(prescription_id)
+    if not existing_prescription or existing_prescription.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(existing_prescription, branch_scope_id):
+        raise HTTPException(status_code=404, detail="Prescription not found")
+
     prescription, error = PharmacyService.dispense_prescription(
         prescription_id,
         current_user.id,
@@ -344,12 +358,19 @@ async def dispense_prescription(
 @router.delete("/prescriptions/{prescription_id}", response_model=MessageResponse)
 async def cancel_prescription(
     prescription_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    existing_prescription = PharmacyService.get_prescription_by_id(prescription_id)
+    if not existing_prescription or existing_prescription.facility_slug != facility_slug:
+        raise HTTPException(status_code=404, detail="Prescription not found")
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(existing_prescription, branch_scope_id):
+        raise HTTPException(status_code=404, detail="Prescription not found")
 
     prescription, error = PharmacyService.cancel_prescription(
         prescription_id,

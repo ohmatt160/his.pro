@@ -12,6 +12,7 @@ class PatientQueue(BaseModel):
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     appointment_id = Column(String(36), ForeignKey('appointments.id'), nullable=True)
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     department = Column(String(100), nullable=False)
     status = Column(String(50), default='waiting', index=True)  # waiting/in_progress/completed/no_show
     queue_number = Column(Integer, nullable=False)

@@ -10,6 +10,7 @@ class AppointmentCreate(BaseModel):
     reason: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
     department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class AppointmentUpdate(BaseModel):
@@ -19,6 +20,7 @@ class AppointmentUpdate(BaseModel):
     reason: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
     department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class AppointmentResponse(BaseModel):
@@ -33,6 +35,7 @@ class AppointmentResponse(BaseModel):
     notes: Optional[str]
     facility_slug: Optional[str]
     department_id: Optional[str] = None
+    branch_id: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
 

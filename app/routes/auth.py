@@ -136,6 +136,8 @@ async def register_user(
             last_name=user.last_name,
             facility_id=str(user.facility_id) if user.facility_id else None,
             facility_slug=user.facility_slug,
+            branch_id=user.branch_id or user.department_id,
+            branch_ids=user.branch_ids or user.departments or [],
             is_active=user.is_active,
             created_at=user.created_at.isoformat() if user.created_at else "",
             updated_at=user.updated_at.isoformat() if user.updated_at else None
@@ -388,6 +390,8 @@ async def verify_current_session(
         last_name=user.last_name,
         facility_id=str(user.facility_id) if user.facility_id else None,
         facility_slug=user.facility_slug,
+        branch_id=user.branch_id or user.department_id,
+        branch_ids=user.branch_ids or user.departments or [],
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else "",
         updated_at=user.updated_at.isoformat() if user.updated_at else None,

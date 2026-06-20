@@ -2,6 +2,8 @@ from typing import Optional, List, Literal
 
 from pydantic import BaseModel, Field
 
+from app.schemas.branches import BranchResponse
+
 
 class FacilityCreate(BaseModel):
     name: str = Field(..., max_length=100)
@@ -60,6 +62,7 @@ class FacilityResponse(BaseModel):
     email: Optional[str]
     hospital_type: str = "single"
     departments: List[dict] = Field(default_factory=list)
+    branches: List[BranchResponse] = Field(default_factory=list)
     modules: List[str]
     settings: dict
     is_active: bool

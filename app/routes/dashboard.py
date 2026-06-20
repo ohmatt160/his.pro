@@ -22,6 +22,7 @@ from app.models.inventory import Inventory
 from app.models.alert import Alert
 from app.models.patient_queue import PatientQueue
 from app.schemas.dashboard import DashboardStats
+from app.utils.branch_scope import apply_branch_filter, effective_branch_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -51,12 +52,13 @@ def _empty_dashboard_stats(facility_slug: str) -> dict:
 async def get_dashboard_stats(
     facility_slug: str = Query(...),
     department_id: str | None = Query(None, max_length=36),
+    branch_id: str | None = Query(None, max_length=36),
     current_user: User = Depends(get_current_user)
 ):
     """Get dashboard statistics for a facility"""
     try:
         # Non-ADMIN users can only view their own facility
-        if current_user.role != 'ADMIN' and current_user.facility_slug != facility_slug:
+        if current_user.role not in {'ADMIN', 'BRANCH_ADMIN'} and current_user.facility_slug != facility_slug:
             raise HTTPException(status_code=403, detail="You can only view your own facility's data")
 
         # Get today's date range
@@ -67,12 +69,11 @@ async def get_dashboard_stats(
         def count_query(model, **filters):
             return db_session.query(model).filter_by(**filters).count()
 
-        effective_department_id = current_user.department_id if current_user.role != "ADMIN" else department_id
+        effective_department_id = effective_branch_id(current_user, branch_id, department_id)
 
         # 1. Patient count
         patient_query = db_session.query(Patient).filter_by(facility_slug=facility_slug)
-        if effective_department_id:
-            patient_query = patient_query.filter_by(department_id=effective_department_id)
+        patient_query = apply_branch_filter(patient_query, Patient, effective_department_id)
         patient_count = patient_query.count()
 
         # 2. Today's appointments
@@ -81,8 +82,7 @@ async def get_dashboard_stats(
             Appointment.appointment_date >= today_start,
             Appointment.appointment_date < today_end
         )
-        if effective_department_id:
-            appointment_query = appointment_query.filter(Appointment.department_id == effective_department_id)
+        appointment_query = apply_branch_filter(appointment_query, Appointment, effective_department_id)
         today_appointments = appointment_query.count()
 
         # 3. Pending lab orders
@@ -113,6 +113,7 @@ async def get_dashboard_stats(
 
         # 7. Queue status breakdown
         queue_query = db_session.query(PatientQueue).filter_by(facility_slug=facility_slug)
+        queue_query = apply_branch_filter(queue_query, PatientQueue, effective_department_id)
         queue_status = {
             'waiting': queue_query.filter_by(status='waiting').count(),
             'in_progress': queue_query.filter_by(status='in_progress').count(),

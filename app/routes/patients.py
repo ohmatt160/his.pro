@@ -22,6 +22,7 @@ from app.services.patient_service import PatientService
 from app.services.patient_timeline_service import PatientTimelineService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import user_branch_id
 from app.models.user import User
 from app.models.facility import Facility
 
@@ -52,6 +53,7 @@ def build_patient_response(patient) -> PatientResponse:
         updated_at=patient.updated_at.isoformat() if patient.updated_at else None,
         full_name=patient.full_name,
         department_id=patient.department_id,
+        branch_id=patient.branch_id or patient.department_id,
     )
 
 
@@ -61,7 +63,8 @@ async def get_patients(
     per_page: int = Query(20, ge=1, le=100),
     search: Optional[str] = Query(None, max_length=100),
     department_id: Optional[str] = Query(None, max_length=36),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """
@@ -84,6 +87,7 @@ async def get_patients(
             search=search,
             current_user=current_user,
             department_id=department_id,
+            branch_id=branch_id,
         )
 
         # Serialize patients
@@ -109,7 +113,7 @@ async def get_patients(
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 async def create_patient(
     patient_data: PatientCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """
@@ -132,8 +136,12 @@ async def create_patient(
             data['emergency_contact_name'] = Validators.sanitize_string(data['emergency_contact_name'])
         if data.get('emergency_contact_phone'):
             data['emergency_contact_phone'] = Validators.sanitize_string(data['emergency_contact_phone'])
-        if current_user.department_id:
-            data['department_id'] = current_user.department_id
+        current_branch_id = user_branch_id(current_user)
+        if current_user.branch_id:
+            data['branch_id'] = current_user.branch_id
+        elif current_branch_id:
+            data['branch_id'] = current_branch_id
+            data['department_id'] = current_branch_id
 
         logger.info(f"[Patient] Creating patient with data: {data}")
 
@@ -159,7 +167,7 @@ async def create_patient(
 @router.get("/{patient_id}", response_model=PatientResponse)
 async def get_patient(
     patient_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """
@@ -193,7 +201,7 @@ async def get_patient(
 @router.get("/{patient_id}/timeline", response_model=PatientTimelineResponse)
 async def get_patient_timeline(
     patient_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -227,7 +235,7 @@ async def get_patient_timeline(
 async def update_patient(
     patient_id: str,
     patient_data: PatientUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """
@@ -270,7 +278,7 @@ async def update_patient(
 @router.delete("/{patient_id}", response_model=MessageResponse)
 async def delete_patient(
     patient_id: str,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     """

@@ -18,6 +18,7 @@ class AppointmentService:
             doctor_id=data['doctor_id'],
             facility_slug=data.get('facility_slug'),
             department_id=data.get('department_id'),
+            branch_id=data.get('branch_id') or data.get('department_id'),
             appointment_date=appointment_date,
             scheduled_time=appointment_date,
             duration_minutes=data.get('duration_minutes', 30),

@@ -5,6 +5,7 @@ from starlette.responses import JSONResponse
 from app.extensions import db_session
 from app.middleware.jwt import verify_token
 from app.models.facility import Facility
+from app.models.branch import Branch
 from app.models.user import User
 
 
@@ -27,16 +28,16 @@ MODULE_ROUTE_PREFIXES = {
 }
 
 MODULE_ROLE_ACCESS = {
-    "reception": {"ADMIN", "RECEPTIONIST", "DOCTOR", "NURSE"},
-    "records": {"ADMIN", "DOCTOR", "NURSE"},
-    "consultations": {"ADMIN", "DOCTOR", "NURSE"},
-    "nursing": {"ADMIN", "DOCTOR", "NURSE"},
-    "lab": {"ADMIN", "DOCTOR", "LAB_TECH"},
-    "pharmacy": {"ADMIN", "DOCTOR", "PHARMACIST"},
-    "billing": {"ADMIN", "RECEPTIONIST"},
-    "radiology": {"ADMIN", "DOCTOR"},
-    "inventory": {"ADMIN", "PHARMACIST"},
-    "reports": {"ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH"},
+    "reception": {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "DOCTOR", "NURSE"},
+    "records": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"},
+    "consultations": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"},
+    "nursing": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"},
+    "lab": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "LAB_TECH"},
+    "pharmacy": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"},
+    "billing": {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST"},
+    "radiology": {"ADMIN", "BRANCH_ADMIN", "DOCTOR"},
+    "inventory": {"ADMIN", "BRANCH_ADMIN", "PHARMACIST"},
+    "reports": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH"},
 }
 
 
@@ -104,11 +105,26 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
         if not facility:
             return await call_next(request)
 
-        if required_module not in normalize_stored_modules(facility.modules):
+        effective_modules = facility.modules
+        branch_id = user.branch_id or user.department_id
+        if branch_id and user.role != "ADMIN":
+            branch = (
+                db_session.query(Branch)
+                .filter(
+                    Branch.id == branch_id,
+                    Branch.facility_slug == facility.slug,
+                    Branch.is_active == True,
+                )
+                .first()
+            )
+            if branch and branch.modules:
+                effective_modules = branch.modules
+
+        if required_module not in normalize_stored_modules(effective_modules):
             return JSONResponse(
                 status_code=403,
                 content={
-                    "detail": "This module is not enabled for this facility."
+                    "detail": "This module is not enabled for this workspace."
                 },
             )
 

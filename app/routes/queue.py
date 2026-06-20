@@ -14,6 +14,7 @@ from app.extensions import get_db, db_session
 from app.schemas.queue import QueueListResponse, QueueResponse, QueueCreate, QueueUpdate
 from app.schemas.users import MessageResponse
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
 from app.models.user import User
 from app.models.patient_queue import PatientQueue
 from app.models.patient import Patient
@@ -32,9 +33,10 @@ router = APIRouter(prefix="/queue", tags=["queue"])
 async def get_queue(
     status: Optional[str] = Query(None, pattern="^(waiting|in_progress|completed|no_show)$"),
     department: Optional[str] = Query(None, max_length=100),
+    branch_id: Optional[str] = Query(None, max_length=36),
     page: int = Query(1, ge=1),
     per_page: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Get queue entries for user's facility"""
@@ -48,6 +50,8 @@ async def get_queue(
         query = query.filter_by(status=status)
     if department:
         query = query.filter_by(department=department)
+    branch_scope_id = effective_branch_id(current_user, branch_id)
+    query = apply_branch_filter(query, PatientQueue, branch_scope_id)
 
     query = query.order_by(
         case((PatientQueue.priority == 'urgent', 1), else_=2),
@@ -70,6 +74,7 @@ async def get_queue(
             appointment_time=entry.appointment.appointment_date.isoformat() if entry.appointment and entry.appointment.appointment_date else None,
             facility_slug=entry.facility_slug,
             department=entry.department,
+            branch_id=entry.branch_id,
             status=entry.status,
             queue_number=entry.queue_number,
             priority=entry.priority,
@@ -91,7 +96,7 @@ async def get_queue(
 @router.post("", response_model=QueueResponse, status_code=status.HTTP_201_CREATED)
 async def add_to_queue(
     data: QueueCreate,
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Add patient to queue"""
@@ -104,26 +109,37 @@ async def add_to_queue(
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
 
+    appointment = None
     # Verify appointment if provided
     if data.appointment_id:
         appointment = db_session.query(Appointment).filter_by(id=data.appointment_id, facility_slug=facility_slug).first()
         if not appointment:
             raise HTTPException(status_code=404, detail="Appointment not found")
 
+    branch_scope_id = effective_branch_id(current_user, data.branch_id) or data.branch_id or patient.branch_id or patient.department_id
+    if branch_scope_id and not belongs_to_branch(patient, branch_scope_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if appointment and branch_scope_id and not belongs_to_branch(appointment, branch_scope_id):
+        raise HTTPException(status_code=404, detail="Appointment not found")
+
     # Check if patient already in queue with active status
-    existing = db_session.query(PatientQueue).filter(
+    existing_query = db_session.query(PatientQueue).filter(
         PatientQueue.patient_id == data.patient_id,
         PatientQueue.facility_slug == facility_slug,
         PatientQueue.status.in_(['waiting', 'in_progress'])
-    ).first()
+    )
+    existing_query = apply_branch_filter(existing_query, PatientQueue, branch_scope_id)
+    existing = existing_query.first()
     if existing:
         raise HTTPException(status_code=400, detail="Patient is already in queue")
 
     # Get next queue number
-    last_entry = db_session.query(PatientQueue).filter_by(
+    last_entry_query = db_session.query(PatientQueue).filter_by(
         facility_slug=facility_slug,
         department=data.department
-    ).order_by(PatientQueue.queue_number.desc()).first()
+    )
+    last_entry_query = apply_branch_filter(last_entry_query, PatientQueue, branch_scope_id)
+    last_entry = last_entry_query.order_by(PatientQueue.queue_number.desc()).first()
 
     next_number = (last_entry.queue_number + 1) if last_entry else 1
 
@@ -135,6 +151,7 @@ async def add_to_queue(
         facility_slug=facility_slug,
         patient_id=data.patient_id,
         appointment_id=data.appointment_id,
+        branch_id=branch_scope_id,
         department=department,
         priority=data.priority,
         queue_number=next_number,
@@ -154,6 +171,7 @@ async def add_to_queue(
         appointment_time=queue_entry.appointment.appointment_date.isoformat() if queue_entry.appointment and queue_entry.appointment.appointment_date else None,
         facility_slug=queue_entry.facility_slug,
         department=queue_entry.department,
+        branch_id=queue_entry.branch_id,
         status=queue_entry.status,
         queue_number=queue_entry.queue_number,
         priority=queue_entry.priority,
@@ -167,7 +185,7 @@ async def add_to_queue(
 @router.get("/{queue_id}", response_model=QueueResponse)
 async def get_queue_entry(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Get queue entry by ID"""
@@ -177,6 +195,10 @@ async def get_queue_entry(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     return QueueResponse(
@@ -203,7 +225,7 @@ async def get_queue_entry(
 async def update_queue_entry(
     queue_id: str,
     data: QueueUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE')),
     db: Session = Depends(get_db)
 ):
     """Update queue entry"""
@@ -213,6 +235,10 @@ async def update_queue_entry(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     if data.status is not None:
@@ -252,7 +278,7 @@ async def update_queue_entry(
 @router.delete("/{queue_id}", response_model=MessageResponse)
 async def remove_from_queue(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Remove patient from queue"""
@@ -262,6 +288,10 @@ async def remove_from_queue(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     if entry.status == 'in_progress':
@@ -276,7 +306,7 @@ async def remove_from_queue(
 @router.put("/{queue_id}/checkin", response_model=QueueResponse)
 async def check_in_patient(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Check in patient"""
@@ -286,6 +316,10 @@ async def check_in_patient(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     if entry.status != 'waiting':
@@ -318,7 +352,7 @@ async def check_in_patient(
 @router.put("/{queue_id}/start", response_model=QueueResponse)
 async def start_visit(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Start patient visit"""
@@ -328,6 +362,10 @@ async def start_visit(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     if entry.status != 'waiting':
@@ -360,7 +398,7 @@ async def start_visit(
 @router.put("/{queue_id}/complete", response_model=QueueResponse)
 async def complete_visit(
     queue_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """Complete patient visit"""
@@ -370,6 +408,10 @@ async def complete_visit(
 
     entry = db_session.query(PatientQueue).filter_by(id=queue_id, facility_slug=facility_slug).first()
     if not entry:
+        raise HTTPException(status_code=404, detail="Queue entry not found")
+
+    branch_scope_id = effective_branch_id(current_user)
+    if branch_scope_id and not belongs_to_branch(entry, branch_scope_id):
         raise HTTPException(status_code=404, detail="Queue entry not found")
 
     if entry.status not in {'waiting', 'in_progress'}:

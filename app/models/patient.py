@@ -22,7 +22,8 @@ class Patient(BaseModel):
     created_by = Column(String(36), ForeignKey('users.id'), index=True)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
-    department_id = Column(String(36), nullable=True, index=True)
+    department_id = Column(String(36), nullable=True, index=True)  # legacy clinic/department scope
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
 
     # Relationships
     appointments = relationship('Appointment', backref='patient', lazy=True)

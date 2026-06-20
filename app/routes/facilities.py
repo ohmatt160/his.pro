@@ -13,6 +13,7 @@ import string
 import uuid
 
 from app.extensions import get_db, db_session
+from app.schemas.branches import BranchCreate, BranchModulesUpdate, BranchResponse, BranchUpdate
 from app.schemas.facilities import (
     DepartmentCreate,
     DepartmentUpdate,
@@ -27,6 +28,7 @@ from app.utils.dependencies import get_current_user, role_required
 from app.utils.validators import Validators
 from app.models.user import User
 from app.models.facility import Facility
+from app.models.branch import Branch
 from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,110 @@ def normalize_facility_modules(
     return normalized
 
 
+
+
+def build_branch_response(branch: Branch) -> BranchResponse:
+    return BranchResponse(
+        id=str(branch.id),
+        facility_id=str(branch.facility_id),
+        facility_slug=branch.facility_slug,
+        name=branch.name,
+        slug=branch.slug,
+        location=branch.location,
+        address=branch.address,
+        phone=branch.phone,
+        email=branch.email,
+        modules=normalize_facility_modules(branch.modules, "hospital") if branch.modules else [],
+        settings=branch.settings or {},
+        is_public=bool(branch.is_public),
+        is_active=bool(branch.is_active),
+        login_url_path=f"/{branch.facility_slug}/branches/{branch.slug}/login",
+        dashboard_url_path=f"/dashboard/{branch.facility_slug}?branch={branch.slug}",
+        created_at=branch.created_at.isoformat() if branch.created_at else "",
+        updated_at=branch.updated_at.isoformat() if branch.updated_at else None,
+    )
+
+
+def branch_slug(name: str, facility_slug: str, exclude_id: str | None = None) -> str:
+    base_slug = Validators.generate_slug(name)
+    slug = base_slug
+    suffix = 2
+    query = db_session.query(Branch).filter_by(facility_slug=facility_slug)
+    if exclude_id:
+        query = query.filter(Branch.id != exclude_id)
+    existing = {branch.slug for branch in query.all()}
+    while slug in existing:
+        slug = f"{base_slug}-{suffix}"
+        suffix += 1
+    return slug
+
+
+def sync_legacy_departments_to_branches(facility: Facility) -> list[Branch]:
+    branches = (
+        db_session.query(Branch)
+        .filter_by(facility_slug=facility.slug, is_active=True)
+        .order_by(Branch.created_at.asc())
+        .all()
+    )
+    if branches or not facility.departments:
+        return branches
+
+    created: list[Branch] = []
+    for legacy in facility.departments or []:
+        name = Validators.sanitize_string(str(legacy.get("name") or ""))
+        if not name:
+            continue
+        modules = legacy.get("modules") or legacy.get("services") or facility.modules or []
+        try:
+            modules = normalize_facility_modules(modules, facility.type)
+        except HTTPException:
+            modules = normalize_facility_modules(facility.modules, facility.type)
+        branch = Branch(
+            facility_id=facility.id,
+            facility_slug=facility.slug,
+            name=name,
+            slug=legacy.get("slug") or branch_slug(name, facility.slug),
+            location=legacy.get("location") or "",
+            phone=legacy.get("phone_extension") or "",
+            modules=modules,
+            settings={"legacy_department_id": legacy.get("id")},
+            is_public=bool(legacy.get("is_visible")),
+        )
+        db_session.add(branch)
+        created.append(branch)
+    if created:
+        db_session.flush()
+        branches = created
+    return branches
+
+
+def get_facility_branches(facility: Facility) -> list[Branch]:
+    return sync_legacy_departments_to_branches(facility)
+
+
+def get_branch_or_404(facility: Facility, branch_id_or_slug: str) -> Branch:
+    branch = (
+        db_session.query(Branch)
+        .filter(
+            Branch.facility_slug == facility.slug,
+            Branch.is_active == True,
+            or_(Branch.id == branch_id_or_slug, Branch.slug == branch_id_or_slug),
+        )
+        .first()
+    )
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+    return branch
+
+
+def require_branch_access(user: User, branch: Branch) -> None:
+    if user.role == "ADMIN":
+        return
+    allowed = {str(user.branch_id or ""), *[str(item) for item in (user.branch_ids or [])]}
+    legacy_allowed = {str(user.department_id or ""), *[str(item) for item in (user.departments or [])]}
+    if str(branch.id) not in allowed and str(branch.id) not in legacy_allowed:
+        raise HTTPException(status_code=403, detail="Cannot access another branch")
+
 def build_facility_response(facility: Facility) -> FacilityResponse:
     return FacilityResponse(
         id=str(facility.id),
@@ -89,6 +195,7 @@ def build_facility_response(facility: Facility) -> FacilityResponse:
         email=facility.email,
         hospital_type=facility.hospital_type or "single",
         departments=facility.departments or [],
+        branches=[build_branch_response(branch) for branch in get_facility_branches(facility)],
         modules=normalize_facility_modules(facility.modules, facility.type),
         settings=facility.settings or {},
         is_active=facility.is_active,
@@ -147,6 +254,7 @@ def attach_user_to_facility(user: User, facility: Facility) -> None:
 
 
 FRONTEND_TO_BACKEND_ROLE = {
+    "branch_admin": "BRANCH_ADMIN",
     "doctor": "DOCTOR",
     "nurse": "NURSE",
     "reception": "RECEPTIONIST",
@@ -156,6 +264,7 @@ FRONTEND_TO_BACKEND_ROLE = {
 
 BACKEND_TO_FRONTEND_ROLE = {
     "ADMIN": "admin",
+    "BRANCH_ADMIN": "branch_admin",
     "DOCTOR": "doctor",
     "NURSE": "nurse",
     "RECEPTIONIST": "reception",
@@ -165,6 +274,7 @@ BACKEND_TO_FRONTEND_ROLE = {
 
 ROLE_PREFIX = {
     "ADMIN": "ADM",
+    "BRANCH_ADMIN": "BADM",
     "DOCTOR": "DOC",
     "NURSE": "NUR",
     "RECEPTIONIST": "REC",
@@ -236,6 +346,8 @@ def build_staff_response(
         department=user.department or "",
         departmentId=user.department_id,
         departmentIds=user.departments or [],
+        branchId=user.branch_id or user.department_id,
+        branchIds=user.branch_ids or user.departments or [],
         email=user.email,
         phone=user.phone or "—",
         loginId=user.username,
@@ -412,6 +524,182 @@ async def update_facility_settings(
     return build_facility_response(facility)
 
 
+
+
+@router.get("/{facility_slug}/branches", response_model=List[BranchResponse])
+async def list_branches(
+    facility_slug: str,
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    if current_user.facility_slug != facility.slug and str(current_user.facility_id or "") != str(facility.id):
+        raise HTTPException(status_code=403, detail="Cannot access another facility")
+    branches = get_facility_branches(facility)
+    if current_user.role == "ADMIN":
+        return [build_branch_response(branch) for branch in branches]
+    allowed = {str(current_user.branch_id or current_user.department_id or "")}
+    allowed.update(str(item) for item in (current_user.branch_ids or current_user.departments or []))
+    return [build_branch_response(branch) for branch in branches if str(branch.id) in allowed]
+
+
+@router.post("/{facility_slug}/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)
+async def create_branch(
+    facility_slug: str,
+    data: BranchCreate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    name = Validators.sanitize_string(data.name)
+    modules = normalize_facility_modules(data.modules or facility.modules, facility.type)
+    branch = Branch(
+        facility_id=facility.id,
+        facility_slug=facility.slug,
+        name=name,
+        slug=branch_slug(name, facility.slug),
+        location=Validators.sanitize_string(data.location or ""),
+        address=Validators.sanitize_string(data.address or ""),
+        phone=Validators.sanitize_string(data.phone or ""),
+        email=str(data.email).lower() if data.email else "",
+        modules=modules,
+        settings=data.settings or {},
+    )
+    db_session.add(branch)
+    if facility.hospital_type != "multi_clinic":
+        facility.hospital_type = "multi_clinic"
+        db_session.add(facility)
+    db_session.commit()
+    db_session.refresh(branch)
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="CREATE_BRANCH",
+        resource_type="branch",
+        resource_id=branch.id,
+        facility_slug=facility.slug,
+        details={"name": branch.name, "modules": branch.modules},
+        request=request,
+    )
+    return build_branch_response(branch)
+
+
+@router.put("/{facility_slug}/branches/{branch_id_or_slug}", response_model=BranchResponse)
+async def update_branch(
+    facility_slug: str,
+    branch_id_or_slug: str,
+    data: BranchUpdate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    branch = get_branch_or_404(facility, branch_id_or_slug)
+    if current_user.role == "ADMIN":
+        require_admin_for_facility(current_user, facility)
+    else:
+        require_branch_access(current_user, branch)
+    payload = data.model_dump(exclude_unset=True)
+    if "name" in payload and payload["name"]:
+        branch.name = Validators.sanitize_string(payload["name"])
+        branch.slug = branch_slug(branch.name, facility.slug, exclude_id=branch.id)
+    for field in ("location", "address", "phone"):
+        if field in payload:
+            setattr(branch, field, Validators.sanitize_string(payload.get(field) or ""))
+    if "email" in payload:
+        branch.email = str(payload["email"]).lower() if payload["email"] else ""
+    if "modules" in payload and payload["modules"] is not None:
+        branch.modules = normalize_facility_modules(payload["modules"], facility.type)
+    if "settings" in payload and payload["settings"] is not None:
+        branch.settings = payload["settings"]
+    if "is_public" in payload:
+        branch.is_public = bool(payload["is_public"])
+    if "is_active" in payload and current_user.role == "ADMIN":
+        branch.is_active = bool(payload["is_active"])
+    db_session.add(branch)
+    db_session.commit()
+    db_session.refresh(branch)
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_BRANCH",
+        resource_type="branch",
+        resource_id=branch.id,
+        facility_slug=facility.slug,
+        details={"fields": sorted(payload.keys())},
+        request=request,
+    )
+    return build_branch_response(branch)
+
+
+@router.put("/{facility_slug}/branches/{branch_id_or_slug}/modules", response_model=BranchResponse)
+async def update_branch_modules(
+    facility_slug: str,
+    branch_id_or_slug: str,
+    data: BranchModulesUpdate,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    branch = get_branch_or_404(facility, branch_id_or_slug)
+    if current_user.role == "ADMIN":
+        require_admin_for_facility(current_user, facility)
+    else:
+        require_branch_access(current_user, branch)
+    branch.modules = normalize_facility_modules(data.modules, facility.type)
+    db_session.add(branch)
+    db_session.commit()
+    db_session.refresh(branch)
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="UPDATE_BRANCH_MODULES",
+        resource_type="branch",
+        resource_id=branch.id,
+        facility_slug=facility.slug,
+        details={"modules": branch.modules},
+        request=request,
+    )
+    return build_branch_response(branch)
+
+
+@router.delete("/{facility_slug}/branches/{branch_id_or_slug}", response_model=MessageResponse)
+async def deactivate_branch(
+    facility_slug: str,
+    branch_id_or_slug: str,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    branch = get_branch_or_404(facility, branch_id_or_slug)
+    assigned_staff = (
+        db_session.query(User)
+        .filter(
+            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+            User.is_active == True,
+            or_(User.branch_id == branch.id, User.department_id == branch.id),
+        )
+        .count()
+    )
+    if assigned_staff:
+        raise HTTPException(status_code=400, detail="Cannot remove a branch with active staff assigned")
+    branch.is_active = False
+    db_session.add(branch)
+    db_session.commit()
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="DEACTIVATE_BRANCH",
+        resource_type="branch",
+        resource_id=branch.id,
+        facility_slug=facility.slug,
+        details={},
+        request=request,
+    )
+    return MessageResponse(message="Branch removed successfully")
+
+
 @router.get("/{facility_slug}/departments")
 async def list_departments(
     facility_slug: str,
@@ -529,22 +817,28 @@ async def remove_department(
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])
 async def get_facility_staff(
     facility_slug: str,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     """List active staff accounts for a facility."""
     facility = get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility)
+    if current_user.role == 'ADMIN':
+        require_admin_for_facility(current_user, facility)
+    elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
+        raise HTTPException(status_code=403, detail='Cannot access another facility')
 
-    staff = (
+    query = (
         db_session.query(User)
         .filter(
             or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
             User.is_active == True,
         )
-        .order_by(User.created_at.asc())
-        .all()
     )
+    if current_user.role == 'BRANCH_ADMIN':
+        branch_id = current_user.branch_id or current_user.department_id
+        query = query.filter(or_(User.branch_id == branch_id, User.department_id == branch_id))
+
+    staff = query.order_by(User.created_at.asc()).all()
 
     return [build_staff_response(member) for member in staff]
 
@@ -552,7 +846,7 @@ async def get_facility_staff(
 @router.get("/{facility_slug}/clinicians", response_model=List[FacilityStaffResponse])
 async def get_facility_clinicians(
     facility_slug: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     """List active clinicians that can be assigned to appointments."""
@@ -585,26 +879,36 @@ async def get_facility_clinicians(
 async def create_facility_staff(
     facility_slug: str,
     data: FacilityStaffCreate,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     """Create a staff user for a facility and return one-time credentials."""
     facility = get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility)
+    if current_user.role == 'ADMIN':
+        require_admin_for_facility(current_user, facility)
+    elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
+        raise HTTPException(status_code=403, detail='Cannot access another facility')
 
     frontend_role = data.role.lower()
     role = FRONTEND_TO_BACKEND_ROLE.get(frontend_role, data.role.upper())
     if role not in ROLE_PREFIX or role == "ADMIN":
         raise HTTPException(status_code=400, detail="Invalid staff role")
+    if current_user.role == 'BRANCH_ADMIN' and role == 'BRANCH_ADMIN':
+        raise HTTPException(status_code=403, detail="Branch admins cannot create other branch admins")
 
     full_name = Validators.sanitize_string(data.fullName)
     department = Validators.sanitize_string(data.department)
-    department_id = data.departmentId
-    department_ids = data.departmentIds or ([department_id] if department_id else [])
-    if department_id:
-        require_department(facility, department_id)
-    for assigned_department_id in department_ids:
-        require_department(facility, assigned_department_id)
+    branch_id = data.branchId or data.departmentId
+    branch_ids = data.branchIds or data.departmentIds or ([branch_id] if branch_id else [])
+    if current_user.role == 'BRANCH_ADMIN':
+        branch_id = current_user.branch_id or current_user.department_id
+        branch_ids = [branch_id] if branch_id else []
+    if branch_id:
+        get_branch_or_404(facility, branch_id)
+    for assigned_branch_id in branch_ids:
+        get_branch_or_404(facility, assigned_branch_id)
+    department_id = branch_id
+    department_ids = branch_ids
     first_name, last_name = split_full_name(full_name)
     login_id = next_staff_login_id(facility, role)
     email = str(data.email).lower() if data.email else f"{login_id.lower()}@{facility_slug}.hispro.local"
@@ -630,6 +934,8 @@ async def create_facility_staff(
         department=department,
         department_id=department_id,
         departments=department_ids,
+        branch_id=branch_id,
+        branch_ids=branch_ids,
         facility_id=facility.id,
         facility_slug=facility_slug,
         must_change_password=True,
@@ -656,7 +962,10 @@ async def get_facility_staff_member(
 ):
     """Get one staff account by login ID."""
     facility = get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility)
+    if current_user.role == 'ADMIN':
+        require_admin_for_facility(current_user, facility)
+    elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
+        raise HTTPException(status_code=403, detail='Cannot access another facility')
 
     member = (
         db_session.query(User)
@@ -679,12 +988,15 @@ async def update_facility_staff_member(
     login_id: str,
     data: FacilityStaffUpdate,
     request: Request,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
     """Update a staff account's details, role, active state, or password."""
     facility = get_facility_or_404(facility_slug)
-    require_admin_for_facility(current_user, facility)
+    if current_user.role == 'ADMIN':
+        require_admin_for_facility(current_user, facility)
+    elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
+        raise HTTPException(status_code=403, detail='Cannot access another facility')
 
     member = (
         db_session.query(User)
@@ -696,6 +1008,10 @@ async def update_facility_staff_member(
     )
     if not member:
         raise HTTPException(status_code=404, detail="Staff member not found")
+    if current_user.role == 'BRANCH_ADMIN':
+        branch_id = current_user.branch_id or current_user.department_id
+        if (member.branch_id or member.department_id) != branch_id:
+            raise HTTPException(status_code=403, detail="Branch admins can only update staff assigned to their branch")
 
     payload = data.model_dump(exclude_unset=True)
 
@@ -708,23 +1024,31 @@ async def update_facility_staff_member(
         role = FRONTEND_TO_BACKEND_ROLE.get(frontend_role, payload["role"].upper())
         if role not in ROLE_PREFIX or role == "ADMIN":
             raise HTTPException(status_code=400, detail="Invalid staff role")
+        if current_user.role == 'BRANCH_ADMIN' and role == 'BRANCH_ADMIN':
+            raise HTTPException(status_code=403, detail="Branch admins cannot assign branch admin role")
         member.role = role
 
     if "department" in payload and payload["department"] is not None:
         member.department = Validators.sanitize_string(payload["department"])
 
-    if "departmentId" in payload:
-        department_id = payload["departmentId"]
-        if department_id:
-            require_department(facility, department_id)
-        member.department_id = department_id
-        if payload.get("departmentIds") is None:
-            member.departments = [department_id] if department_id else []
+    if "branchId" in payload or "departmentId" in payload:
+        branch_id = payload.get("branchId", payload.get("departmentId"))
+        if current_user.role == 'BRANCH_ADMIN':
+            branch_id = current_user.branch_id or current_user.department_id
+        if branch_id:
+            get_branch_or_404(facility, branch_id)
+        member.branch_id = branch_id
+        member.department_id = branch_id
+        if payload.get("branchIds") is None and payload.get("departmentIds") is None:
+            member.branch_ids = [branch_id] if branch_id else []
+            member.departments = [branch_id] if branch_id else []
 
-    if "departmentIds" in payload and payload["departmentIds"] is not None:
-        for assigned_department_id in payload["departmentIds"]:
-            require_department(facility, assigned_department_id)
-        member.departments = payload["departmentIds"]
+    if "branchIds" in payload or ("departmentIds" in payload and payload["departmentIds"] is not None):
+        branch_ids = payload.get("branchIds", payload.get("departmentIds") or [])
+        for assigned_branch_id in branch_ids:
+            get_branch_or_404(facility, assigned_branch_id)
+        member.branch_ids = branch_ids
+        member.departments = branch_ids
 
     if "phone" in payload:
         member.phone = Validators.sanitize_string(payload["phone"] or "—")
@@ -890,3 +1214,4 @@ async def update_facility_modules(
     )
 
     return build_facility_response(facility)
+

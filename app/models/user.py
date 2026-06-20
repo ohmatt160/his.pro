@@ -18,8 +18,10 @@ class User(BaseModel):
     last_name = Column(String(100))
     phone = Column(String(20))
     department = Column(String(100))
-    department_id = Column(String(36), nullable=True, index=True)
-    departments = Column(JSON, default=list)
+    department_id = Column(String(36), nullable=True, index=True)  # legacy branch/location assignment
+    departments = Column(JSON, default=list)  # legacy multi-branch access list
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
+    branch_ids = Column(JSON, default=list)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     must_change_password = Column(Boolean, default=False)
@@ -50,4 +52,4 @@ class User(BaseModel):
 
     @staticmethod
     def get_roles():
-        return ['ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH', 'PHARMACIST', 'RECEPTIONIST']
+        return ['ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH', 'PHARMACIST', 'RECEPTIONIST']

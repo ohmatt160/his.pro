@@ -81,6 +81,25 @@ const PublicProfile = () => {
       .finally(() => setLoading(false));
   }, [facilitySlug]);
 
+  const persistProfile = async (nextProfile: PublicProfileData, successMessage = "Public profile saved.") => {
+    const previousProfile = profile;
+    setProfile(nextProfile);
+    setError("");
+    setStatus("Saving...");
+    try {
+      const updated = await apiClient.put<PublicProfileData>(
+        `/facilities/${facilitySlug}/public-profile`,
+        nextProfile
+      );
+      setProfile(updated);
+      setStatus(successMessage);
+    } catch (saveError) {
+      setProfile(previousProfile);
+      setError(saveError instanceof Error ? saveError.message : "Public profile update failed.");
+      setStatus("");
+    }
+  };
+
   const updateDepartment = (departmentId: string, update: Partial<PublicDepartment>) => {
     setProfile((current) => ({
       ...current,
@@ -92,18 +111,27 @@ const PublicProfile = () => {
 
   const saveProfile = async (event?: FormEvent) => {
     event?.preventDefault();
-    setError("");
-    setStatus("");
-    try {
-      const updated = await apiClient.put<PublicProfileData>(
-        `/facilities/${facilitySlug}/public-profile`,
-        profile
-      );
-      setProfile(updated);
-      setStatus("Public profile saved.");
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Public profile update failed.");
-    }
+    await persistProfile(profile);
+  };
+
+  const togglePublicProfile = (is_public: boolean) => {
+    persistProfile(
+      { ...profile, is_public },
+      is_public ? "Public profile is now visible." : "Public profile is now private."
+    );
+  };
+
+  const toggleDepartmentVisibility = (departmentId: string, is_visible: boolean) => {
+    const nextProfile = {
+      ...profile,
+      departments: profile.departments.map((department) =>
+        department.id === departmentId ? { ...department, is_visible } : department
+      ),
+    };
+    persistProfile(
+      nextProfile,
+      is_visible ? "Department is now visible publicly." : "Department is now hidden publicly."
+    );
   };
 
   const addService = () => {
@@ -176,7 +204,7 @@ const PublicProfile = () => {
                   Visible on HIS.Pro
                   <Switch
                     checked={profile.is_public}
-                    onCheckedChange={(is_public) => setProfile((current) => ({ ...current, is_public }))}
+                    onCheckedChange={togglePublicProfile}
                   />
                 </span>
               </CardTitle>
@@ -234,7 +262,7 @@ const PublicProfile = () => {
                       <Switch
                         checked={department.is_visible}
                         onClick={(event) => event.stopPropagation()}
-                        onCheckedChange={(is_visible) => updateDepartment(department.id, { is_visible })}
+                        onCheckedChange={(is_visible) => toggleDepartmentVisibility(department.id, is_visible)}
                       />
                     </span>
                   </button>
@@ -332,3 +360,4 @@ const Field = ({
 );
 
 export default PublicProfile;
+

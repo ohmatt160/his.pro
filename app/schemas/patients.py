@@ -17,6 +17,7 @@ class PatientCreate(BaseModel):
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=20)
     department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class PatientUpdate(BaseModel):
@@ -32,6 +33,7 @@ class PatientUpdate(BaseModel):
     emergency_contact_name: Optional[str] = Field(None, max_length=100)
     emergency_contact_phone: Optional[str] = Field(None, max_length=20)
     department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class PatientResponse(BaseModel):
@@ -50,6 +52,7 @@ class PatientResponse(BaseModel):
     created_by: str
     facility_slug: Optional[str]
     department_id: Optional[str] = None
+    branch_id: Optional[str] = None
     is_active: bool
     created_at: str
     updated_at: Optional[str]

@@ -57,19 +57,25 @@ type Facility = {
   email?: string | null;
   hospital_type?: "single" | "multi_clinic";
   departments?: Department[];
+  branches?: Branch[];
   modules: string[];
   settings: Record<string, unknown>;
 };
 
-type Department = {
+type Branch = {
   id: string;
   name: string;
   slug?: string;
   location?: string;
   phone_extension?: string;
   services?: string[];
+  modules?: string[];
   is_visible?: boolean;
+  login_url_path?: string;
+  dashboard_url_path?: string;
 };
+
+type Department = Branch;
 
 type UserProfile = {
   id: string;
@@ -235,21 +241,29 @@ const Settings = () => {
     }
   };
 
-  const saveHospitalType = async () => {
+  const saveHospitalType = async (nextType: "single" | "multi_clinic" = hospitalType) => {
     if (!facility) {
       return;
     }
+    const previousType = hospitalType;
+    setHospitalType(nextType);
     setError("");
-    setHospitalTypeStatus("");
+    setHospitalTypeStatus("Saving hospital type...");
     try {
       const updated = await apiClient.put<Facility>(`/facilities/${facility.slug}/settings`, {
-        hospital_type: hospitalType,
+        hospital_type: nextType,
       });
       setFacility(updated);
       setHospitalType(updated.hospital_type || "single");
-      setHospitalTypeStatus("Hospital type saved.");
+      setHospitalTypeStatus(
+        updated.hospital_type === "multi_clinic"
+          ? "Multi-branch mode enabled."
+          : "Single hospital mode enabled."
+      );
     } catch (saveError) {
+      setHospitalType(previousType);
       setError(saveError instanceof Error ? saveError.message : "Hospital type update failed.");
+      setHospitalTypeStatus("");
     }
   };
 
@@ -288,25 +302,25 @@ const Settings = () => {
     try {
       const department = editingDepartmentId
         ? await apiClient.put<Department>(
-            `/facilities/${facility.slug}/departments/${editingDepartmentId}`,
+            `/facilities/${facility.slug}/branches/${editingDepartmentId}`,
             payload
           )
-        : await apiClient.post<Department>(`/facilities/${facility.slug}/departments`, payload);
+        : await apiClient.post<Department>(`/facilities/${facility.slug}/branches`, payload);
       setFacility((current) => {
         if (!current) {
           return current;
         }
-        const departments = current.departments || [];
-        const nextDepartments = editingDepartmentId
-          ? departments.map((item) => (item.id === department.id ? department : item))
-          : [...departments, department];
-        return { ...current, hospital_type: "multi_clinic", departments: nextDepartments };
+        const branches = current.branches || current.departments || [];
+        const nextBranches = editingDepartmentId
+          ? branches.map((item) => (item.id === department.id ? department : item))
+          : [...branches, department];
+        return { ...current, hospital_type: "multi_clinic", branches: nextBranches, departments: nextBranches };
       });
       setHospitalType("multi_clinic");
-      setDepartmentStatus(editingDepartmentId ? "Department saved." : "Department added.");
+      setDepartmentStatus(editingDepartmentId ? "Branch saved." : "Branch added.");
       resetDepartmentForm();
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : "Department update failed.");
+      setError(saveError instanceof Error ? saveError.message : "Branch update failed.");
     }
   };
 
@@ -317,16 +331,16 @@ const Settings = () => {
     setError("");
     setDepartmentStatus("");
     try {
-      await apiClient.del(`/facilities/${facility.slug}/departments/${departmentId}`);
+      await apiClient.del(`/facilities/${facility.slug}/branches/${departmentId}`);
       setFacility((current) => current
-        ? { ...current, departments: (current.departments || []).filter((department) => department.id !== departmentId) }
+        ? { ...current, branches: (current.branches || current.departments || []).filter((department) => department.id !== departmentId), departments: (current.branches || current.departments || []).filter((department) => department.id !== departmentId) }
         : current);
-      setDepartmentStatus("Department removed.");
+      setDepartmentStatus("Branch removed.");
       if (editingDepartmentId === departmentId) {
         resetDepartmentForm();
       }
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "Department could not be removed.");
+      setError(deleteError instanceof Error ? deleteError.message : "Branch could not be removed.");
     }
   };
 
@@ -516,7 +530,7 @@ const Settings = () => {
               <div className="grid gap-3 sm:grid-cols-2">
                 <button
                   type="button"
-                  onClick={() => setHospitalType("single")}
+                  onClick={() => saveHospitalType("single")}
                   className={`rounded-lg border p-4 text-left transition-colors ${
                     hospitalType === "single"
                       ? "border-primary bg-primary/10"
@@ -530,7 +544,7 @@ const Settings = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setHospitalType("multi_clinic")}
+                  onClick={() => saveHospitalType("multi_clinic")}
                   className={`rounded-lg border p-4 text-left transition-colors ${
                     hospitalType === "multi_clinic"
                       ? "border-primary bg-primary/10"
@@ -545,8 +559,8 @@ const Settings = () => {
               </div>
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-emerald-700">{hospitalTypeStatus}</p>
-                <Button type="button" className="gradient-cta gap-2 border-0 text-primary-foreground" onClick={saveHospitalType}>
-                  <Save className="h-4 w-4" /> Save Hospital Type
+                <Button type="button" className="gradient-cta gap-2 border-0 text-primary-foreground" onClick={() => saveHospitalType()}>
+                  <Save className="h-4 w-4" /> Save Current Type
                 </Button>
               </div>
 
@@ -554,26 +568,31 @@ const Settings = () => {
                 <div className="space-y-4 border-t border-border/60 pt-5">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <h3 className="text-sm font-semibold text-foreground">Departments</h3>
-                      <p className="text-sm text-muted-foreground">Clinics, branches, wings, and service locations.</p>
+                      <h3 className="text-sm font-semibold text-foreground">Branches / Clinics</h3>
+                      <p className="text-sm text-muted-foreground">Physical branches, clinics, buildings, wings, or service locations under this facility.</p>
                     </div>
                     {departmentStatus && <p className="text-sm text-emerald-700">{departmentStatus}</p>}
                   </div>
 
                   <div className="grid gap-3">
-                    {(facility?.departments || []).length === 0 ? (
+                    {(facility?.branches || facility?.departments || []).length === 0 ? (
                       <p className="rounded-lg border border-dashed border-border/70 p-4 text-sm text-muted-foreground">
-                        No departments yet. Add the first clinic or branch below.
+                        No branches or clinics yet. Add the first location below.
                       </p>
                     ) : (
-                      (facility?.departments || []).map((department) => (
+                      (facility?.branches || facility?.departments || []).map((department) => (
                         <div key={department.id} className="flex flex-col gap-3 rounded-lg border border-border/60 p-4 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="font-semibold text-foreground">{department.name}</p>
                             <p className="text-sm text-muted-foreground">{department.location || "No location set"}</p>
                             <p className="text-xs text-muted-foreground">
-                              Services: {(department.services || []).length || 0}
+                              Public services: {(department.services || []).length || 0}
                             </p>
+                            {department.login_url_path && (
+                              <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
+                                Branch login: {`${window.location.origin}${department.login_url_path}`}
+                              </p>
+                            )}
                           </div>
                           <div className="flex gap-2">
                             <Button type="button" size="sm" variant="outline" className="gap-2" onClick={() => startEditingDepartment(department)}>
@@ -589,10 +608,10 @@ const Settings = () => {
                   </div>
 
                   <form onSubmit={saveDepartment} className="grid gap-4 rounded-lg border border-border/60 p-4 sm:grid-cols-2">
-                    <Field label="Department Name" value={departmentForm.name} onChange={(value) => setDepartmentForm((current) => ({ ...current, name: value }))} required />
+                    <Field label="Branch / Clinic Name" value={departmentForm.name} onChange={(value) => setDepartmentForm((current) => ({ ...current, name: value }))} required />
                     <Field label="Location" value={departmentForm.location} onChange={(value) => setDepartmentForm((current) => ({ ...current, location: value }))} />
                     <Field label="Phone Extension" value={departmentForm.phone_extension} onChange={(value) => setDepartmentForm((current) => ({ ...current, phone_extension: value }))} />
-                    <Field label="Services" value={departmentForm.services} onChange={(value) => setDepartmentForm((current) => ({ ...current, services: value }))} />
+                    <Field label="Public Services" value={departmentForm.services} onChange={(value) => setDepartmentForm((current) => ({ ...current, services: value }))} />
                     <div className="flex items-center justify-between gap-3 sm:col-span-2">
                       {editingDepartmentId ? (
                         <Button type="button" variant="outline" onClick={resetDepartmentForm}>
@@ -602,7 +621,7 @@ const Settings = () => {
                         <span />
                       )}
                       <Button type="submit" className="gradient-cta gap-2 border-0 text-primary-foreground">
-                        <Plus className="h-4 w-4" /> {editingDepartmentId ? "Save Department" : "Add Department"}
+                        <Plus className="h-4 w-4" /> {editingDepartmentId ? "Save Branch" : "Add Branch"}
                       </Button>
                     </div>
                   </form>
@@ -784,3 +803,4 @@ const SubmitRow = ({ status, label }: { status: string; label: string }) => (
 );
 
 export default Settings;
+

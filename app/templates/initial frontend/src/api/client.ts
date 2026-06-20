@@ -2,6 +2,8 @@ export type AuthUser = {
   id?: string;
   facilityId?: string;
   facilitySlug: string;
+  branchId?: string | null;
+  branchIds?: string[];
   loginId: string;
   role: string;
   fullName: string;

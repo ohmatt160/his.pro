@@ -16,6 +16,7 @@ from app.services.appointment_service import AppointmentService
 from app.services.patient_notification_service import PatientNotificationService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
@@ -32,7 +33,8 @@ async def get_appointments(
     patient_id: Optional[str] = Query(None),
     doctor_id: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None, max_length=36),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -58,16 +60,13 @@ async def get_appointments(
             # Get all appointments for facility
             from app.models.appointment import Appointment
             query = db.query(Appointment).filter_by(facility_slug=facility_slug)
-            if current_user.department_id and current_user.role != "ADMIN":
-                query = query.filter_by(department_id=current_user.department_id)
-            elif department_id and current_user.role == "ADMIN":
-                query = query.filter_by(department_id=department_id)
+            branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+            query = apply_branch_filter(query, Appointment, branch_scope_id)
             appointments = query.order_by(Appointment.scheduled_time.desc()).all()
 
-        if current_user.department_id and current_user.role != "ADMIN":
-            appointments = [a for a in appointments if a.department_id == current_user.department_id]
-        elif department_id and current_user.role == "ADMIN":
-            appointments = [a for a in appointments if a.department_id == department_id]
+        branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+        if branch_scope_id:
+            appointments = [a for a in appointments if belongs_to_branch(a, branch_scope_id)]
 
         return [
             AppointmentResponse(
@@ -82,6 +81,7 @@ async def get_appointments(
                 notes=a.notes,
                 facility_slug=a.facility_slug,
                 department_id=a.department_id,
+                branch_id=a.branch_id or a.department_id,
                 created_at=a.created_at.isoformat() if a.created_at else "",
                 updated_at=a.updated_at.isoformat() if a.updated_at else None
             ) for a in appointments
@@ -97,7 +97,7 @@ async def get_appointments(
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     data: AppointmentCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -116,7 +116,10 @@ async def create_appointment(
 
         payload = data.model_dump()
         payload['facility_slug'] = facility_slug
-        payload['department_id'] = current_user.department_id or payload.get('department_id') or patient.department_id or doctor.department_id
+        resolved_branch_id = current_user.branch_id or payload.get('branch_id') or patient.branch_id or doctor.branch_id
+        legacy_branch_id = current_user.department_id or payload.get('department_id') or patient.department_id or doctor.department_id
+        payload['branch_id'] = resolved_branch_id or legacy_branch_id
+        payload['department_id'] = payload.get('department_id') or legacy_branch_id
 
         # Sanitize
         if payload.get('reason'):
@@ -151,6 +154,7 @@ async def create_appointment(
             notes=appointment.notes,
             facility_slug=appointment.facility_slug,
             department_id=appointment.department_id,
+            branch_id=appointment.branch_id or appointment.department_id,
             created_at=appointment.created_at.isoformat() if appointment.created_at else "",
             updated_at=appointment.updated_at.isoformat() if appointment.updated_at else None
         )
@@ -165,7 +169,7 @@ async def create_appointment(
 @router.get("/{appointment_id}", response_model=AppointmentResponse)
 async def get_appointment(
     appointment_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -176,6 +180,10 @@ async def get_appointment(
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         if appointment.facility_slug != facility_slug:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+
+        branch_scope_id = effective_branch_id(current_user)
+        if branch_scope_id and not belongs_to_branch(appointment, branch_scope_id):
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         return AppointmentResponse(
@@ -190,6 +198,7 @@ async def get_appointment(
             notes=appointment.notes,
             facility_slug=appointment.facility_slug,
             department_id=appointment.department_id,
+            branch_id=appointment.branch_id or appointment.department_id,
             created_at=appointment.created_at.isoformat() if appointment.created_at else "",
             updated_at=appointment.updated_at.isoformat() if appointment.updated_at else None
         )
@@ -205,7 +214,7 @@ async def get_appointment(
 async def update_appointment(
     appointment_id: str,
     data: AppointmentUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -216,6 +225,10 @@ async def update_appointment(
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         if appointment.facility_slug != facility_slug:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+
+        branch_scope_id = effective_branch_id(current_user)
+        if branch_scope_id and not belongs_to_branch(appointment, branch_scope_id):
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         payload = data.model_dump(exclude_unset=True)
@@ -236,6 +249,7 @@ async def update_appointment(
             notes=updated_appointment.notes,
             facility_slug=updated_appointment.facility_slug,
             department_id=updated_appointment.department_id,
+            branch_id=updated_appointment.branch_id or updated_appointment.department_id,
             created_at=updated_appointment.created_at.isoformat() if updated_appointment.created_at else "",
             updated_at=updated_appointment.updated_at.isoformat() if updated_appointment.updated_at else None
         )
@@ -250,7 +264,7 @@ async def update_appointment(
 @router.delete("/{appointment_id}", response_model=MessageResponse)
 async def cancel_appointment(
     appointment_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     try:
@@ -261,6 +275,10 @@ async def cancel_appointment(
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         if appointment.facility_slug != facility_slug:
+            raise HTTPException(status_code=404, detail="Appointment not found")
+
+        branch_scope_id = effective_branch_id(current_user)
+        if branch_scope_id and not belongs_to_branch(appointment, branch_scope_id):
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         cancelled = AppointmentService.cancel_appointment(appointment)

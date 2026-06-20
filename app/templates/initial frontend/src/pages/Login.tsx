@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -36,7 +36,8 @@ const features = [
 const Login = () => {
   const navigate = useNavigate();
   const { facilitySlug = "" } = useParams();
-  const { user, login, sessionMessage, clearSessionMessage } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { user, login, logout, sessionMessage, clearSessionMessage } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
   const [loginValue, setLoginValue] = useState("");
   const [password, setPassword] = useState("");
@@ -57,15 +58,27 @@ const Login = () => {
     getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
   }, [facilitySlug]);
 
-  useEffect(() => {
-    if (user && facilitySlug && user.facilitySlug === facilitySlug) {
-      if (user.role === "admin") {
-        navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
-      } else {
-        navigate(getStaffPortalPath(facilitySlug), { replace: true });
-      }
-    }
-  }, [facilitySlug, navigate, user]);
+  const forceAccountSwitch = searchParams.get("switch") === "1";
+  const signedInToThisFacility = Boolean(
+    user && facilitySlug && user.facilitySlug === facilitySlug
+  );
+  const signedInDestination =
+    user?.role === "admin"
+      ? getFacilityDashboardPath(facilitySlug)
+      : getStaffPortalPath(facilitySlug);
+
+  const handleContinueSession = () => {
+    navigate(signedInDestination, { replace: true });
+  };
+
+  const handleSwitchAccount = () => {
+    logout();
+    clearSessionMessage();
+    setLoginValue("");
+    setPassword("");
+    setError("");
+    navigate(`/${facilitySlug}/login?switch=1`, { replace: true });
+  };
 
   const facilityLink = facilitySlug ? getFacilityLoginLink(facilitySlug) : "";
 
@@ -298,7 +311,46 @@ const Login = () => {
             </>
           )}
 
-          {workspace && (
+          {workspace && signedInToThisFacility && !forceAccountSwitch && user && (
+            <>
+              <div className="mb-8">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
+                    <Building2 className="h-4 w-4 text-primary" />
+                  </div>
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary/75">
+                  {workspace.facilityName}
+                </p>
+                <h2 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground">
+                  You are already signed in
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Continue as {user.fullName || user.loginId}, or sign in with a different account for this facility.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <Button
+                  type="button"
+                  onClick={handleContinueSession}
+                  className="gradient-cta h-11 w-full gap-2 border-0 text-sm font-semibold text-primary-foreground shadow-lg"
+                >
+                  Continue to workspace <ArrowRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleSwitchAccount}
+                  className="h-11 w-full"
+                >
+                  Sign in as another user
+                </Button>
+              </div>
+            </>
+          )}
+
+          {workspace && (!signedInToThisFacility || forceAccountSwitch) && (
             <>
               <div className="mb-8">
                 <div className="mb-2 flex items-center gap-2">
@@ -429,3 +481,5 @@ const Login = () => {
 };
 
 export default Login;
+
+

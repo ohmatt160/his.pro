@@ -39,6 +39,8 @@ async def get_current_user_profile(
         phone=current_user.phone,
         facility_id=str(current_user.facility_id) if current_user.facility_id else None,
         facility_slug=current_user.facility_slug,
+        branch_id=current_user.branch_id or current_user.department_id,
+        branch_ids=current_user.branch_ids or current_user.departments or [],
         is_active=current_user.is_active,
         created_at=current_user.created_at.isoformat() if current_user.created_at else "",
         updated_at=current_user.updated_at.isoformat() if current_user.updated_at else None
@@ -84,6 +86,8 @@ async def update_current_user(
         phone=updated_user.phone,
         facility_id=str(updated_user.facility_id) if updated_user.facility_id else None,
         facility_slug=updated_user.facility_slug,
+        branch_id=updated_user.branch_id or updated_user.department_id,
+        branch_ids=updated_user.branch_ids or updated_user.departments or [],
         is_active=updated_user.is_active,
         created_at=updated_user.created_at.isoformat() if updated_user.created_at else "",
         updated_at=updated_user.updated_at.isoformat() if updated_user.updated_at else None
@@ -138,6 +142,8 @@ async def get_user(
         phone=user.phone,
         facility_id=str(user.facility_id) if user.facility_id else None,
         facility_slug=user.facility_slug,
+        branch_id=user.branch_id or user.department_id,
+        branch_ids=user.branch_ids or user.departments or [],
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else "",
         updated_at=user.updated_at.isoformat() if user.updated_at else None

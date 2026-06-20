@@ -37,7 +37,7 @@ const ProtectedRoute = ({
     return <Navigate to={`/login/${facilitySlug}`} replace />;
   }
 
-  if (requireAdmin && user.role !== "admin") {
+  if (requireAdmin && !["admin", "branch_admin"].includes(user.role)) {
     return <Navigate to={`/portal/${facilitySlug}`} replace />;
   }
 

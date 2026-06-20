@@ -77,6 +77,7 @@ async def get_current_user(
         request.state.user_id = user.id
         request.state.user = token_data
         request.state.tenant_id = str(user.facility_id) if user.facility_id else token_data.get("tid")
+        request.state.branch_id = str(user.branch_id or user.department_id or "") or None
 
         return user
     except HTTPException:

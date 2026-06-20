@@ -8,6 +8,7 @@ from app.models.lab import LabTest, LabOrder, LabResult
 from app.models.pharmacy import Medication, PharmacyInventory, Prescription, PrescriptionItem
 from app.models.medical_record import MedicalRecord
 from app.models.facility import Facility
+from app.models.branch import Branch
 from app.models.radiology import Radiology
 from app.models.inventory import Inventory
 from app.models.supplier import Supplier
@@ -42,6 +43,7 @@ __all__ = [
     'PrescriptionItem',
     'MedicalRecord',
     'Facility',
+    'Branch',
     'Radiology',
     'Inventory',
     'Supplier',

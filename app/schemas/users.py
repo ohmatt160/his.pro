@@ -8,7 +8,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    role: str = Field(..., pattern="^(ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|admin|doctor|nurse|lab_tech|pharmacist|receptionist)$")
+    role: str = Field(..., pattern="^(ADMIN|BRANCH_ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|admin|branch_admin|doctor|nurse|lab_tech|pharmacist|receptionist)$")
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     facility_slug: Optional[str] = Field(None, max_length=100)
@@ -35,6 +35,8 @@ class UserResponse(BaseModel):
     phone: Optional[str] = None
     department_id: Optional[str] = None
     departments: List[str] = []
+    branch_id: Optional[str] = None
+    branch_ids: List[str] = []
     facility_id: Optional[str] = None
     facility_slug: Optional[str]
     is_active: bool
@@ -63,10 +65,12 @@ class UserSessionResponse(BaseModel):
 
 class FacilityStaffCreate(BaseModel):
     fullName: str = Field(..., min_length=2, max_length=200)
-    role: str = Field(..., pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    role: str = Field(..., pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
     department: str = Field(..., min_length=2, max_length=100)
     departmentId: Optional[str] = Field(None, max_length=36)
     departmentIds: List[str] = Field(default_factory=list)
+    branchId: Optional[str] = Field(None, max_length=36)
+    branchIds: List[str] = Field(default_factory=list)
     email: Optional[EmailStr] = Field(None)
     phone: Optional[str] = Field(None, max_length=20)
     password: Optional[str] = Field(None, min_length=8)
@@ -75,10 +79,12 @@ class FacilityStaffCreate(BaseModel):
 
 class FacilityStaffUpdate(BaseModel):
     fullName: Optional[str] = Field(None, min_length=2, max_length=200)
-    role: Optional[str] = Field(None, pattern="^(doctor|nurse|reception|pharmacist|lab|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    role: Optional[str] = Field(None, pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
     department: Optional[str] = Field(None, min_length=2, max_length=100)
     departmentId: Optional[str] = Field(None, max_length=36)
     departmentIds: Optional[List[str]] = None
+    branchId: Optional[str] = Field(None, max_length=36)
+    branchIds: Optional[List[str]] = None
     email: Optional[EmailStr] = Field(None)
     phone: Optional[str] = Field(None, max_length=20)
     password: Optional[str] = Field(None, min_length=8)
@@ -95,6 +101,8 @@ class FacilityStaffResponse(BaseModel):
     department: str
     departmentId: Optional[str] = None
     departmentIds: List[str] = []
+    branchId: Optional[str] = None
+    branchIds: List[str] = []
     email: str
     phone: str
     loginId: str
@@ -104,3 +112,4 @@ class FacilityStaffResponse(BaseModel):
     status: str
     createdAt: str
     createdBy: Optional[str] = None
+

@@ -4,6 +4,7 @@ from app.models.appointment import Appointment
 from app.models.medical_record import MedicalRecord
 from app.models.patient import Patient
 from app.extensions import db
+from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id, user_branch_id
 from datetime import date
 
 class PatientService:
@@ -31,6 +32,7 @@ class PatientService:
             created_by=user_id,
             facility_slug=facility_slug,
             department_id=data.get('department_id'),
+            branch_id=data.get('branch_id') or data.get('department_id'),
         )
         patient.save()
         return patient
@@ -45,7 +47,7 @@ class PatientService:
         return Patient.query.get(patient_id)
     
     @staticmethod
-    def get_all_patients(facility_slug=None, page=1, per_page=20, search=None, current_user=None, department_id=None):
+    def get_all_patients(facility_slug=None, page=1, per_page=20, search=None, current_user=None, department_id=None, branch_id=None):
         """Get paginated list of patients with optional facility filtering"""
         query = Patient.query
 
@@ -61,7 +63,7 @@ class PatientService:
                 Patient.last_name.ilike(f'%{search}%')
             )
 
-        query = PatientService.apply_department_filter(query, current_user, department_id)
+        query = PatientService.apply_department_filter(query, current_user, department_id, branch_id)
         query = PatientService.apply_patient_access_filter(query, facility_slug, current_user)
 
         query = query.order_by(Patient.created_at.desc())
@@ -102,7 +104,7 @@ class PatientService:
             return query.filter(False)
 
         role = (current_user.role or "").upper()
-        if role in {"ADMIN", "RECEPTIONIST", "NURSE"}:
+        if role in {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "NURSE"}:
             return query
 
         if role != "DOCTOR":
@@ -126,19 +128,13 @@ class PatientService:
         )
 
     @staticmethod
-    def apply_department_filter(query, current_user, requested_department_id=None):
-        """Scope multi-clinic staff to their assigned department while preserving single hospitals."""
+    def apply_department_filter(query, current_user, requested_department_id=None, requested_branch_id=None):
+        """Scope multi-branch staff to their assigned branch while preserving legacy departments."""
         if not current_user:
             return query.filter(False)
 
-        role = (current_user.role or "").upper()
-        if current_user.department_id and role != "ADMIN":
-            return query.filter(Patient.department_id == current_user.department_id)
-
-        if requested_department_id and role == "ADMIN":
-            return query.filter(Patient.department_id == requested_department_id)
-
-        return query
+        branch_id = effective_branch_id(current_user, requested_branch_id, requested_department_id)
+        return apply_branch_filter(query, Patient, branch_id)
 
     @staticmethod
     def user_can_access_patient(patient_id, facility_slug, current_user):
@@ -147,7 +143,12 @@ class PatientService:
             return False
 
         role = (current_user.role or "").upper()
-        if role in {"ADMIN", "RECEPTIONIST", "NURSE"}:
+        branch_id = user_branch_id(current_user)
+        patient = Patient.query.filter_by(id=patient_id, facility_slug=facility_slug, is_active=True).first()
+        if patient and not belongs_to_branch(patient, branch_id if role != "ADMIN" else None):
+            return False
+
+        if role in {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "NURSE"}:
             return True
 
         if role != "DOCTOR":

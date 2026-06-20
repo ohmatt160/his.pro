@@ -7,6 +7,7 @@ class QueueCreate(BaseModel):
     patient_id: str = Field(...)
     appointment_id: Optional[str] = Field(None)
     department: str = Field(..., max_length=100)
+    branch_id: Optional[str] = Field(None, max_length=36)
     priority: Optional[str] = Field('normal', pattern="^(normal|urgent)$")
 
 
@@ -14,6 +15,7 @@ class QueueUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(waiting|in_progress|completed|no_show)$")
     priority: Optional[str] = Field(None, pattern="^(normal|urgent)$")
     department: Optional[str] = Field(None, max_length=100)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 class QueueResponse(BaseModel):
     # fields remain
@@ -26,6 +28,7 @@ class QueueResponse(BaseModel):
     appointment_time: Optional[str]
     facility_slug: str
     department: str
+    branch_id: Optional[str] = None
     status: str
     queue_number: int
     priority: str
