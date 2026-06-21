@@ -33,6 +33,8 @@ class LabOrderCreate(BaseModel):
     priority: Optional[str] = Field(None, pattern="^(ROUTINE|URGENT|STAT)$")
     notes: Optional[str] = Field(None)
     order_date: Optional[str] = Field(None)
+    department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class LabOrderUpdate(BaseModel):
@@ -49,6 +51,8 @@ class LabOrderResponse(BaseModel):
     notes: Optional[str]
     completed_at: Optional[str]
     facility_slug: Optional[str]
+    department_id: Optional[str] = None
+    branch_id: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
 

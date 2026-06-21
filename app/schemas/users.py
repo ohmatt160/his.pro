@@ -37,6 +37,8 @@ class UserResponse(BaseModel):
     departments: List[str] = []
     branch_id: Optional[str] = None
     branch_ids: List[str] = []
+    branch_slug: Optional[str] = None
+    branch_slugs: List[str] = []
     facility_id: Optional[str] = None
     facility_slug: Optional[str]
     is_active: bool

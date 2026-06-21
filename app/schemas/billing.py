@@ -27,6 +27,8 @@ class InvoiceResponse(BaseModel):
     paid_date: Optional[str]
     notes: Optional[str]
     facility_slug: Optional[str]
+    branch_id: Optional[str] = None
+    department_id: Optional[str] = None
     created_at: str
     updated_at: Optional[str]
 

@@ -1,6 +1,12 @@
 import unittest
+import sys
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 import app.models  # noqa: F401 - registers model tables on Base metadata
 from app.utils.schema import ensure_database_schema_current
@@ -58,12 +64,82 @@ class SchemaSyncTest(unittest.TestCase):
                     """
                 )
             )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE invoices (
+                        id VARCHAR(36) PRIMARY KEY,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        patient_id VARCHAR(36) NOT NULL,
+                        invoice_number VARCHAR(50) UNIQUE NOT NULL,
+                        facility_slug VARCHAR(100),
+                        status VARCHAR(50),
+                        subtotal NUMERIC(10, 2),
+                        tax NUMERIC(10, 2),
+                        discount NUMERIC(10, 2),
+                        total NUMERIC(10, 2),
+                        notes TEXT,
+                        due_date DATE,
+                        invoice_date DATETIME NOT NULL,
+                        paid_date DATETIME
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE lab_orders (
+                        id VARCHAR(36) PRIMARY KEY,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        patient_id VARCHAR(36) NOT NULL,
+                        test_id VARCHAR(36) NOT NULL,
+                        facility_slug VARCHAR(100),
+                        ordered_by VARCHAR(36),
+                        performed_by VARCHAR(36),
+                        status VARCHAR(50),
+                        priority VARCHAR(20),
+                        notes TEXT,
+                        order_date DATETIME NOT NULL,
+                        collection_date DATETIME,
+                        completed_date DATETIME
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE radiology_orders (
+                        id VARCHAR(36) PRIMARY KEY,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        patient_id VARCHAR(36) NOT NULL,
+                        facility_slug VARCHAR(100) NOT NULL,
+                        request_date DATETIME,
+                        modality VARCHAR(50) NOT NULL,
+                        body_part VARCHAR(100) NOT NULL,
+                        clinical_notes TEXT,
+                        status VARCHAR(50),
+                        requested_by VARCHAR(36) NOT NULL,
+                        radiologist_id VARCHAR(36),
+                        report TEXT,
+                        report_date DATETIME
+                    )
+                    """
+                )
+            )
 
         ensure_database_schema_current(engine)
 
         inspector = inspect(engine)
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")}
+        invoice_columns = {column["name"] for column in inspector.get_columns("invoices")}
+        lab_order_columns = {column["name"] for column in inspector.get_columns("lab_orders")}
+        radiology_order_columns = {column["name"] for column in inspector.get_columns("radiology_orders")}
 
         self.assertIn("facility_id", user_columns)
         self.assertIn("must_change_password", user_columns)
@@ -71,6 +147,12 @@ class SchemaSyncTest(unittest.TestCase):
         self.assertIn("facility_id", audit_columns)
         self.assertIn("ip_address", audit_columns)
         self.assertIn("user_agent", audit_columns)
+        self.assertIn("branch_id", invoice_columns)
+        self.assertIn("department_id", invoice_columns)
+        self.assertIn("branch_id", lab_order_columns)
+        self.assertIn("department_id", lab_order_columns)
+        self.assertIn("branch_id", radiology_order_columns)
+        self.assertIn("department_id", radiology_order_columns)
 
 
 if __name__ == "__main__":

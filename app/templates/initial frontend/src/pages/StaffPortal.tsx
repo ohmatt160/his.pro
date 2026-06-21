@@ -39,6 +39,7 @@ import {
 } from "@/lib/facility-staff";
 import {
   getFacilityDashboardPath,
+  getWorkspaceRoutePath,
   getFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import { canAccessModule, getRouteModuleId, moduleCatalog } from "@/lib/modules";
@@ -835,35 +836,36 @@ const roleConfigs: Record<Exclude<StaffRole, "admin">, RoleConfig> = {
 export const routeForPortalLabel = (
   role: Exclude<StaffRole, "admin">,
   label: string,
-  facilitySlug: string
+  facilitySlug: string,
+  branchSlug?: string
 ) => {
-  const base = `/dashboard/${facilitySlug}`;
   const normalized = label.toLowerCase();
+  const route = (path = "") => getWorkspaceRoutePath(facilitySlug, path, branchSlug);
 
-  if (normalized.includes("dashboard")) return `/portal/${facilitySlug}`;
-  if (normalized.includes("patient")) return `${base}/patients`;
-  if (normalized.includes("schedule") || normalized.includes("appointment")) return `${base}/appointments`;
-  if (normalized.includes("consult")) return `${base}/consultations`;
-  if (normalized.includes("ward") || normalized.includes("bed") || normalized.includes("handover")) return `${base}/wards`;
-  if (normalized.includes("task") || normalized.includes("queue") || normalized.includes("check-in") || normalized.includes("arrival")) return `${base}/queue`;
-  if (normalized.includes("prescription") || normalized.includes("medication") || normalized.includes("dispense")) return `${base}/pharmacy`;
-  if (normalized.includes("lab") || normalized.includes("test") || normalized.includes("sample") || normalized.includes("result") || normalized.includes("quality")) return `${base}/laboratory`;
-  if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return `${base}/records`;
-  if (normalized.includes("stock") || normalized.includes("inventory")) return `${base}/inventory`;
-  if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return `${base}/billing`;
-  if (normalized.includes("message")) return `${base}/chat`;
-  if (normalized.includes("alert")) return `${base}/alerts`;
+  if (normalized.includes("dashboard")) return branchSlug ? `/${facilitySlug}/branches/${branchSlug}/portal` : `/portal/${facilitySlug}`;
+  if (normalized.includes("patient")) return route("patients");
+  if (normalized.includes("schedule") || normalized.includes("appointment")) return route("appointments");
+  if (normalized.includes("consult")) return route("consultations");
+  if (normalized.includes("ward") || normalized.includes("bed") || normalized.includes("handover")) return route("wards");
+  if (normalized.includes("task") || normalized.includes("queue") || normalized.includes("check-in") || normalized.includes("arrival")) return route("queue");
+  if (normalized.includes("prescription") || normalized.includes("medication") || normalized.includes("dispense")) return route("pharmacy");
+  if (normalized.includes("lab") || normalized.includes("test") || normalized.includes("sample") || normalized.includes("result") || normalized.includes("quality")) return route("laboratory");
+  if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return route("records");
+  if (normalized.includes("stock") || normalized.includes("inventory")) return route("inventory");
+  if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return route("billing");
+  if (normalized.includes("message")) return route("chat");
+  if (normalized.includes("alert")) return route("alerts");
 
-  if (role === "doctor") return `${base}/consultations`;
-  if (role === "nurse") return `${base}/wards`;
-  if (role === "reception") return `${base}/queue`;
-  if (role === "pharmacist") return `${base}/pharmacy`;
-  return `${base}/laboratory`;
+  if (role === "doctor") return route("consultations");
+  if (role === "nurse") return route("wards");
+  if (role === "reception") return route("queue");
+  if (role === "pharmacist") return route("pharmacy");
+  return route("laboratory");
 };
 
 const StaffPortal = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const { user, logout } = useAuth();
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
   const [tasks, setTasks] = useState<WorkTask[]>([]);
@@ -893,7 +895,7 @@ const StaffPortal = () => {
     }
 
     if (!user || user.facilitySlug !== facilitySlug) {
-      navigate(getFacilityLoginPath(facilitySlug), { replace: true });
+      navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login` : getFacilityLoginPath(facilitySlug), { replace: true });
       return;
     }
 
@@ -903,7 +905,7 @@ const StaffPortal = () => {
         state: workspace,
       });
     }
-  }, [facilitySlug, isLoading, navigate, user, workspace]);
+  }, [branchSlug, facilitySlug, isLoading, navigate, user, workspace]);
 
   useEffect(() => {
     if (!user || user.role === "admin" || user.role === "branch_admin" || user.facilitySlug !== facilitySlug) {
@@ -962,7 +964,7 @@ const StaffPortal = () => {
     status: task.priority === "urgent" ? "Urgent" : task.status,
     tone: taskTone(task.priority),
     action: "Open",
-    to: `/dashboard/${facilitySlug}/${task.action_path}`,
+    to: getWorkspaceRoutePath(facilitySlug, task.action_path, branchSlug || undefined),
   }));
   const queueItems = liveQueueItems;
   const openTaskCount = tasks.filter((task) => task.status !== "completed").length;
@@ -1012,12 +1014,13 @@ const StaffPortal = () => {
   const primaryActionPath = routeForPortalLabel(
     staff.role,
     config.primaryAction.label,
-    facilitySlug
+    facilitySlug,
+    branchSlug || undefined
   );
 
   const handleLogout = () => {
     logout();
-    navigate(getFacilityLoginPath(facilitySlug), { replace: true });
+    navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login` : getFacilityLoginPath(facilitySlug), { replace: true });
   };
 
   return (
@@ -1087,7 +1090,7 @@ const StaffPortal = () => {
                     key={action.label}
                     type="button"
                     onClick={() =>
-                      navigate(routeForPortalLabel(staff.role, action.label, facilitySlug))
+                      navigate(routeForPortalLabel(staff.role, action.label, facilitySlug, branchSlug || undefined))
                     }
                     whileHover={{ y: -2 }}
                     whileTap={{ scale: 0.97 }}

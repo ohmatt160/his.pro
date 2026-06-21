@@ -16,7 +16,7 @@ from app.services.appointment_service import AppointmentService
 from app.services.patient_notification_service import PatientNotificationService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
-from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
+from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id, ensure_patient_branch_access, require_tenant_row
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
@@ -109,10 +109,12 @@ async def create_appointment(
         patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
+        ensure_patient_branch_access(patient, current_user, data.branch_id or data.department_id)
 
         doctor = db.query(User).filter_by(id=data.doctor_id, facility_slug=facility_slug, is_active=True).first()
         if not doctor:
             raise HTTPException(status_code=404, detail="Doctor or staff member not found")
+        require_tenant_row(doctor, current_user, "Doctor or staff member not found")
 
         payload = data.model_dump()
         payload['facility_slug'] = facility_slug

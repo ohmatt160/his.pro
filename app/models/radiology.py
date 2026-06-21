@@ -11,6 +11,8 @@ class Radiology(BaseModel):
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)
+    department_id = Column(String(36), nullable=True, index=True)
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     request_date = Column(DateTime, default=datetime.utcnow)
     modality = Column(String(50), nullable=False)  # X-ray/CT/MRI/Ultrasound
     body_part = Column(String(100), nullable=False)

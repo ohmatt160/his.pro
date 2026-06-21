@@ -62,6 +62,8 @@ type BackendUser = {
   facility_slug?: string | null;
   branch_id?: string | null;
   branch_ids?: string[] | null;
+  branch_slug?: string | null;
+  branch_slugs?: string[] | null;
 };
 
 const roleMetadata: Record<
@@ -148,6 +150,8 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
     facilitySlug: user.facility_slug || "",
     branchId: user.branch_id || undefined,
     branchIds: user.branch_ids || [],
+    branchSlug: user.branch_slug || undefined,
+    branchSlugs: user.branch_slugs || [],
     loginId: user.username,
     role,
     fullName: fullName || user.username,
@@ -175,11 +179,32 @@ export const getBranchLoginLink = (facilitySlug: string, branchSlug: string) => 
   return `${origin}${getBranchLoginPath(facilitySlug, branchSlug)}`;
 };
 
+const getCurrentBranchSlug = (facilitySlug: string) => {
+  if (typeof window === "undefined" || !facilitySlug) {
+    return "";
+  }
+
+  const match = window.location.pathname.match(
+    new RegExp(`^/${facilitySlug}/branches/([^/]+)(?:/|$)`)
+  );
+  return match?.[1] || "";
+};
+
 export const getStaffPortalPath = (facilitySlug: string) =>
-  `/portal/${facilitySlug}`;
+  getCurrentBranchSlug(facilitySlug)
+    ? getBranchStaffPortalPath(facilitySlug, getCurrentBranchSlug(facilitySlug))
+    : `/portal/${facilitySlug}`;
+
+export const getBranchStaffPortalPath = (facilitySlug: string, branchSlug: string) =>
+  `/${facilitySlug}/branches/${branchSlug}/portal`;
 
 export const getStaffAccessPath = (facilitySlug: string) =>
-  `/dashboard/${facilitySlug}/staff`;
+  getCurrentBranchSlug(facilitySlug)
+    ? getBranchStaffAccessPath(facilitySlug, getCurrentBranchSlug(facilitySlug))
+    : `/dashboard/${facilitySlug}/staff`;
+
+export const getBranchStaffAccessPath = (facilitySlug: string, branchSlug: string) =>
+  `/${facilitySlug}/branches/${branchSlug}/dashboard/staff`;
 
 export const authenticateStaff = async ({
   facilitySlug,

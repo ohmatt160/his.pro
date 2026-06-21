@@ -61,6 +61,8 @@ class LabService:
             patient_id=data['patient_id'],
             test_id=data['test_id'],
             facility_slug=data.get('facility_slug'),
+            branch_id=data.get('branch_id') or data.get('department_id'),
+            department_id=data.get('department_id') or data.get('branch_id'),
             ordered_by=ordered_by_id,
             priority=data.get('priority', 'ROUTINE'),
             notes=data.get('notes'),

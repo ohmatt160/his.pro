@@ -40,7 +40,7 @@ class BillingService:
     # ==================== Invoices ====================
     
     @staticmethod
-    def create_invoice(data, facility_slug=None):
+    def create_invoice(data, facility_slug=None, branch_id=None, department_id=None):
         """Create a new invoice with optional line items."""
         amount = Decimal(str(data.get('amount', 0)))
         invoice = Invoice(
@@ -51,7 +51,9 @@ class BillingService:
             notes=data.get('notes'),
             due_date=BillingService._parse_date(data.get('due_date')),
             invoice_date=BillingService._parse_datetime(data.get('invoice_date')),
-            facility_slug=facility_slug
+            facility_slug=facility_slug,
+            branch_id=branch_id or department_id,
+            department_id=department_id or branch_id,
         )
         invoice.save()
         

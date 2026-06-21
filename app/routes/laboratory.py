@@ -17,9 +17,11 @@ from app.services.lab_service import LabService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import ensure_patient_branch_access, require_facility_slug, require_tenant_row, tenant_query
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
+from app.models.lab import LabOrder
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/laboratory", tags=["laboratory"])
@@ -52,6 +54,8 @@ def _lab_order_response(order) -> LabOrderResponse:
         notes=order.notes,
         completed_at=order.completed_date.isoformat() if order.completed_date else None,
         facility_slug=order.facility_slug,
+        department_id=order.department_id,
+        branch_id=order.branch_id or order.department_id,
         created_at=order.created_at.isoformat() if order.created_at else "",
         updated_at=order.updated_at.isoformat() if order.updated_at else None
     )
@@ -130,25 +134,25 @@ async def update_lab_test(
 async def get_lab_orders(
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
+    query = tenant_query(db, LabOrder, current_user, branch_id)
 
     if patient_id:
         # Verify patient belongs to facility
         patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
             return []
-        orders = LabService.get_lab_orders_by_patient(patient_id, facility_slug)
-    elif status:
-        orders = LabService.get_lab_orders_by_status(status, facility_slug)
+        ensure_patient_branch_access(patient, current_user, branch_id)
+        query = query.filter_by(patient_id=patient_id)
+    if status:
+        query = query.filter_by(status=status)
     else:
-        orders = []
-        for order_status in ["PENDING", "COLLECTED", "IN_PROGRESS", "COMPLETED"]:
-            orders.extend(LabService.get_lab_orders_by_status(order_status, facility_slug))
+        query = query.filter(LabOrder.status.in_(["PENDING", "COLLECTED", "IN_PROGRESS", "COMPLETED"]))
+    orders = query.order_by(LabOrder.order_date.desc()).all()
 
     return [_lab_order_response(o) for o in orders]
 
@@ -156,16 +160,15 @@ async def get_lab_orders(
 @router.post("/orders", response_model=LabOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_lab_order(
     data: LabOrderCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
 
     patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+    branch_id = ensure_patient_branch_access(patient, current_user, data.branch_id or data.department_id)
 
     test = LabService.get_lab_test_by_id(data.test_id)
     if not test:
@@ -173,6 +176,8 @@ async def create_lab_order(
 
     payload = data.model_dump()
     payload['facility_slug'] = facility_slug
+    payload['branch_id'] = branch_id or patient.branch_id or patient.department_id
+    payload['department_id'] = branch_id or patient.department_id
 
     order = LabService.create_lab_order(payload, current_user.id)
     OrderWorkflowService.record(
@@ -195,14 +200,11 @@ async def create_lab_order(
 @router.get("/orders/{order_id}", response_model=LabOrderResponse)
 async def get_lab_order(
     order_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
     order = LabService.get_lab_order_by_id(order_id)
-
-    if not order or order.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Lab order not found")
+    require_tenant_row(order, current_user, "Lab order not found")
 
     return _lab_order_response(order)
 
@@ -211,14 +213,12 @@ async def get_lab_order(
 async def update_lab_order_status(
     order_id: str,
     data: LabOrderUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
+    facility_slug = require_facility_slug(current_user)
     order = LabService.get_lab_order_by_id(order_id)
-
-    if not order or order.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Lab order not found")
+    require_tenant_row(order, current_user, "Lab order not found")
 
     if not data.status:
         raise HTTPException(status_code=400, detail="Status is required")
@@ -248,14 +248,11 @@ async def update_lab_order_status(
 @router.get("/results/{order_id}", response_model=LabResultResponse)
 async def get_lab_result(
     order_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
     order = LabService.get_lab_order_by_id(order_id)
-
-    if not order or order.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Lab order not found")
+    require_tenant_row(order, current_user, "Lab order not found")
 
     result = LabService.get_result_by_order(order_id)
     if not result:
@@ -268,14 +265,12 @@ async def get_lab_result(
 async def create_lab_result(
     order_id: str,
     data: LabResultCreate,
-    current_user: User = Depends(role_required('ADMIN', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
+    facility_slug = require_facility_slug(current_user)
     order = LabService.get_lab_order_by_id(order_id)
-
-    if not order or order.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Lab order not found")
+    require_tenant_row(order, current_user, "Lab order not found")
 
     if order.status == 'COMPLETED':
         raise HTTPException(status_code=400, detail="Lab order already completed")

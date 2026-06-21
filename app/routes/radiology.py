@@ -17,6 +17,7 @@ from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import ensure_patient_branch_access, require_facility_slug, require_tenant_row, tenant_query
 from app.utils.validators import Validators
 from app.models.user import User
 from app.models.patient import Patient
@@ -39,6 +40,8 @@ def _radiology_response(order: Radiology) -> RadiologyResponse:
         id=str(order.id),
         patient_id=str(order.patient_id),
         facility_slug=order.facility_slug,
+        department_id=order.department_id,
+        branch_id=order.branch_id or order.department_id,
         modality=order.modality,
         body_part=order.body_part,
         clinical_notes=order.clinical_notes,
@@ -61,28 +64,28 @@ async def get_radiology_orders(
     facility_slug: Optional[str] = Query(None),
     status: Optional[str] = Query(None, pattern="^(pending|ordered|completed|cancelled)$"),
     patient_id: Optional[str] = Query(None),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RADIOLOGIST')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RADIOLOGIST')),
     db: Session = Depends(get_db)
 ):
     """Paginated list of radiology orders"""
-    if not current_user.facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
-
-    query = db_session.query(Radiology).options(
+    facility_slug = require_facility_slug(current_user)
+    query = tenant_query(db_session, Radiology, current_user, branch_id).options(
         joinedload(Radiology.patient),
         joinedload(Radiology.requester),
         joinedload(Radiology.radiologist),
-    ).filter_by(facility_slug=current_user.facility_slug)
+    )
 
     if status:
         query = query.filter_by(status=status)
     if patient_id:
         patient = db_session.query(Patient).filter_by(
             id=patient_id,
-            facility_slug=current_user.facility_slug,
+            facility_slug=facility_slug,
         ).first()
         if not patient:
             return []
+        ensure_patient_branch_access(patient, current_user, branch_id)
         query = query.filter_by(patient_id=patient_id)
 
     query = query.order_by(Radiology.request_date.desc())
@@ -97,13 +100,11 @@ async def get_radiology_orders(
 @router.post("", response_model=RadiologyResponse, status_code=status.HTTP_201_CREATED)
 async def create_radiology_order(
     data: RadiologyCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     """Create a new radiology order"""
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
 
     if not data.patient_id or not data.modality or not data.body_part:
         raise HTTPException(status_code=400, detail="Missing required fields")
@@ -111,6 +112,7 @@ async def create_radiology_order(
     patient = db_session.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+    branch_id = ensure_patient_branch_access(patient, current_user, data.branch_id or data.department_id)
 
     # Validate modality
     Radiology.MODALITIES
@@ -123,6 +125,8 @@ async def create_radiology_order(
     radiology = Radiology(
         patient_id=data.patient_id,
         facility_slug=facility_slug,
+        branch_id=branch_id or patient.branch_id or patient.department_id,
+        department_id=branch_id or patient.department_id,
         modality=data.modality,
         body_part=data.body_part,
         clinical_notes=clinical_notes,
@@ -155,21 +159,16 @@ async def create_radiology_order(
 @router.get("/{order_id}", response_model=RadiologyResponse)
 async def get_radiology_order(
     order_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RADIOLOGIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RADIOLOGIST')),
     db: Session = Depends(get_db)
 ):
     """Get radiology order by ID"""
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
-
     order = db_session.query(Radiology).options(
         joinedload(Radiology.patient),
         joinedload(Radiology.requester),
         joinedload(Radiology.radiologist),
-    ).filter_by(id=order_id, facility_slug=facility_slug).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Radiology order not found")
+    ).filter_by(id=order_id).first()
+    require_tenant_row(order, current_user, "Radiology order not found")
 
     return _radiology_response(order)
 
@@ -178,21 +177,18 @@ async def get_radiology_order(
 async def update_radiology_order(
     order_id: str,
     data: RadiologyUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RADIOLOGIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RADIOLOGIST')),
     db: Session = Depends(get_db)
 ):
     """Update radiology order"""
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
 
     order = db_session.query(Radiology).options(
         joinedload(Radiology.patient),
         joinedload(Radiology.requester),
         joinedload(Radiology.radiologist),
-    ).filter_by(id=order_id, facility_slug=facility_slug).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Radiology order not found")
+    ).filter_by(id=order_id).first()
+    require_tenant_row(order, current_user, "Radiology order not found")
 
     previous_status = order.status
     if data.status is not None:
@@ -258,21 +254,18 @@ async def update_radiology_order(
 async def add_radiology_report(
     order_id: str,
     data: RadiologyReport,
-    current_user: User = Depends(role_required('ADMIN', 'RADIOLOGIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RADIOLOGIST')),
     db: Session = Depends(get_db)
 ):
     """Add or update radiology report"""
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
 
     order = db_session.query(Radiology).options(
         joinedload(Radiology.patient),
         joinedload(Radiology.requester),
         joinedload(Radiology.radiologist),
-    ).filter_by(id=order_id, facility_slug=facility_slug).first()
-    if not order:
-        raise HTTPException(status_code=404, detail="Radiology order not found")
+    ).filter_by(id=order_id).first()
+    require_tenant_row(order, current_user, "Radiology order not found")
 
     if not data.report:
         raise HTTPException(status_code=400, detail="Report text is required")

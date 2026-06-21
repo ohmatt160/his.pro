@@ -44,12 +44,13 @@ import {
   getStaffAccessPath,
 } from "@/lib/facility-staff";
 import {
+  getWorkspaceDashboardPath,
+  getWorkspaceRoutePath,
   getFacilityWorkspace,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import {
   getModuleById,
-  getModulePath,
   isModuleEnabled,
   normalizeModules,
 } from "@/lib/modules";
@@ -85,7 +86,7 @@ const item = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { facilitySlug } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const { user, logout } = useAuth();
   const location = useLocation();
   const routedData = (location.state as SavedFacilityWorkspace | null) || null;
@@ -186,7 +187,7 @@ const Dashboard = () => {
   const resolvedFacilitySlug =
     facilitySlug || workspace?.facilitySlug || "";
   const staffAccessPath = resolvedFacilitySlug
-    ? getStaffAccessPath(resolvedFacilitySlug)
+    ? (branchSlug ? `/${resolvedFacilitySlug}/branches/${branchSlug}/dashboard/staff` : getStaffAccessPath(resolvedFacilitySlug))
     : "";
   const rawSelectedModules =
     (data.selectedModules as string[] | undefined) || [
@@ -201,61 +202,64 @@ const Dashboard = () => {
   const moduleEnabled = (moduleId: Parameters<typeof isModuleEnabled>[1]) =>
     isModuleEnabled(selectedModules, moduleId);
   const patientsPath = resolvedFacilitySlug && moduleEnabled("reception")
-    ? `/dashboard/${resolvedFacilitySlug}/patients`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "patients", branchSlug || undefined)
     : "";
   const appointmentsPath = resolvedFacilitySlug && moduleEnabled("reception")
-    ? `/dashboard/${resolvedFacilitySlug}/appointments`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "appointments", branchSlug || undefined)
     : "";
   const billingPath = resolvedFacilitySlug && moduleEnabled("billing")
-    ? `/dashboard/${resolvedFacilitySlug}/billing`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "billing", branchSlug || undefined)
     : "";
   const laboratoryPath = resolvedFacilitySlug && moduleEnabled("lab")
-    ? `/dashboard/${resolvedFacilitySlug}/laboratory`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "laboratory", branchSlug || undefined)
     : "";
   const pharmacyPath = resolvedFacilitySlug && moduleEnabled("pharmacy")
-    ? `/dashboard/${resolvedFacilitySlug}/pharmacy`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "pharmacy", branchSlug || undefined)
     : "";
   const radiologyPath = resolvedFacilitySlug && moduleEnabled("radiology")
-    ? `/dashboard/${resolvedFacilitySlug}/radiology`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "radiology", branchSlug || undefined)
     : "";
   const inventoryPath = resolvedFacilitySlug && moduleEnabled("inventory")
-    ? `/dashboard/${resolvedFacilitySlug}/inventory`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "inventory", branchSlug || undefined)
     : "";
   const queuePath = resolvedFacilitySlug && moduleEnabled("reception")
-    ? `/dashboard/${resolvedFacilitySlug}/queue`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "queue", branchSlug || undefined)
     : "";
   const consultationsPath = resolvedFacilitySlug && moduleEnabled("consultations")
-    ? `/dashboard/${resolvedFacilitySlug}/consultations`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "consultations", branchSlug || undefined)
     : "";
   const wardsPath = resolvedFacilitySlug && moduleEnabled("nursing")
-    ? `/dashboard/${resolvedFacilitySlug}/wards`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "wards", branchSlug || undefined)
     : "";
   const reportsPath = resolvedFacilitySlug && moduleEnabled("reports")
-    ? `/dashboard/${resolvedFacilitySlug}/reports`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "reports", branchSlug || undefined)
     : "";
   const recordsPath = resolvedFacilitySlug && moduleEnabled("records")
-    ? `/dashboard/${resolvedFacilitySlug}/records`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "records", branchSlug || undefined)
     : "";
   const alertsPath = resolvedFacilitySlug
-    ? `/dashboard/${resolvedFacilitySlug}/alerts`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "alerts", branchSlug || undefined)
     : "";
   const auditLogsPath = resolvedFacilitySlug
-    ? `/dashboard/${resolvedFacilitySlug}/audit-logs`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "audit-logs", branchSlug || undefined)
     : "";
   const settingsPath = resolvedFacilitySlug
-    ? `/dashboard/${resolvedFacilitySlug}/settings`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "settings", branchSlug || undefined)
     : "";
   const suppliersPath = resolvedFacilitySlug && moduleEnabled("inventory")
-    ? `/dashboard/${resolvedFacilitySlug}/suppliers`
+    ? getWorkspaceRoutePath(resolvedFacilitySlug, "suppliers", branchSlug || undefined)
     : "";
   const facilityLoginPath = resolvedFacilitySlug
     ? getFacilityLoginPath(resolvedFacilitySlug)
     : "/login";
   const dashboardPath = resolvedFacilitySlug
-    ? `/dashboard/${resolvedFacilitySlug}`
+    ? getWorkspaceDashboardPath(resolvedFacilitySlug, branchSlug || undefined)
     : "";
   const modulePaths = Object.fromEntries(
-    selectedModules.map((id) => [id, getModulePath(resolvedFacilitySlug, id)])
+    selectedModules.map((id) => [
+      id,
+      getWorkspaceRoutePath(resolvedFacilitySlug, getModuleById(id)?.primaryPath || "", branchSlug || undefined),
+    ])
   );
 
   const facilityName = (data.facilityName as string) || "My Facility";

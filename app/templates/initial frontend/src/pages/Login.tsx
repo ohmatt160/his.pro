@@ -23,7 +23,7 @@ import {
 } from "@/lib/facility-staff";
 import {
   createFacilitySlug,
-  getFacilityDashboardPath,
+  getWorkspaceDashboardPath,
   getFacilityWorkspace,
 } from "@/lib/facility-workspace";
 
@@ -60,11 +60,14 @@ const Login = () => {
 
   const forceAccountSwitch = searchParams.get("switch") === "1";
   const signedInToThisFacility = Boolean(
-    user && facilitySlug && user.facilitySlug === facilitySlug
+    user &&
+      facilitySlug &&
+      user.facilitySlug === facilitySlug &&
+      (!branchSlug || user.branchSlug === branchSlug || user.branchSlugs?.includes(branchSlug))
   );
   const isWorkspaceAdmin = user?.role === "admin" || user?.role === "branch_admin";
   const signedInDestination = isWorkspaceAdmin
-    ? getFacilityDashboardPath(facilitySlug)
+    ? getWorkspaceDashboardPath(facilitySlug, branchSlug || user?.branchSlug || undefined)
     : getStaffPortalPath(facilitySlug);
 
   const handleContinueSession = () => {
@@ -77,7 +80,7 @@ const Login = () => {
     setLoginValue("");
     setPassword("");
     setError("");
-    navigate(`/${facilitySlug}/login?switch=1`, { replace: true });
+    navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login?switch=1` : `/${facilitySlug}/login?switch=1`, { replace: true });
   };
 
   const facilityLink = facilitySlug ? getFacilityLoginLink(facilitySlug) : "";
@@ -130,7 +133,7 @@ const Login = () => {
       });
 
       if (account.role === "admin" || account.role === "branch_admin") {
-        navigate(getFacilityDashboardPath(facilitySlug), { replace: true });
+        navigate(getWorkspaceDashboardPath(facilitySlug, branchSlug || account.branchSlug || undefined), { replace: true });
         return;
       }
 

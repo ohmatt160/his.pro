@@ -4,6 +4,8 @@ export type AuthUser = {
   facilitySlug: string;
   branchId?: string | null;
   branchIds?: string[];
+  branchSlug?: string | null;
+  branchSlugs?: string[];
   loginId: string;
   role: string;
   fullName: string;

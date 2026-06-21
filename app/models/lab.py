@@ -34,6 +34,8 @@ class LabOrder(BaseModel):
     test_id = Column(String(36), ForeignKey('lab_tests.id'), nullable=False)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+    department_id = Column(String(36), nullable=True, index=True)
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     ordered_by = Column(String(36), ForeignKey('users.id'))
     performed_by = Column(String(36), ForeignKey('users.id'))
     status = Column(String(50), default='PENDING')  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED

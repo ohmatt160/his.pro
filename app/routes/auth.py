@@ -5,6 +5,7 @@ Converted from Flask-RESTx auth_resource.py
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 import logging
 import os
@@ -114,12 +115,25 @@ def _validate_requested_branch(user: User, facility_slug: str | None, branch_slu
     if not branch:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    if role == "ADMIN":
-        return
-
     allowed = _user_branch_values(user)
     if str(branch.id) not in allowed and str(branch.slug) not in allowed:
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+
+def _user_branch_slugs(user: User, db: Session) -> list[str]:
+    branch_values = _user_branch_values(user)
+    if not branch_values:
+        return []
+
+    branches = (
+        db.query(Branch)
+        .filter(
+            Branch.is_active == True,
+            or_(Branch.id.in_(branch_values), Branch.slug.in_(branch_values)),
+        )
+        .all()
+    )
+    return [branch.slug for branch in branches if branch.slug]
 
 def build_token_response(user: User, request: Request | None = None) -> TokenResponse:
     from app.middleware.jwt import create_access_token, create_refresh_token
@@ -179,6 +193,8 @@ async def register_user(
             facility_slug=user.facility_slug,
             branch_id=user.branch_id or user.department_id,
             branch_ids=user.branch_ids or user.departments or [],
+            branch_slug=(_user_branch_slugs(user, db) or [None])[0],
+            branch_slugs=_user_branch_slugs(user, db),
             is_active=user.is_active,
             created_at=user.created_at.isoformat() if user.created_at else "",
             updated_at=user.updated_at.isoformat() if user.updated_at else None
@@ -436,6 +452,8 @@ async def verify_current_session(
         facility_slug=user.facility_slug,
         branch_id=user.branch_id or user.department_id,
         branch_ids=user.branch_ids or user.departments or [],
+        branch_slug=(_user_branch_slugs(user, db) or [None])[0],
+        branch_slugs=_user_branch_slugs(user, db),
         is_active=user.is_active,
         created_at=user.created_at.isoformat() if user.created_at else "",
         updated_at=user.updated_at.isoformat() if user.updated_at else None,

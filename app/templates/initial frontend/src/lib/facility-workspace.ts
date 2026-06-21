@@ -46,8 +46,37 @@ export const createFacilitySlug = (facilityName: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "my-facility";
 
-export const getFacilityDashboardPath = (facilitySlug: string) =>
-  `/dashboard/${facilitySlug}`;
+const getCurrentBranchSlug = (facilitySlug: string) => {
+  if (typeof window === "undefined" || !facilitySlug) {
+    return "";
+  }
+
+  const match = window.location.pathname.match(
+    new RegExp(`^/${facilitySlug}/branches/([^/]+)(?:/|$)`)
+  );
+  return match?.[1] || "";
+};
+
+export const getFacilityDashboardPath = (facilitySlug: string) => {
+  const branchSlug = getCurrentBranchSlug(facilitySlug);
+  return branchSlug ? getBranchDashboardPath(facilitySlug, branchSlug) : `/dashboard/${facilitySlug}`;
+};
+
+export const getBranchDashboardPath = (facilitySlug: string, branchSlug: string) =>
+  `/${facilitySlug}/branches/${branchSlug}/dashboard`;
+
+export const getWorkspaceDashboardPath = (facilitySlug: string, branchSlug?: string) =>
+  branchSlug ? getBranchDashboardPath(facilitySlug, branchSlug) : getFacilityDashboardPath(facilitySlug);
+
+export const getWorkspaceRoutePath = (
+  facilitySlug: string,
+  path = "",
+  branchSlug?: string
+) => {
+  const base = getWorkspaceDashboardPath(facilitySlug, branchSlug);
+  const cleanPath = path.replace(/^\/+/, "");
+  return cleanPath ? `${base}/${cleanPath}` : base;
+};
 
 export const getFacilityReadyPath = (facilitySlug: string) =>
   `/workspace-ready/${facilitySlug}`;

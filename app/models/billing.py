@@ -11,6 +11,8 @@ class Invoice(BaseModel):
     invoice_number = Column(String(50), unique=True, nullable=False)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
+    department_id = Column(String(36), nullable=True, index=True)
+    branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     status = Column(String(50), default='PENDING')  # PENDING, PAID, PARTIAL, CANCELLED
     subtotal = Column(Numeric(10, 2), default=0)
     tax = Column(Numeric(10, 2), default=0)

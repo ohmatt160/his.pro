@@ -23,9 +23,10 @@ import {
   Users,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { getFacilityLoginPath, getStaffAccessPath } from "@/lib/facility-staff";
+import { getBranchLoginPath, getBranchStaffAccessPath, getBranchStaffPortalPath, getFacilityLoginPath, getStaffAccessPath, getStaffPortalPath } from "@/lib/facility-staff";
 import {
   getFacilityWorkspace,
+  getWorkspaceRoutePath,
   WORKSPACE_UPDATED_EVENT,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
@@ -53,37 +54,37 @@ const navItems: Array<{
   label: string;
   icon: ElementType;
   module?: Parameters<typeof isModuleEnabled>[1];
-  path: (slug: string) => string;
+  path: (slug: string, branchSlug?: string) => string;
   adminOnly?: boolean;
   roles?: WorkspaceRole[];
 }> = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug) => `/dashboard/${slug}`, roles: routeRoles.admin },
-  { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug) => `/portal/${slug}`, roles: ["doctor", "nurse", "reception", "pharmacist", "lab"] },
-  { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: getStaffAccessPath, roles: routeRoles.admin },
-  { id: "chat", label: "Messages", icon: MessageSquare, path: (slug) => `/dashboard/${slug}/chat`, roles: routeRoles.chat },
-  { id: "alerts", label: "Alerts", icon: Bell, path: (slug) => `/dashboard/${slug}/alerts`, roles: routeRoles.alerts },
-  { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug) => `/dashboard/${slug}/audit-logs`, adminOnly: true },
-  { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug) => `/dashboard/${slug}/reports`, roles: routeRoles.reports },
-  { id: "public-profile", label: "Public Profile", icon: Globe, path: (slug) => `/dashboard/${slug}/public-profile`, roles: routeRoles.admin },
-  { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug) => `/dashboard/${slug}/patients`, roles: routeRoles.patients },
-  { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug) => `/dashboard/${slug}/queue`, roles: routeRoles.queue },
-  { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug) => `/dashboard/${slug}/appointments`, roles: routeRoles.appointments },
-  { id: "consultations", label: "Consultations", icon: Stethoscope, module: "consultations", path: (slug) => `/dashboard/${slug}/consultations`, roles: routeRoles.consultations },
-  { id: "wards", label: "Wards", icon: BedDouble, module: "nursing", path: (slug) => `/dashboard/${slug}/wards`, roles: routeRoles.wards },
-  { id: "records", label: "Medical Records", icon: FileHeart, module: "records", path: (slug) => `/dashboard/${slug}/records`, roles: routeRoles.records },
-  { id: "billing", label: "Billing", icon: Receipt, module: "billing", path: (slug) => `/dashboard/${slug}/billing`, roles: routeRoles.billing },
-  { id: "lab", label: "Laboratory", icon: FlaskConical, module: "lab", path: (slug) => `/dashboard/${slug}/laboratory`, roles: routeRoles.laboratory },
-  { id: "pharmacy", label: "Pharmacy", icon: Pill, module: "pharmacy", path: (slug) => `/dashboard/${slug}/pharmacy`, roles: routeRoles.pharmacy },
-  { id: "radiology", label: "Radiology", icon: ScanLine, module: "radiology", path: (slug) => `/dashboard/${slug}/radiology`, roles: routeRoles.radiology },
-  { id: "inventory", label: "Inventory", icon: Package, module: "inventory", path: (slug) => `/dashboard/${slug}/inventory`, roles: routeRoles.inventory },
-  { id: "suppliers", label: "Suppliers", icon: Truck, module: "inventory", path: (slug) => `/dashboard/${slug}/suppliers`, roles: routeRoles.inventory },
-  { id: "settings", label: "Settings", icon: Settings, path: (slug) => `/dashboard/${slug}/settings`, adminOnly: true },
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "", branchSlug), roles: routeRoles.admin },
+  { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug, branchSlug) => branchSlug ? getBranchStaffPortalPath(slug, branchSlug) : getStaffPortalPath(slug), roles: ["doctor", "nurse", "reception", "pharmacist", "lab"] },
+  { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: (slug, branchSlug) => branchSlug ? getBranchStaffAccessPath(slug, branchSlug) : getStaffAccessPath(slug), roles: routeRoles.admin },
+  { id: "chat", label: "Messages", icon: MessageSquare, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "chat", branchSlug), roles: routeRoles.chat },
+  { id: "alerts", label: "Alerts", icon: Bell, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "alerts", branchSlug), roles: routeRoles.alerts },
+  { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "audit-logs", branchSlug), adminOnly: true },
+  { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "reports", branchSlug), roles: routeRoles.reports },
+  { id: "public-profile", label: "Public Profile", icon: Globe, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "public-profile", branchSlug), roles: routeRoles.admin },
+  { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "patients", branchSlug), roles: routeRoles.patients },
+  { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "queue", branchSlug), roles: routeRoles.queue },
+  { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "appointments", branchSlug), roles: routeRoles.appointments },
+  { id: "consultations", label: "Consultations", icon: Stethoscope, module: "consultations", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "consultations", branchSlug), roles: routeRoles.consultations },
+  { id: "wards", label: "Wards", icon: BedDouble, module: "nursing", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "wards", branchSlug), roles: routeRoles.wards },
+  { id: "records", label: "Medical Records", icon: FileHeart, module: "records", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "records", branchSlug), roles: routeRoles.records },
+  { id: "billing", label: "Billing", icon: Receipt, module: "billing", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "billing", branchSlug), roles: routeRoles.billing },
+  { id: "lab", label: "Laboratory", icon: FlaskConical, module: "lab", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "laboratory", branchSlug), roles: routeRoles.laboratory },
+  { id: "pharmacy", label: "Pharmacy", icon: Pill, module: "pharmacy", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "pharmacy", branchSlug), roles: routeRoles.pharmacy },
+  { id: "radiology", label: "Radiology", icon: ScanLine, module: "radiology", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "radiology", branchSlug), roles: routeRoles.radiology },
+  { id: "inventory", label: "Inventory", icon: Package, module: "inventory", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "inventory", branchSlug), roles: routeRoles.inventory },
+  { id: "suppliers", label: "Suppliers", icon: Truck, module: "inventory", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "suppliers", branchSlug), roles: routeRoles.inventory },
+  { id: "settings", label: "Settings", icon: Settings, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "settings", branchSlug), adminOnly: true },
 ];
 
 const defaultModules = ["reception", "records", "consultations", "nursing", "pharmacy", "billing"];
 
 const AppShell = ({ children }: AppShellProps) => {
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
@@ -152,7 +153,7 @@ const AppShell = ({ children }: AppShellProps) => {
 
   const handleLogout = () => {
     logout();
-    navigate(facilitySlug ? getFacilityLoginPath(facilitySlug) : "/login", { replace: true });
+    navigate(facilitySlug ? (branchSlug ? getBranchLoginPath(facilitySlug, branchSlug) : getFacilityLoginPath(facilitySlug)) : "/login", { replace: true });
   };
 
   return (
@@ -168,7 +169,7 @@ const AppShell = ({ children }: AppShellProps) => {
 
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {visibleNav.map((entry) => {
-            const to = entry.path(facilitySlug);
+            const to = entry.path(facilitySlug, branchSlug || currentBranch?.slug || undefined);
             const badge = entry.id === "alerts" ? stats?.active_alerts : entry.id === "chat" ? unreadMessages : undefined;
             return (
               <SidebarLink

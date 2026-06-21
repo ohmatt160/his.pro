@@ -9,6 +9,8 @@ class RadiologyCreate(BaseModel):
     modality: str = Field(..., pattern="^(X-ray|CT|MRI|Ultrasound)$")
     body_part: str = Field(..., max_length=100)
     clinical_notes: Optional[str] = Field(None)
+    department_id: Optional[str] = Field(None, max_length=36)
+    branch_id: Optional[str] = Field(None, max_length=36)
 
 
 class RadiologyUpdate(BaseModel):
@@ -25,6 +27,8 @@ class RadiologyResponse(BaseModel):
     id: str
     patient_id: str
     facility_slug: str
+    department_id: Optional[str] = None
+    branch_id: Optional[str] = None
     modality: str
     body_part: str
     clinical_notes: Optional[str]

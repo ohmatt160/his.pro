@@ -2,11 +2,18 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import {
   getFacilityWorkspace,
+  getWorkspaceDashboardPath,
   WORKSPACE_UPDATED_EVENT,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import { canAccessModule, type FacilityModuleId } from "@/lib/modules";
 import { useAuth } from "@/context/AuthContext";
+import { apiClient } from "@/api/client";
+
+type FacilityBranch = {
+  slug?: string;
+  modules?: string[];
+};
 
 const ModuleRoute = ({
   module,
@@ -15,7 +22,7 @@ const ModuleRoute = ({
   module: FacilityModuleId;
   children: ReactNode;
 }) => {
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const { user } = useAuth();
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
@@ -27,14 +34,20 @@ const ModuleRoute = ({
       return;
     }
 
-    getFacilityWorkspace(facilitySlug)
-      .then((workspace) => {
+    Promise.all([
+      getFacilityWorkspace(facilitySlug),
+      branchSlug
+        ? apiClient.get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`).catch(() => [])
+        : Promise.resolve([] as FacilityBranch[]),
+    ])
+      .then(([workspace, branches]) => {
+        const branch = branchSlug ? branches.find((item) => item.slug === branchSlug) : null;
         if (mounted) {
           setAllowed(
             Boolean(
               workspace &&
                 canAccessModule({
-                  modules: workspace.selectedModules,
+                  modules: branch?.modules?.length ? branch.modules : workspace.selectedModules,
                   moduleId: module,
                   role: user?.role,
                 })
@@ -51,7 +64,7 @@ const ModuleRoute = ({
     return () => {
       mounted = false;
     };
-  }, [facilitySlug, module, user?.role]);
+  }, [branchSlug, facilitySlug, module, user?.role]);
 
   useEffect(() => {
     const handleWorkspaceUpdated = (event: Event) => {
@@ -85,10 +98,10 @@ const ModuleRoute = ({
 
   if (!allowed) {
     if (user && user.role !== "admin") {
-      return <Navigate to={`/portal/${facilitySlug}`} replace />;
+      return <Navigate to={branchSlug ? `/${facilitySlug}/branches/${branchSlug}/portal` : `/portal/${facilitySlug}`} replace />;
     }
 
-    return <Navigate to={`/dashboard/${facilitySlug}`} replace />;
+    return <Navigate to={getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined)} replace />;
   }
 
   return <>{children}</>;

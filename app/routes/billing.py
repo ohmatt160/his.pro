@@ -15,9 +15,16 @@ from app.services.billing_service import BillingService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.receipt_service import ReceiptService
 from app.utils.dependencies import get_current_user, role_required
+from app.utils.branch_scope import (
+    effective_branch_id,
+    ensure_patient_branch_access,
+    require_facility_slug,
+    require_tenant_row,
+    tenant_query,
+)
 from app.models.user import User
 from app.models.patient import Patient
-from app.models.billing import Payment
+from app.models.billing import Invoice, Payment
 from app.models.facility import Facility
 
 logger = logging.getLogger(__name__)
@@ -41,6 +48,8 @@ def _invoice_response(invoice) -> InvoiceResponse:
         paid_date=invoice.paid_date.isoformat() if invoice.paid_date else None,
         notes=invoice.notes,
         facility_slug=invoice.facility_slug,
+        branch_id=invoice.branch_id or invoice.department_id,
+        department_id=invoice.department_id,
         created_at=invoice.created_at.isoformat() if invoice.created_at else "",
         updated_at=invoice.updated_at.isoformat() if invoice.updated_at else None
     )
@@ -66,10 +75,11 @@ def _payment_response(payment) -> PaymentResponse:
     )
 
 
-def _get_payment_for_facility(payment_id: str, facility_slug: str) -> Payment:
+def _get_payment_for_user(payment_id: str, current_user: User) -> Payment:
     payment = db_session.query(Payment).filter_by(id=payment_id).first()
-    if not payment or not payment.invoice or payment.invoice.facility_slug != facility_slug:
+    if not payment or not payment.invoice:
         raise HTTPException(status_code=404, detail="Payment not found")
+    require_tenant_row(payment.invoice, current_user, "Payment not found")
     return payment
 
 
@@ -77,21 +87,19 @@ def _get_payment_for_facility(payment_id: str, facility_slug: str) -> Payment:
 async def get_invoices(
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
-
-    from app.models.billing import Invoice
-    query = db_session.query(Invoice).filter_by(facility_slug=facility_slug)
+    facility_slug = require_facility_slug(current_user)
+    query = tenant_query(db_session, Invoice, current_user, branch_id)
 
     if patient_id:
         # Verify patient belongs to facility
         patient = db_session.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
             return []
+        ensure_patient_branch_access(patient, current_user, branch_id)
         query = query.filter_by(patient_id=patient_id)
     elif status:
         query = query.filter_by(status=status)
@@ -104,19 +112,23 @@ async def get_invoices(
 @router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     data: InvoiceCreate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    facility_slug = require_facility_slug(current_user)
 
     # Verify patient belongs to facility
     patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+    branch_id = ensure_patient_branch_access(patient, current_user)
 
-    invoice = BillingService.create_invoice(data.model_dump(), facility_slug=facility_slug)
+    invoice = BillingService.create_invoice(
+        data.model_dump(),
+        facility_slug=facility_slug,
+        branch_id=branch_id or patient.branch_id or patient.department_id,
+        department_id=branch_id or patient.department_id,
+    )
     PatientNotificationService.create(
         facility_slug=facility_slug,
         patient=patient,
@@ -134,14 +146,11 @@ async def create_invoice(
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(
     invoice_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
     invoice = BillingService.get_invoice_by_id(invoice_id)
-
-    if not invoice or invoice.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    require_tenant_row(invoice, current_user, "Invoice not found")
 
     return _invoice_response(invoice)
 
@@ -150,10 +159,12 @@ async def get_invoice(
 async def add_payment(
     invoice_id: str,
     data: PaymentCreate,
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
+    facility_slug = require_facility_slug(current_user)
+    invoice = BillingService.get_invoice_by_id(invoice_id)
+    require_tenant_row(invoice, current_user, "Invoice not found")
     payment, error = BillingService.create_payment(
         invoice_id,
         data.model_dump(),
@@ -191,14 +202,11 @@ async def add_payment(
 @router.get("/invoices/{invoice_id}/payments", response_model=List[PaymentResponse])
 async def get_invoice_payments(
     invoice_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
     invoice = BillingService.get_invoice_by_id(invoice_id)
-
-    if not invoice or invoice.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    require_tenant_row(invoice, current_user, "Invoice not found")
 
     return [_payment_response(payment) for payment in invoice.payments]
 
@@ -207,14 +215,10 @@ async def get_invoice_payments(
 async def upload_payment_receipt(
     payment_id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
-
-    payment = _get_payment_for_facility(payment_id, facility_slug)
+    payment = _get_payment_for_user(payment_id, current_user)
     updated = await ReceiptService.attach_receipt(payment, file)
     return _payment_response(updated)
 
@@ -222,14 +226,10 @@ async def upload_payment_receipt(
 @router.get("/payments/{payment_id}/receipt")
 async def download_payment_receipt(
     payment_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
-    if not facility_slug:
-        raise HTTPException(status_code=400, detail="User is not associated with a facility")
-
-    payment = _get_payment_for_facility(payment_id, facility_slug)
+    payment = _get_payment_for_user(payment_id, current_user)
     path = ReceiptService.get_receipt_file(payment)
     return FileResponse(
         path,
@@ -242,14 +242,11 @@ async def download_payment_receipt(
 async def update_invoice(
     invoice_id: str,
     data: InvoiceUpdate,
-    current_user: User = Depends(role_required('ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
-    facility_slug = current_user.facility_slug
     invoice = BillingService.get_invoice_by_id(invoice_id)
-
-    if not invoice or invoice.facility_slug != facility_slug:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    require_tenant_row(invoice, current_user, "Invoice not found")
 
     updated_invoice = BillingService.update_invoice(invoice, data.model_dump(exclude_unset=True))
 
