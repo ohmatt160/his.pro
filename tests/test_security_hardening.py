@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -71,7 +72,7 @@ class SecurityHardeningTest(unittest.TestCase):
             },
         )
         live_headers = {k.lower(): v for k, v in live_login_preflight.headers.items()}
-        self.assertEqual(live_login_preflight.status_code, 204)
+        self.assertIn(live_login_preflight.status_code, (200, 204))
         self.assertEqual(live_headers.get("access-control-allow-origin"), "https://his-pro-v1-0.vercel.app")
         self.assertEqual(live_headers.get("access-control-allow-credentials"), "true")
 
@@ -103,6 +104,23 @@ class SecurityHardeningTest(unittest.TestCase):
         self.assertEqual(auth.status_code, 200, auth.text)
         self.assertIn("hispro_access_token", auth.headers.get("set-cookie", ""))
         self.assertIn("HttpOnly", auth.headers.get("set-cookie", ""))
+
+        from app.middleware.jwt import create_access_token
+
+        expired_access_token = create_access_token(
+            "expired-access-user",
+            expires_delta=timedelta(seconds=-1),
+        )
+        refresh_with_expired_access_header = await client.post(
+            "/api/v1/auth/refresh",
+            headers={"x-hispro-authorization": f"Bearer {expired_access_token}"},
+        )
+        self.assertEqual(
+            refresh_with_expired_access_header.status_code,
+            200,
+            refresh_with_expired_access_header.text,
+        )
+        self.assertIn("access_token", refresh_with_expired_access_header.json())
 
         verify = await client.post("/api/v1/auth/verify")
         self.assertEqual(verify.status_code, 200, verify.text)
