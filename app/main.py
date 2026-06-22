@@ -188,6 +188,12 @@ def create_app() -> FastAPI:
             "frontend_url": frontend_url,
         }
 
+    # Add this debug endpoint temporarily
+    @app.get("/debug/middleware")
+    async def debug_middleware():
+        import app.middleware.cors_force as cf
+        return {"has_force_cors": hasattr(cf, 'ForceCORSHeadersMiddleware')}
+
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
