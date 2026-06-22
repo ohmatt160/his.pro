@@ -218,6 +218,15 @@ def create_app() -> FastAPI:
     #     expose_headers=["Authorization"],
     # )
 
+    @app.middleware("http")
+    async def force_cors(request: Request, call_next):
+        origin = request.headers.get("origin")
+        response = await call_next(request)
+        if origin in allowed_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],  # Allow everything for now
