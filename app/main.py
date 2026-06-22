@@ -192,7 +192,12 @@ def create_app() -> FastAPI:
     @app.get("/debug/middleware")
     async def debug_middleware():
         import app.middleware.cors_force as cf
-        return {"has_force_cors": hasattr(cf, 'ForceCORSHeadersMiddleware')}
+        middlewares = [m.__class__.__name__ for m in app.user_middleware]
+        return {
+            "has_force_cors": hasattr(cf, 'ForceCORSHeadersMiddleware'),
+            "middleware_stack": middlewares,
+            "force_cors_loaded": "ForceCORSHeadersMiddleware" in str(middlewares)
+        }
 
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
