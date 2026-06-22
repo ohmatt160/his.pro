@@ -65,6 +65,8 @@ ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 redis_client = None
 
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
@@ -165,17 +167,7 @@ def create_app() -> FastAPI:
     allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None
 
     # DB session middleware
-    @app.middleware("http")
-    async def db_session_middleware(request: Request, call_next):
-        try:
-            response = await call_next(request)
-            db_session.commit()
-            return response
-        except Exception:
-            db_session.rollback()
-            raise
-        finally:
-            db_session.remove()
+
 
         # Keep CORS as the outermost middleware so preflight and middleware-generated
         # error responses still include credentialed CORS headers.
@@ -189,6 +181,7 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "Accept"],
         expose_headers=["Authorization"],
     )
+
 
     @app.get("/debug/cors")
     async def debug_cors():
