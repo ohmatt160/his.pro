@@ -42,12 +42,13 @@ const ModuleRoute = ({
     ])
       .then(([workspace, branches]) => {
         const branch = branchSlug ? branches.find((item) => item.slug === branchSlug) : null;
+        const modules = branchSlug ? branch?.modules || [] : workspace?.selectedModules || [];
         if (mounted) {
           setAllowed(
             Boolean(
               workspace &&
                 canAccessModule({
-                  modules: branch?.modules?.length ? branch.modules : workspace.selectedModules,
+                  modules,
                   moduleId: module,
                   role: user?.role,
                 })

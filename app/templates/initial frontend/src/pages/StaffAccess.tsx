@@ -113,7 +113,8 @@ const item = {
 };
 
 const StaffAccess = () => {
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { user } = useAuth();
   const [workspace, setWorkspace] = useState<
     | {
         facilityName: string;
@@ -175,19 +176,47 @@ const StaffAccess = () => {
       });
   }, [facilitySlug]);
 
+  const isBranchAdmin = user?.role === "branch_admin";
+  const currentBranch = useMemo(() => {
+    if (!isBranchAdmin) {
+      return null;
+    }
+
+    return (
+      facilityDepartments.find((branch) => user?.branchId && branch.id === user.branchId) ||
+      facilityDepartments.find((branch) => branchSlug && branch.slug === branchSlug) ||
+      facilityDepartments[0] ||
+      null
+    );
+  }, [branchSlug, facilityDepartments, isBranchAdmin, user?.branchId]);
+  const branchScopedStaff = useMemo(() => {
+    if (!isBranchAdmin || !currentBranch) {
+      return staffList;
+    }
+
+    return staffList.filter((staff) => {
+      const assignedBranch = staff.branchId || staff.departmentId;
+      return assignedBranch === currentBranch.id;
+    });
+  }, [currentBranch, isBranchAdmin, staffList]);
+  const assignableStaffRoles = useMemo(
+    () => isBranchAdmin ? assignableRoles.filter((role) => role !== "branch_admin") : assignableRoles,
+    [isBranchAdmin]
+  );
+
   const rolesProvisioned = useMemo(
-    () => new Set(staffList.map((staff) => staff.role)).size,
-    [staffList]
+    () => new Set(branchScopedStaff.map((staff) => staff.role)).size,
+    [branchScopedStaff]
   );
 
   const filteredStaff = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
 
     if (!query) {
-      return staffList;
+      return branchScopedStaff;
     }
 
-    return staffList.filter((staff) => {
+    return branchScopedStaff.filter((staff) => {
       const roleLabel = getStaffRoleLabel(staff.role).toLowerCase();
 
       return (
@@ -199,15 +228,15 @@ const StaffAccess = () => {
         staff.phone.toLowerCase().includes(query)
       );
     });
-  }, [searchQuery, staffList]);
+  }, [branchScopedStaff, searchQuery]);
 
-  const branchOptions = facilityDepartments;
+  const branchOptions = isBranchAdmin && currentBranch ? [currentBranch] : facilityDepartments;
   const branchById = useMemo(
     () => new Map(branchOptions.map((branch) => [branch.id, branch])),
     [branchOptions]
   );
 
-  const loginLink = getFacilityLoginLink(facilitySlug);
+  const loginLink = currentBranch?.slug ? getBranchLoginLink(facilitySlug, currentBranch.slug) : getFacilityLoginLink(facilitySlug);
   const getLoginLinkForBranch = (branchId?: string | null) => {
     const branch = branchId ? branchById.get(branchId) : undefined;
     if (!branch) {
@@ -268,7 +297,12 @@ const StaffAccess = () => {
       setStaffError("Enter a valid work email address or leave it blank.");
       return;
     }
-    if (newStaff.role === "branch_admin" && !newStaff.departmentId) {
+    const assignedBranchId = isBranchAdmin ? currentBranch?.id || "" : newStaff.departmentId;
+    if (isBranchAdmin && !assignedBranchId) {
+      setStaffError("Your branch could not be found. Please sign in through your branch portal again.");
+      return;
+    }
+    if (newStaff.role === "branch_admin" && !assignedBranchId) {
       setStaffError("Select the branch this branch admin will manage.");
       return;
     }
@@ -281,8 +315,8 @@ const StaffAccess = () => {
         fullName: newStaff.fullName.trim(),
         role: newStaff.role,
         department: newStaff.department.trim(),
-        branchId: newStaff.departmentId || undefined,
-        branchIds: newStaff.departmentId ? [newStaff.departmentId] : undefined,
+        branchId: assignedBranchId || undefined,
+        branchIds: assignedBranchId ? [assignedBranchId] : undefined,
         email: newStaff.email.trim(),
         phone: newStaff.phone.trim(),
         createdBy: workspace?.fullName,
@@ -296,7 +330,7 @@ const StaffAccess = () => {
         fullName: "",
         role: "doctor",
         department: getDefaultDepartmentForRole("doctor"),
-        departmentId: "",
+        departmentId: isBranchAdmin ? assignedBranchId : "",
         email: "",
         phone: "",
       });
@@ -339,14 +373,21 @@ const StaffAccess = () => {
     setUpdatingStaff(true);
     setStaffError("");
     try {
+      const assignedBranchId = isBranchAdmin ? currentBranch?.id || "" : editStaffDepartmentId;
+      if (isBranchAdmin && !assignedBranchId) {
+        setStaffError("Your branch could not be found. Please sign in through your branch portal again.");
+        setUpdatingStaff(false);
+        return;
+      }
+
       const updated = await updateStaffAccount({
         facilitySlug,
         loginId: editingStaff.loginId,
         fullName: editStaff.fullName,
         role: editingStaff.role === "admin" ? undefined : editStaff.role,
         department: editStaff.department,
-        branchId: editStaffDepartmentId || undefined,
-        branchIds: editStaffDepartmentId ? [editStaffDepartmentId] : undefined,
+        branchId: assignedBranchId || undefined,
+        branchIds: assignedBranchId ? [assignedBranchId] : undefined,
         email: editStaff.email,
         phone: editStaff.phone,
         password: editStaff.password || undefined,
@@ -412,7 +453,7 @@ const StaffAccess = () => {
                   </div>
                   <div>
                     <p className="text-2xl font-extrabold text-foreground">
-                      {staffList.length}
+                      {branchScopedStaff.length}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Staff Accounts
@@ -583,16 +624,18 @@ const StaffAccess = () => {
                         <Users className="h-7 w-7 text-muted-foreground" />
                       </div>
                       <p className="mb-1 font-semibold text-foreground">
-                        {staffList.length === 0
+                        {branchScopedStaff.length === 0
                           ? "No staff accounts yet"
                           : "No results found"}
                       </p>
                       <p className="mb-4 text-sm text-muted-foreground">
-                        {staffList.length === 0
-                          ? "Add your first staff member to get this facility ready."
+                        {branchScopedStaff.length === 0
+                          ? isBranchAdmin
+                            ? "Add the first staff member for this branch."
+                            : "Add your first staff member to get this facility ready."
                           : "Try a different search term."}
                       </p>
-                      {staffList.length === 0 && (
+                      {branchScopedStaff.length === 0 && (
                         <Button
                           onClick={() => setShowAddModal(true)}
                           variant="outline"
@@ -757,7 +800,7 @@ const StaffAccess = () => {
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
-                    {assignableRoles.map((role) => (
+                    {assignableStaffRoles.map((role) => (
                       <SelectItem key={role} value={role}>
                         {getStaffRoleLabel(role)}
                       </SelectItem>
@@ -791,7 +834,7 @@ const StaffAccess = () => {
             </div>
 
 
-            {branchOptions.length > 0 && (
+            {!isBranchAdmin && branchOptions.length > 0 && (
               <div>
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Branch / Clinic
@@ -870,7 +913,7 @@ const StaffAccess = () => {
                   creatingStaff ||
                   !newStaff.fullName.trim() ||
                   !newStaff.department.trim() ||
-                  (newStaff.role === "branch_admin" && !newStaff.departmentId)
+                  (!isBranchAdmin && newStaff.role === "branch_admin" && !newStaff.departmentId)
                 }
               >
                 {creatingStaff ? "Creating..." : "Create Account"}
@@ -929,7 +972,7 @@ const StaffAccess = () => {
                     {editingStaff?.role === "admin" && (
                       <SelectItem value="admin">Facility Admin</SelectItem>
                     )}
-                    {assignableRoles.map((role) => (
+                    {assignableStaffRoles.map((role) => (
                       <SelectItem key={role} value={role}>
                         {getStaffRoleLabel(role)}
                       </SelectItem>
@@ -985,7 +1028,7 @@ const StaffAccess = () => {
               </Select>
             </div>
 
-            {branchOptions.length > 0 && (
+            {!isBranchAdmin && branchOptions.length > 0 && (
               <div>
                 <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Branch / Clinic

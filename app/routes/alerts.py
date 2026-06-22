@@ -22,6 +22,8 @@ from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+ALERT_VIEW_ROLES = ('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')
+ALERT_CREATE_ROLES = ('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')
 
 
 def _alert_response(alert: Alert) -> AlertResponse:
@@ -64,7 +66,7 @@ async def get_alerts(
     alert_type: Optional[str] = Query(None, pattern="^(info|warning|critical)$"),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required(*ALERT_VIEW_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Paginated list of alerts for user's facility"""
@@ -92,7 +94,7 @@ async def get_alerts(
 async def create_alert(
     data: AlertCreate,
     request: Request,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required(*ALERT_CREATE_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Create a new alert"""
@@ -147,7 +149,7 @@ async def create_alert(
 async def create_role_alert(
     data: RoleAlertCreate,
     request: Request,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required(*ALERT_CREATE_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Create the same alert for every active staff member with a role."""
@@ -196,7 +198,7 @@ async def create_role_alert(
 @router.get("/{alert_id}", response_model=AlertResponse)
 async def get_alert(
     alert_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required(*ALERT_VIEW_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Get alert by ID"""
@@ -215,7 +217,7 @@ async def get_alert(
 async def update_alert(
     alert_id: str,
     data: AlertUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR')),
+    current_user: User = Depends(role_required(*ALERT_CREATE_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Update alert"""
@@ -266,7 +268,7 @@ async def delete_alert(
 @router.put("/{alert_id}/read", response_model=AlertResponse)
 async def mark_as_read(
     alert_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required(*ALERT_VIEW_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Mark alert as read"""
@@ -287,7 +289,7 @@ async def mark_as_read(
 
 @router.put("/actions/mark-all-read", response_model=MessageResponse)
 async def mark_all_as_read(
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required(*ALERT_VIEW_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Mark all visible unread alerts as read."""
@@ -306,7 +308,7 @@ async def mark_all_as_read(
 @router.put("/{alert_id}/unread", response_model=AlertResponse)
 async def mark_as_unread(
     alert_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required(*ALERT_VIEW_ROLES)),
     db: Session = Depends(get_db)
 ):
     """Mark alert as unread"""

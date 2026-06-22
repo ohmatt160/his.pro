@@ -165,7 +165,7 @@ const Dashboard = () => {
           fullName: user.fullName || current?.fullName || "Admin",
           email: user.email || facility.email || current?.email || "",
           phone: facility.phone || current?.phone || "",
-          selectedModules: normalizeModules(activeBranch?.modules?.length ? activeBranch.modules : facility.modules),
+          selectedModules: normalizeModules(activeBranch ? activeBranch.modules || [] : facility.modules),
           facilitySlug: facility.slug,
           createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
         }));

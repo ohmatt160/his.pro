@@ -559,7 +559,6 @@ async def create_branch(
     facility = get_facility_or_404(facility_slug)
     require_admin_for_facility(current_user, facility)
     name = Validators.sanitize_string(data.name)
-    modules = normalize_facility_modules(data.modules or facility.modules, facility.type)
     branch = Branch(
         facility_id=facility.id,
         facility_slug=facility.slug,
@@ -569,7 +568,7 @@ async def create_branch(
         address=Validators.sanitize_string(data.address or ""),
         phone=Validators.sanitize_string(data.phone or ""),
         email=str(data.email).lower() if data.email else "",
-        modules=modules,
+        modules=[],
         settings=data.settings or {},
     )
     db_session.add(branch)
@@ -615,7 +614,7 @@ async def update_branch(
     if "email" in payload:
         branch.email = str(payload["email"]).lower() if payload["email"] else ""
     if "modules" in payload and payload["modules"] is not None:
-        branch.modules = normalize_facility_modules(payload["modules"], facility.type)
+        branch.modules = normalize_facility_modules(payload["modules"], facility.type) if payload["modules"] else []
     if "settings" in payload and payload["settings"] is not None:
         branch.settings = payload["settings"]
     if "is_public" in payload:
@@ -652,7 +651,7 @@ async def update_branch_modules(
         require_admin_for_facility(current_user, facility)
     else:
         require_branch_access(current_user, branch)
-    branch.modules = normalize_facility_modules(data.modules, facility.type)
+    branch.modules = normalize_facility_modules(data.modules, facility.type) if data.modules else []
     db_session.add(branch)
     db_session.commit()
     db_session.refresh(branch)

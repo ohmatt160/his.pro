@@ -92,6 +92,7 @@ const AppShell = ({ children }: AppShellProps) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [currentBranch, setCurrentBranch] = useState<FacilityBranch | null>(null);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const canUseChat = roleAllows(user?.role, routeRoles.chat);
 
   useEffect(() => {
     if (!facilitySlug) {
@@ -112,13 +113,22 @@ const AppShell = ({ children }: AppShellProps) => {
       )
       .then(setStats)
       .catch(() => setStats(null));
-    apiClient
-      .get<{ unread_count: number }>("/chat/unread-count")
-      .then((result) => setUnreadMessages(result.unread_count))
-      .catch(() => setUnreadMessages(0));
-  }, [facilitySlug, user?.branchId]);
+    if (canUseChat) {
+      apiClient
+        .get<{ unread_count: number }>("/chat/unread-count")
+        .then((result) => setUnreadMessages(result.unread_count))
+        .catch(() => setUnreadMessages(0));
+    } else {
+      setUnreadMessages(0);
+    }
+  }, [facilitySlug, user?.branchId, canUseChat]);
 
   useEffect(() => {
+    if (!canUseChat) {
+      setUnreadMessages(0);
+      return;
+    }
+
     const timer = window.setInterval(() => {
       apiClient
         .get<{ unread_count: number }>("/chat/unread-count")
@@ -126,7 +136,7 @@ const AppShell = ({ children }: AppShellProps) => {
         .catch(() => undefined);
     }, 15000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [canUseChat]);
 
   useEffect(() => {
     const handleWorkspaceUpdated = (event: Event) => {
@@ -142,7 +152,13 @@ const AppShell = ({ children }: AppShellProps) => {
     };
   }, [facilitySlug]);
 
-  const selectedModules = normalizeModules(currentBranch?.modules?.length ? currentBranch.modules : workspace?.selectedModules?.length ? workspace.selectedModules : defaultModules);
+  const selectedModules = normalizeModules(
+    currentBranch
+      ? currentBranch.modules || []
+      : workspace?.selectedModules?.length
+        ? workspace.selectedModules
+        : defaultModules
+  );
   const facilityType = currentBranch ? currentBranch.name : workspace?.facilityType || "facility";
   const visibleNav = navItems.filter((entry) => {
     if (entry.adminOnly && !["admin", "branch_admin"].includes(user?.role || "")) {

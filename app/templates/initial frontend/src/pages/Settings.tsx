@@ -121,8 +121,8 @@ type SettingsResource = "facility" | "profile";
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
-  const { logoutEverywhere } = useAuth();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { user, logoutEverywhere } = useAuth();
   const [facility, setFacility] = useState<Facility | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
@@ -146,6 +146,17 @@ const Settings = () => {
 
   const dashboardPath = getFacilityDashboardPath(facilitySlug);
   const auditLogsPath = `/dashboard/${facilitySlug}/audit-logs`;
+  const isBranchAdmin = user?.role === "branch_admin";
+
+  const getCurrentBranch = (source: Facility | null = facility) => {
+    const branches = source?.branches || source?.departments || [];
+    return (
+      branches.find((branch) => user?.branchId && branch.id === user.branchId) ||
+      branches.find((branch) => branchSlug && branch.slug === branchSlug) ||
+      branches[0] ||
+      null
+    );
+  };
 
   const loadSettings = async () => {
     setLoading(true);
@@ -168,7 +179,10 @@ const Settings = () => {
       setDataErrors(errors);
 
       if (nextFacility) {
-        setModuleSelection(normalizeModules(nextFacility.modules));
+        const currentBranch = getCurrentBranch(nextFacility);
+        setModuleSelection(
+          normalizeModules(isBranchAdmin && currentBranch ? currentBranch.modules || [] : nextFacility.modules)
+        );
         setHospitalType(nextFacility.hospital_type || "single");
         setFacilityForm({
           name: nextFacility.name || "",
@@ -206,7 +220,7 @@ const Settings = () => {
   };
 
   const saveModules = async () => {
-    if (!facility || moduleSelection.length === 0) {
+    if (!facility || (!isBranchAdmin && moduleSelection.length === 0)) {
       setError("At least one module must stay enabled.");
       return;
     }
@@ -214,6 +228,30 @@ const Settings = () => {
     setError("");
     setModulesStatus("");
     try {
+      if (isBranchAdmin) {
+        const branch = getCurrentBranch();
+        if (!branch) {
+          setError("Your branch could not be found. Please sign in through your branch portal again.");
+          return;
+        }
+
+        const updatedBranch = await apiClient.put<Branch>(
+          `/facilities/${facility.slug}/branches/${branch.id}/modules`,
+          { modules: moduleSelection }
+        );
+        setFacility((current) => {
+          if (!current) {
+            return current;
+          }
+          const branches = current.branches || current.departments || [];
+          const nextBranches = branches.map((item) => (item.id === updatedBranch.id ? updatedBranch : item));
+          return { ...current, branches: nextBranches, departments: nextBranches };
+        });
+        setModuleSelection(normalizeModules(updatedBranch.modules));
+        setModulesStatus("Branch modules saved.");
+        return;
+      }
+
       const updated = await apiClient.put<Facility>(
         `/facilities/${facility.slug}/modules`,
         moduleSelection
@@ -460,14 +498,16 @@ const Settings = () => {
             </Button>
             <h1 className="text-2xl font-extrabold tracking-tight">Settings</h1>
             <p className="text-sm text-muted-foreground">
-              Manage facility and account settings.
+              {isBranchAdmin ? "Manage your branch account and module settings." : "Manage facility and account settings."}
             </p>
           </div>
-          <Button asChild variant="outline" className="gap-2">
-            <Link to={auditLogsPath}>
-              <ClipboardList className="h-4 w-4" /> Audit Logs
-            </Link>
-          </Button>
+          {!isBranchAdmin && (
+            <Button asChild variant="outline" className="gap-2">
+              <Link to={auditLogsPath}>
+                <ClipboardList className="h-4 w-4" /> Audit Logs
+              </Link>
+            </Button>
+          )}
         </div>
       </header>
 
@@ -485,41 +525,44 @@ const Settings = () => {
             </p>
           )}
 
-          <Card className="border-border/60">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Building2 className="h-4 w-4 text-primary" /> Facility
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={saveFacility} className="grid gap-4 sm:grid-cols-2">
-                <Field label="Name" value={facilityForm.name} onChange={(value) => setFacilityForm((current) => ({ ...current, name: value }))} required />
-                <div>
-                  <Label>Type</Label>
-                  <Select value={facilityForm.type} onValueChange={(value) => setFacilityForm((current) => ({ ...current, type: value }))}>
-                    <SelectTrigger className="mt-1.5">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="hospital">Hospital</SelectItem>
-                      <SelectItem value="clinic">Clinic</SelectItem>
-                      <SelectItem value="lab">Lab</SelectItem>
-                      <SelectItem value="pharmacy">Pharmacy</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Field label="Country" value={facilityForm.country} onChange={(value) => setFacilityForm((current) => ({ ...current, country: value }))} />
-                <Field label="Phone" value={facilityForm.phone} onChange={(value) => setFacilityForm((current) => ({ ...current, phone: value }))} />
-                <Field label="Email" type="email" value={facilityForm.email} onChange={(value) => setFacilityForm((current) => ({ ...current, email: value }))} />
-                <div className="sm:col-span-2">
-                  <Label>Address</Label>
-                  <Textarea className="mt-1.5" value={facilityForm.address} onChange={(event) => setFacilityForm((current) => ({ ...current, address: event.target.value }))} />
-                </div>
-                <SubmitRow status={facilityStatus} label="Save Facility" />
-              </form>
-            </CardContent>
-          </Card>
+          {!isBranchAdmin && (
+            <Card className="border-border/60">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Building2 className="h-4 w-4 text-primary" /> Facility
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={saveFacility} className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Name" value={facilityForm.name} onChange={(value) => setFacilityForm((current) => ({ ...current, name: value }))} required />
+                  <div>
+                    <Label>Type</Label>
+                    <Select value={facilityForm.type} onValueChange={(value) => setFacilityForm((current) => ({ ...current, type: value }))}>
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hospital">Hospital</SelectItem>
+                        <SelectItem value="clinic">Clinic</SelectItem>
+                        <SelectItem value="lab">Lab</SelectItem>
+                        <SelectItem value="pharmacy">Pharmacy</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Field label="Country" value={facilityForm.country} onChange={(value) => setFacilityForm((current) => ({ ...current, country: value }))} />
+                  <Field label="Phone" value={facilityForm.phone} onChange={(value) => setFacilityForm((current) => ({ ...current, phone: value }))} />
+                  <Field label="Email" type="email" value={facilityForm.email} onChange={(value) => setFacilityForm((current) => ({ ...current, email: value }))} />
+                  <div className="sm:col-span-2">
+                    <Label>Address</Label>
+                    <Textarea className="mt-1.5" value={facilityForm.address} onChange={(event) => setFacilityForm((current) => ({ ...current, address: event.target.value }))} />
+                  </div>
+                  <SubmitRow status={facilityStatus} label="Save Facility" />
+                </form>
+              </CardContent>
+            </Card>
+          )}
 
+          {!isBranchAdmin && (
           <Card className="border-border/60">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
@@ -629,6 +672,7 @@ const Settings = () => {
               )}
             </CardContent>
           </Card>
+          )}
 
           <Card className="border-border/60">
             <CardHeader>
@@ -651,7 +695,7 @@ const Settings = () => {
           <Card className="border-border/60">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Layers className="h-4 w-4 text-primary" /> Modules
+                <Layers className="h-4 w-4 text-primary" /> {isBranchAdmin ? "Branch Modules" : "Modules"}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">

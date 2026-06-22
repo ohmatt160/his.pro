@@ -53,6 +53,7 @@ class BranchIsolationTest(unittest.TestCase):
                 self.assertEqual(east.status_code, 201, east.text)
                 east_id = east.json()["id"]
                 east_slug = east.json()["slug"]
+                self.assertEqual(east.json()["modules"], [])
 
                 west = await client.post(
                     "/api/v1/facilities/campus-hospital/branches",
@@ -69,6 +70,19 @@ class BranchIsolationTest(unittest.TestCase):
 
                 east_admin = await create_branch_admin(client, owner_headers, east_id, "east.admin@example.com", east_slug)
                 west_admin = await create_branch_admin(client, owner_headers, west_id, "west.admin@example.com", west_slug)
+
+                east_unread = await client.get("/api/v1/chat/unread-count", headers=east_admin)
+                self.assertEqual(east_unread.status_code, 200, east_unread.text)
+                self.assertEqual(east_unread.json()["unread_count"], 0)
+
+                east_chat_staff = await client.get("/api/v1/chat/staff", headers=east_admin)
+                self.assertEqual(east_chat_staff.status_code, 200, east_chat_staff.text)
+
+                east_conversations = await client.get("/api/v1/chat/conversations", headers=east_admin)
+                self.assertEqual(east_conversations.status_code, 200, east_conversations.text)
+
+                east_alerts = await client.get("/api/v1/alerts?per_page=100", headers=east_admin)
+                self.assertEqual(east_alerts.status_code, 200, east_alerts.text)
 
                 missing_branch_admin = await client.post(
                     "/api/v1/facilities/campus-hospital/staff",
