@@ -164,16 +164,6 @@ def create_app() -> FastAPI:
         raise RuntimeError("Wildcard CORS origins are not allowed in production")
     allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_origin_regex=allowed_origin_regex,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "Accept"],
-        expose_headers=["Authorization"],
-    )
-
     # DB session middleware
     @app.middleware("http")
     async def db_session_middleware(request: Request, call_next):
@@ -193,6 +183,18 @@ def create_app() -> FastAPI:
     app.add_middleware(ModuleAccessMiddleware)
     app.add_middleware(JWTMiddleware)
     register_error_handlers(app)
+
+    # Keep CORS as the outermost middleware so preflight and middleware-generated
+    # error responses still include credentialed CORS headers.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["Content-Type", "Authorization", "Accept"],
+        expose_headers=["Authorization"],
+    )
 
     # Health check
     @app.get("/health")
