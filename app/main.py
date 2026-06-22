@@ -190,6 +190,14 @@ def create_app() -> FastAPI:
         expose_headers=["Authorization"],
     )
 
+    @app.get("/debug/cors")
+    async def debug_cors():
+        return {
+            "allowed_origins": allowed_origins,
+            "app_env": app_env,
+            "frontend_url": frontend_url,
+        }
+
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
