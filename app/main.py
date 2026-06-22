@@ -208,31 +208,14 @@ def create_app() -> FastAPI:
         allowed_origin_regex=allowed_origin_regex,
     )
 
-    # app.add_middleware(
-    #     CORSMiddleware,
-    #     allow_origins=allowed_origins,
-    #     allow_origin_regex=allowed_origin_regex,
-    #     allow_credentials=True,
-    #     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    #     allow_headers=["Content-Type", "Authorization", "Accept"],
-    #     expose_headers=["Authorization"],
-    # )
-
-    @app.middleware("http")
-    async def force_cors(request: Request, call_next):
-        origin = request.headers.get("origin")
-        response = await call_next(request)
-        if origin in allowed_origins:
-            response.headers["Access-Control-Allow-Origin"] = origin
-            response.headers["Access-Control-Allow-Credentials"] = "true"
-        return response
-
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allow everything for now
+        allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["Content-Type", "Authorization", "Accept"],
+        expose_headers=["Authorization"],
     )
 
     app.add_middleware(RateLimitMiddleware)
