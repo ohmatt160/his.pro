@@ -31,8 +31,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
-def _invoice_response(invoice) -> InvoiceResponse:
-    paid_amount = sum(float(payment.amount or 0) for payment in invoice.payments)
+def _invoice_response(invoice, payments=None) -> InvoiceResponse:
+    invoice_payments = payments if payments is not None else invoice.payments
+    paid_amount = sum(float(payment.amount or 0) for payment in invoice_payments)
     amount = float(invoice.total or 0)
     balance = max(amount - paid_amount, 0)
 
@@ -50,6 +51,7 @@ def _invoice_response(invoice) -> InvoiceResponse:
         facility_slug=invoice.facility_slug,
         branch_id=invoice.branch_id or invoice.department_id,
         department_id=invoice.department_id,
+        payments=[_payment_response(payment) for payment in invoice_payments],
         created_at=invoice.created_at.isoformat() if invoice.created_at else "",
         updated_at=invoice.updated_at.isoformat() if invoice.updated_at else None
     )
@@ -105,8 +107,23 @@ async def get_invoices(
         query = query.filter_by(status=status)
 
     invoices = query.order_by(Invoice.invoice_date.desc()).all()
+    invoice_ids = [invoice.id for invoice in invoices]
+    payments_by_invoice_id = {invoice_id: [] for invoice_id in invoice_ids}
+    if invoice_ids:
+        payments = (
+            db_session.query(Payment)
+            .join(Invoice, Invoice.id == Payment.invoice_id)
+            .filter(
+                Payment.invoice_id.in_(invoice_ids),
+                Invoice.facility_slug == facility_slug,
+            )
+            .order_by(Payment.payment_date.desc())
+            .all()
+        )
+        for payment in payments:
+            payments_by_invoice_id.setdefault(payment.invoice_id, []).append(payment)
 
-    return [_invoice_response(i) for i in invoices]
+    return [_invoice_response(i, payments_by_invoice_id.get(i.id, [])) for i in invoices]
 
 
 @router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)

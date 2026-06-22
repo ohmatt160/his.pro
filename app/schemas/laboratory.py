@@ -41,6 +41,17 @@ class LabOrderUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(PENDING|COLLECTED|IN_PROGRESS|COMPLETED|CANCELLED)$")
 
 
+class LabResultResponse(BaseModel):
+    id: str
+    order_id: str
+    entered_by: Optional[str]
+    value: Optional[str]
+    is_abnormal: Optional[bool]
+    notes: Optional[str]
+    created_at: str
+    updated_at: Optional[str]
+
+
 class LabOrderResponse(BaseModel):
     id: str
     patient_id: str
@@ -53,6 +64,7 @@ class LabOrderResponse(BaseModel):
     facility_slug: Optional[str]
     department_id: Optional[str] = None
     branch_id: Optional[str] = None
+    result: Optional[LabResultResponse] = None
     created_at: str
     updated_at: Optional[str]
 
@@ -61,15 +73,4 @@ class LabResultCreate(BaseModel):
     value: Optional[str] = Field(None)
     is_abnormal: Optional[bool] = Field(False)
     notes: Optional[str] = Field(None)
-
-
-class LabResultResponse(BaseModel):
-    id: str
-    order_id: str
-    entered_by: Optional[str]
-    value: Optional[str]
-    is_abnormal: Optional[bool]
-    notes: Optional[str]
-    created_at: str
-    updated_at: Optional[str]
 

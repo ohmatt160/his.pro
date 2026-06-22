@@ -73,6 +73,7 @@ type LabOrder = {
   priority?: "ROUTINE" | "URGENT" | "STAT" | string | null;
   notes?: string | null;
   completed_at?: string | null;
+  result?: LabResult | null;
   created_at: string;
 };
 
@@ -204,23 +205,9 @@ const Laboratory = () => {
       setTests(nextTests);
       setOrders(nextOrders);
       setDataErrors(errors);
-
-      const completedOrders = nextOrders.filter(
-        (order) => order.status === "COMPLETED"
+      setResults(
+        Object.fromEntries(nextOrders.map((order) => [order.id, order.result ?? null]))
       );
-      const resultEntries = await Promise.all(
-        completedOrders.map(async (order) => {
-          try {
-            const result = await apiClient.get<LabResult>(
-              `/laboratory/results/${order.id}`
-            );
-            return [order.id, result] as const;
-          } catch {
-            return [order.id, null] as const;
-          }
-        })
-      );
-      setResults(Object.fromEntries(resultEntries));
     } finally {
       setLoading(false);
     }

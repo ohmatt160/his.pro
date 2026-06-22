@@ -15,6 +15,16 @@ class MedicationCreate(BaseModel):
     reorder_level: Optional[int] = Field(None, ge=0)
 
 
+class InventoryResponse(BaseModel):
+    id: str
+    medication_id: str
+    quantity: int
+    expiry_date: Optional[str]
+    batch_number: Optional[str]
+    location: Optional[str]
+    last_updated: str
+
+
 class MedicationResponse(BaseModel):
     id: str
     name: str
@@ -28,6 +38,7 @@ class MedicationResponse(BaseModel):
     reorder_level: Optional[int]
     is_active: bool
     facility_slug: Optional[str]
+    inventory: Optional[InventoryResponse] = None
     created_at: str
     updated_at: Optional[str]
 
@@ -37,16 +48,6 @@ class InventoryCreate(BaseModel):
     expiry_date: Optional[str] = Field(None)
     batch_number: Optional[str] = Field(None, max_length=50)
     location: Optional[str] = Field(None, max_length=100)
-
-
-class InventoryResponse(BaseModel):
-    id: str
-    medication_id: str
-    quantity: int
-    expiry_date: Optional[str]
-    batch_number: Optional[str]
-    location: Optional[str]
-    last_updated: str
 
 
 class PrescriptionItemCreate(BaseModel):

@@ -1,7 +1,6 @@
 export type ResourceErrors<TName extends string> = Partial<Record<TName, string>>;
 
-export const getResourceError = (error: unknown, fallback: string) =>
-  error instanceof Error && error.message ? error.message : fallback;
+export const getResourceError = (_error: unknown, fallback: string) => fallback;
 
 export const settledValue = <T>(
   result: PromiseSettledResult<T>,

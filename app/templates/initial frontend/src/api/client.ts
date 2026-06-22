@@ -110,8 +110,58 @@ const buildUrl = (path: string) => {
   return baseUrl ? `${baseUrl}/${normalizedPath}` : `/${normalizedPath}`;
 };
 
+const userMessageByStatus = (status: number) => {
+  if (status === 400 || status === 422) {
+    return "Please check the form and try again.";
+  }
+  if (status === 401) {
+    return "Please sign in again.";
+  }
+  if (status === 403) {
+    return "You do not have permission to do that.";
+  }
+  if (status === 404) {
+    return "We could not find that record.";
+  }
+  if (status === 409) {
+    return "This record already exists. Please check and try again.";
+  }
+  if (status === 429) {
+    return "Too many attempts. Please wait a moment and try again.";
+  }
+  if (status >= 500) {
+    return "Something went wrong. Please try again.";
+  }
+
+  return "The request could not be completed. Please try again.";
+};
+
+const isSafeUserMessage = (message: string) => {
+  const normalized = message.trim();
+  if (!normalized || normalized.length > 160) {
+    return false;
+  }
+
+  return !/[{}[\]"\\]/.test(normalized) &&
+    !/(traceback|sql|database error|stack|exception|validation error|internal server error)/i.test(normalized);
+};
+
+const parseValidationMessage = (details: unknown) => {
+  if (!Array.isArray(details) || details.length === 0) {
+    return null;
+  }
+
+  const firstDetail = details[0] as { loc?: unknown[]; msg?: unknown } | undefined;
+  const field = firstDetail?.loc?.at(-1);
+  if (typeof field === "string") {
+    return `Please check ${field.replaceAll("_", " ")} and try again.`;
+  }
+
+  return "Please check the form and try again.";
+};
+
 const parseErrorMessage = async (response: Response) => {
-  const fallback = response.statusText || "API request failed";
+  const fallback = userMessageByStatus(response.status);
   const text = await response.text();
 
   if (!text) {
@@ -129,33 +179,38 @@ const parseErrorMessage = async (response: Response) => {
       payload.error && typeof payload.error === "object"
         ? (payload.error as { message?: unknown; details?: unknown })
         : null;
+    const details =
+      rawError?.details ??
+      (payload.detail && typeof payload.detail === "object" ? payload.detail : null);
     const message =
       payload.detail ||
       rawError?.message ||
       payload.error ||
       payload.message;
-    const details = rawError?.details;
 
-    if (Array.isArray(details)) {
-      const firstDetail = details[0] as { loc?: unknown[]; msg?: unknown } | undefined;
-      const field = firstDetail?.loc?.at(-1);
-      if (typeof firstDetail?.msg === "string" && typeof field === "string") {
-        return `${field.replaceAll("_", " ")}: ${firstDetail.msg}`;
-      }
-      return "Please check the form and try again.";
+    console.error("API request failed", {
+      status: response.status,
+      statusText: response.statusText,
+      payload,
+    });
+
+    const validationMessage = parseValidationMessage(details);
+    if (validationMessage) {
+      return validationMessage;
     }
 
-    if (typeof message === "string") {
+    if (typeof message === "string" && isSafeUserMessage(message)) {
       return message;
     }
 
-    if (message) {
-      return JSON.stringify(message);
-    }
-
-    return text;
+    return fallback;
   } catch {
-    return text;
+    console.error("API request failed", {
+      status: response.status,
+      statusText: response.statusText,
+      body: text,
+    });
+    return isSafeUserMessage(text) ? text : fallback;
   }
 };
 

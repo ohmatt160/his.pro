@@ -21,7 +21,7 @@ from app.utils.branch_scope import ensure_patient_branch_access, require_facilit
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
-from app.models.lab import LabOrder
+from app.models.lab import LabOrder, LabResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/laboratory", tags=["laboratory"])
@@ -43,7 +43,7 @@ def _lab_test_response(test) -> LabTestResponse:
     )
 
 
-def _lab_order_response(order) -> LabOrderResponse:
+def _lab_order_response(order, result=None) -> LabOrderResponse:
     return LabOrderResponse(
         id=str(order.id),
         patient_id=str(order.patient_id),
@@ -56,6 +56,7 @@ def _lab_order_response(order) -> LabOrderResponse:
         facility_slug=order.facility_slug,
         department_id=order.department_id,
         branch_id=order.branch_id or order.department_id,
+        result=_lab_result_response(result) if result else None,
         created_at=order.created_at.isoformat() if order.created_at else "",
         updated_at=order.updated_at.isoformat() if order.updated_at else None
     )
@@ -153,8 +154,23 @@ async def get_lab_orders(
     else:
         query = query.filter(LabOrder.status.in_(["PENDING", "COLLECTED", "IN_PROGRESS", "COMPLETED"]))
     orders = query.order_by(LabOrder.order_date.desc()).all()
+    order_ids = [order.id for order in orders]
+    results_by_order_id = {
+        result.order_id: result
+        for result in (
+            db.query(LabResult)
+            .join(LabOrder, LabOrder.id == LabResult.order_id)
+            .filter(
+                LabResult.order_id.in_(order_ids),
+                LabOrder.facility_slug == facility_slug,
+            )
+            .all()
+            if order_ids
+            else []
+        )
+    }
 
-    return [_lab_order_response(o) for o in orders]
+    return [_lab_order_response(o, results_by_order_id.get(o.id)) for o in orders]
 
 
 @router.post("/orders", response_model=LabOrderResponse, status_code=status.HTTP_201_CREATED)

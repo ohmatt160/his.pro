@@ -63,6 +63,7 @@ type Invoice = {
   due_date: string;
   paid_date?: string | null;
   notes?: string | null;
+  payments?: Payment[];
   created_at: string;
 };
 
@@ -177,21 +178,13 @@ const Billing = () => {
       const nextPatients = settledValue(patientResponse, { patients: [], total: 0 }).patients;
       const nextInvoices = settledValue(invoiceResponse, []);
 
-      const paymentPairs = await Promise.all(
-        nextInvoices.map(async (invoice) => {
-          try {
-            const payments = await apiClient.get<Payment[]>(
-              `/billing/invoices/${invoice.id}/payments`
-            );
-            return [invoice.id, payments] as const;
-          } catch {
-            return [invoice.id, []] as const;
-          }
-        })
-      );
       setPatients(nextPatients);
       setInvoices(nextInvoices);
-      setPaymentsByInvoice(Object.fromEntries(paymentPairs));
+      setPaymentsByInvoice(
+        Object.fromEntries(
+          nextInvoices.map((invoice) => [invoice.id, invoice.payments ?? []])
+        )
+      );
       setDataErrors(errors);
     } finally {
       setLoading(false);

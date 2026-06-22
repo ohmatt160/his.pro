@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -13,24 +13,6 @@ class InvoiceUpdate(BaseModel):
     status: Optional[str] = Field(None, pattern="^(PENDING|PARTIAL|PAID|CANCELLED)$")
     due_date: Optional[str] = Field(None)
     notes: Optional[str] = Field(None)
-
-
-class InvoiceResponse(BaseModel):
-    id: str
-    patient_id: str
-    invoice_number: str
-    amount: float
-    paid_amount: float
-    balance: float
-    status: str
-    due_date: str
-    paid_date: Optional[str]
-    notes: Optional[str]
-    facility_slug: Optional[str]
-    branch_id: Optional[str] = None
-    department_id: Optional[str] = None
-    created_at: str
-    updated_at: Optional[str]
 
 
 class PaymentCreate(BaseModel):
@@ -55,3 +37,22 @@ class PaymentResponse(BaseModel):
     receipt_uploaded_at: Optional[str] = None
     receipt_url: Optional[str] = None
     created_at: str
+
+
+class InvoiceResponse(BaseModel):
+    id: str
+    patient_id: str
+    invoice_number: str
+    amount: float
+    paid_amount: float
+    balance: float
+    status: str
+    due_date: str
+    paid_date: Optional[str]
+    notes: Optional[str]
+    facility_slug: Optional[str]
+    branch_id: Optional[str] = None
+    department_id: Optional[str] = None
+    payments: List[PaymentResponse] = Field(default_factory=list)
+    created_at: str
+    updated_at: Optional[str]

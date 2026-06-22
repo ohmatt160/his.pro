@@ -60,6 +60,7 @@ type Medication = {
   strength?: string | null;
   price?: number | null;
   reorder_level?: number | null;
+  inventory?: Inventory | null;
 };
 
 type Inventory = {
@@ -208,19 +209,14 @@ const Pharmacy = () => {
       setPrescriptions(nextPrescriptions);
       setDataErrors(errors);
 
-      const inventoryEntries = await Promise.all(
-        nextMedications.map(async (medication) => {
-          try {
-            const item = await apiClient.get<Inventory>(
-              `/pharmacy/inventory/${medication.id}`
-            );
-            return [medication.id, item] as const;
-          } catch {
-            return [medication.id, null] as const;
-          }
-        })
+      setInventory(
+        Object.fromEntries(
+          nextMedications.map((medication) => [
+            medication.id,
+            medication.inventory ?? null,
+          ])
+        )
       );
-      setInventory(Object.fromEntries(inventoryEntries));
     } finally {
       setLoading(false);
     }

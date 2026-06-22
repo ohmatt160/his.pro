@@ -28,12 +28,13 @@ from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effec
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
+from app.models.pharmacy import Medication, PharmacyInventory
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/pharmacy", tags=["pharmacy"])
 
 
-def _medication_response(medication) -> MedicationResponse:
+def _medication_response(medication, inventory=None) -> MedicationResponse:
     return MedicationResponse(
         id=str(medication.id),
         name=medication.name,
@@ -47,6 +48,7 @@ def _medication_response(medication) -> MedicationResponse:
         reorder_level=medication.reorder_level,
         is_active=medication.is_active,
         facility_slug=medication.facility_slug,
+        inventory=_inventory_response(inventory) if inventory else None,
         created_at=medication.created_at.isoformat() if medication.created_at else "",
         updated_at=medication.updated_at.isoformat() if medication.updated_at else None
     )
@@ -93,8 +95,26 @@ async def get_medications(
 ):
     facility_slug = current_user.facility_slug
     medications = PharmacyService.get_all_medications(facility_slug=facility_slug, active_only=active_only)
+    medication_ids = [medication.id for medication in medications]
+    inventory_by_medication_id = {}
+    if medication_ids:
+        inventory_items = (
+            db.query(PharmacyInventory)
+            .join(Medication, Medication.id == PharmacyInventory.medication_id)
+            .filter(
+                PharmacyInventory.medication_id.in_(medication_ids),
+                Medication.facility_slug == facility_slug,
+            )
+            .all()
+        )
+        inventory_by_medication_id = {
+            item.medication_id: item for item in inventory_items
+        }
 
-    return [_medication_response(m) for m in medications]
+    return [
+        _medication_response(m, inventory_by_medication_id.get(m.id))
+        for m in medications
+    ]
 
 
 

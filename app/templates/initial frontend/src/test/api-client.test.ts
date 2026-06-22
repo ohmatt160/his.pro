@@ -161,7 +161,7 @@ describe("api client", () => {
     );
 
     await expect(request("/facilities/demo/staff", { method: "POST" })).rejects.toThrow(
-      "email: value is not a valid email address"
+      "Please check email and try again."
     );
   });
 
