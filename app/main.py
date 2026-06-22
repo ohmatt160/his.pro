@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 import redis
 
+from app.middleware.cors_force import ForceCORSHeadersMiddleware
 # Import database and models
 from app.models.base_model import Base
 from app.extensions import engine, get_db
@@ -167,7 +168,17 @@ def create_app() -> FastAPI:
     allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None
 
     # DB session middleware
-
+    @app.middleware("http")
+    async def db_session_middleware(request: Request, call_next):
+        try:
+            response = await call_next(request)
+            db_session.commit()
+            return response
+        except Exception:
+            db_session.rollback()
+            raise
+        finally:
+            db_session.remove()
 
         # Keep CORS as the outermost middleware so preflight and middleware-generated
         # error responses still include credentialed CORS headers.
@@ -182,7 +193,6 @@ def create_app() -> FastAPI:
         expose_headers=["Authorization"],
     )
 
-
     @app.get("/debug/cors")
     async def debug_cors():
         return {
@@ -191,6 +201,8 @@ def create_app() -> FastAPI:
             "frontend_url": frontend_url,
         }
 
+    app.add_middleware(ForceCORSHeadersMiddleware, allowed_origins)
+    app.add_middleware(CORSMiddleware, ...)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
