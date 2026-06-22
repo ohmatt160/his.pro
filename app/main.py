@@ -202,20 +202,28 @@ def create_app() -> FastAPI:
 
     # Keep CORS as the outer edge of the ASGI stack so preflight and
     # middleware-generated errors always include credentialed CORS headers.
-    app.add_middleware(
-        ForceCORSHeadersMiddleware,
-        allowed_origins=allowed_origins,
-        allowed_origin_regex=allowed_origin_regex,
-    )
+    # app.add_middleware(
+    #     ForceCORSHeadersMiddleware,
+    #     allowed_origins=allowed_origins,
+    #     allowed_origin_regex=allowed_origin_regex,
+    # )
+
+    # app.add_middleware(
+    #     CORSMiddleware,
+    #     allow_origins=allowed_origins,
+    #     allow_origin_regex=allowed_origin_regex,
+    #     allow_credentials=True,
+    #     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    #     allow_headers=["Content-Type", "Authorization", "Accept"],
+    #     expose_headers=["Authorization"],
+    # )
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_origin_regex=allowed_origin_regex,
+        allow_origins=["*"],  # Allow everything for now
         allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "Accept"],
-        expose_headers=["Authorization"],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     app.add_middleware(RateLimitMiddleware)
