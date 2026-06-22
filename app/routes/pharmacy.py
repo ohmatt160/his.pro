@@ -90,11 +90,21 @@ def _prescription_response(prescription) -> PrescriptionResponse:
 @router.get("/medications", response_model=List[MedicationResponse])
 async def get_medications(
     active_only: bool = Query(True),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    medications = PharmacyService.get_all_medications(facility_slug=facility_slug, active_only=active_only)
+    query = db.query(Medication).filter_by(facility_slug=facility_slug)
+    if active_only:
+        query = query.filter_by(is_active=True)
+    medications = (
+        query.order_by(Medication.name)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     medication_ids = [medication.id for medication in medications]
     inventory_by_medication_id = {}
     if medication_ids:
@@ -206,6 +216,8 @@ async def add_inventory(
 
 @router.get("/prescriptions", response_model=List[PrescriptionResponse])
 async def get_prescriptions(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None, max_length=36),
@@ -217,23 +229,26 @@ async def get_prescriptions(
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
+    from app.models.pharmacy import Prescription
+
+    query = db.query(Prescription).filter_by(facility_slug=facility_slug)
+    branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+    query = apply_branch_filter(query, Prescription, branch_scope_id)
+
     if patient_id:
         patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
         if not patient:
             return []
-        prescriptions = PharmacyService.get_prescriptions_by_patient(patient_id, facility_slug)
-    elif status == 'PENDING':
-        prescriptions = PharmacyService.get_pending_prescriptions(facility_slug)
-    else:
-        from app.models.pharmacy import Prescription
-        query = db.query(Prescription).filter_by(facility_slug=facility_slug)
-        branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
-        query = apply_branch_filter(query, Prescription, branch_scope_id)
-        prescriptions = query.order_by(Prescription.created_at.desc()).all()
+        query = query.filter_by(patient_id=patient_id)
+    if status:
+        query = query.filter_by(status=status)
 
-    branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
-    if branch_scope_id:
-        prescriptions = [p for p in prescriptions if belongs_to_branch(p, branch_scope_id)]
+    prescriptions = (
+        query.order_by(Prescription.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
 
     return [_prescription_response(p) for p in prescriptions]
 

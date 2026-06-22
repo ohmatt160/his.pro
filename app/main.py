@@ -128,7 +128,24 @@ def create_app() -> FastAPI:
         lifespan=lifespan
     )
 
-    # CORS
+    # CORS. Credentialed cookie auth requires exact origins; wildcard origins are
+    # intentionally blocked in production.
+    production_origins = [
+        'https://his.pro',
+        'https://www.his.pro',
+        'https://his-pro.vercel.app',
+        'https://his-pro-v1-0.vercel.app',
+    ]
+    local_origins = [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://localhost:5175',
+        'http://localhost:8080',
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
+        'http://127.0.0.1:5175',
+        'http://127.0.0.1:8080',
+    ]
     allowed_origins = [
         origin.strip().rstrip('/')
         for origin in os.getenv('ALLOWED_ORIGINS', '').split(',')
@@ -140,13 +157,9 @@ def create_app() -> FastAPI:
 
     app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
     if app_env == 'production' and not allowed_origins:
-        allowed_origins = ['https://his.pro', 'https://www.his.pro']
+        allowed_origins = production_origins.copy()
     elif not allowed_origins:
-        allowed_origins = [
-            'http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080', "http://localhost:5175",
-            'http://127.0.0.1:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:8080', "http://127.0.0.1:5175",
-            "https://his-pro.vercel.app",
-        ]
+        allowed_origins = local_origins + production_origins
     if app_env == 'production' and "*" in allowed_origins:
         raise RuntimeError("Wildcard CORS origins are not allowed in production")
     allowed_origin_regex = os.getenv('ALLOWED_ORIGIN_REGEX') or None

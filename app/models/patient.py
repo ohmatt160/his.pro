@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, Text, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, String, Date, Text, JSON, ForeignKey, Boolean, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -6,13 +6,18 @@ from app.models.base_model import BaseModel
 class Patient(BaseModel):
     """Patient model for storing medical records"""
     __tablename__ = 'patients'
+    __table_args__ = (
+        Index('idx_patients_facility_dept', 'facility_slug', 'department_id'),
+        Index('idx_patients_facility_branch', 'facility_slug', 'branch_id'),
+        Index('idx_patients_facility_created', 'facility_slug', 'created_at'),
+    )
 
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
     date_of_birth = Column(Date, nullable=False)
     gender = Column(String(20))
     phone = Column(String(20))
-    email = Column(String(120))
+    email = Column(String(120), index=True)
     address = Column(Text)
     blood_type = Column(String(5))
     medical_history = Column(JSON, default=dict)

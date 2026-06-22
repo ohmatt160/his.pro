@@ -133,6 +133,8 @@ async def update_lab_test(
 
 @router.get("/orders", response_model=List[LabOrderResponse])
 async def get_lab_orders(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     branch_id: Optional[str] = Query(None, max_length=36),
@@ -153,7 +155,12 @@ async def get_lab_orders(
         query = query.filter_by(status=status)
     else:
         query = query.filter(LabOrder.status.in_(["PENDING", "COLLECTED", "IN_PROGRESS", "COMPLETED"]))
-    orders = query.order_by(LabOrder.order_date.desc()).all()
+    orders = (
+        query.order_by(LabOrder.order_date.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     order_ids = [order.id for order in orders]
     results_by_order_id = {
         result.order_id: result

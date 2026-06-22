@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Text, Boolean, DateTime, Date, Integer, ForeignKey
+from sqlalchemy import Column, String, Numeric, Text, Boolean, DateTime, Date, Integer, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -6,6 +6,13 @@ from app.models.base_model import BaseModel
 class Invoice(BaseModel):
     """Invoice for patient services"""
     __tablename__ = 'invoices'
+    __table_args__ = (
+        Index('idx_invoices_facility_dept', 'facility_slug', 'department_id'),
+        Index('idx_invoices_facility_branch', 'facility_slug', 'branch_id'),
+        Index('idx_invoices_status_facility', 'status', 'facility_slug'),
+        Index('idx_invoices_facility_date', 'facility_slug', 'invoice_date'),
+        Index('idx_invoices_facility_patient', 'facility_slug', 'patient_id'),
+    )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     invoice_number = Column(String(50), unique=True, nullable=False)
@@ -13,15 +20,15 @@ class Invoice(BaseModel):
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     department_id = Column(String(36), nullable=True, index=True)
     branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
-    status = Column(String(50), default='PENDING')  # PENDING, PAID, PARTIAL, CANCELLED
+    status = Column(String(50), default='PENDING', index=True)  # PENDING, PAID, PARTIAL, CANCELLED
     subtotal = Column(Numeric(10, 2), default=0)
     tax = Column(Numeric(10, 2), default=0)
     discount = Column(Numeric(10, 2), default=0)
     total = Column(Numeric(10, 2), default=0)
     notes = Column(Text)
     due_date = Column(Date)
-    invoice_date = Column(DateTime, nullable=False)
-    paid_date = Column(DateTime)
+    invoice_date = Column(DateTime, nullable=False, index=True)
+    paid_date = Column(DateTime, index=True)
 
     # Relationships
     items = relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
@@ -58,7 +65,7 @@ class InvoiceItem(BaseModel):
     """Individual items in an invoice"""
     __tablename__ = 'invoice_items'
 
-    invoice_id = Column(String(36), ForeignKey('invoices.id'), nullable=False)
+    invoice_id = Column(String(36), ForeignKey('invoices.id'), nullable=False, index=True)
     description = Column(String(500), nullable=False)
     quantity = Column(Integer, default=1)
     unit_price = Column(Numeric(10, 2), default=0)
@@ -86,7 +93,7 @@ class Payment(BaseModel):
     payment_method = Column(String(50))  # CASH, CARD, TRANSFER, INSURANCE
     reference_number = Column(String(100))
     notes = Column(Text)
-    payment_date = Column(DateTime, nullable=False)
+    payment_date = Column(DateTime, nullable=False, index=True)
     receipt_filename = Column(String(255), nullable=True)
     receipt_original_name = Column(String(255), nullable=True)
     receipt_content_type = Column(String(100), nullable=True)

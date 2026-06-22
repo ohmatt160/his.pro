@@ -87,6 +87,8 @@ def _get_payment_for_user(payment_id: str, current_user: User) -> Payment:
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
 async def get_invoices(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     branch_id: Optional[str] = Query(None, max_length=36),
@@ -106,7 +108,12 @@ async def get_invoices(
     elif status:
         query = query.filter_by(status=status)
 
-    invoices = query.order_by(Invoice.invoice_date.desc()).all()
+    invoices = (
+        query.order_by(Invoice.invoice_date.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     invoice_ids = [invoice.id for invoice in invoices]
     payments_by_invoice_id = {invoice_id: [] for invoice_id in invoice_ids}
     if invoice_ids:

@@ -20,6 +20,7 @@ from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effec
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
+from app.models.appointment import Appointment
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ router = APIRouter(prefix="/appointments", tags=["appointments"])
 
 @router.get("", response_model=List[AppointmentResponse])
 async def get_appointments(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     patient_id: Optional[str] = Query(None),
     doctor_id: Optional[str] = Query(None),
     department_id: Optional[str] = Query(None, max_length=36),
@@ -42,31 +45,29 @@ async def get_appointments(
         if not facility_slug:
             raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
+        query = db.query(Appointment).filter_by(facility_slug=facility_slug)
+        branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
+        query = apply_branch_filter(query, Appointment, branch_scope_id)
+
         if patient_id:
             # Verify patient belongs to facility
             patient = db.query(Patient).filter_by(id=patient_id, facility_slug=facility_slug).first()
             if not patient:
                 return []
-            appointments = AppointmentService.get_appointments_by_patient(patient_id, facility_slug)
+            ensure_patient_branch_access(patient, current_user, branch_id or department_id)
+            query = query.filter_by(patient_id=patient_id)
         elif doctor_id:
             doctor = db.query(User).filter_by(id=doctor_id, facility_slug=facility_slug, is_active=True).first()
             if not doctor:
                 return []
-            appointments = AppointmentService.get_appointments_by_doctor(
-                doctor_id,
-                facility_slug=facility_slug,
-            )
-        else:
-            # Get all appointments for facility
-            from app.models.appointment import Appointment
-            query = db.query(Appointment).filter_by(facility_slug=facility_slug)
-            branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
-            query = apply_branch_filter(query, Appointment, branch_scope_id)
-            appointments = query.order_by(Appointment.scheduled_time.desc()).all()
+            query = query.filter_by(doctor_id=doctor_id)
 
-        branch_scope_id = effective_branch_id(current_user, branch_id, department_id)
-        if branch_scope_id:
-            appointments = [a for a in appointments if belongs_to_branch(a, branch_scope_id)]
+        appointments = (
+            query.order_by(Appointment.scheduled_time.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
 
         return [
             AppointmentResponse(

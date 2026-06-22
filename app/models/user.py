@@ -1,6 +1,6 @@
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -8,12 +8,18 @@ from app.models.base_model import BaseModel
 class User(BaseModel):
     """User model with role-based access control"""
     __tablename__ = 'users'
+    __table_args__ = (
+        Index('idx_users_facility_role', 'facility_slug', 'role'),
+        Index('idx_users_facility_dept', 'facility_slug', 'department_id'),
+        Index('idx_users_facility_branch', 'facility_slug', 'branch_id'),
+        Index('idx_users_facility_active', 'facility_slug', 'is_active'),
+    )
 
     username = Column(String(80), unique=True, nullable=False)
-    email = Column(String(120), unique=True, nullable=False)
+    email = Column(String(120), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
-    role = Column(String(50), nullable=False)
-    is_active = Column(Boolean, default=True)
+    role = Column(String(50), nullable=False, index=True)
+    is_active = Column(Boolean, default=True, index=True)
     first_name = Column(String(100))
     last_name = Column(String(100))
     phone = Column(String(20))

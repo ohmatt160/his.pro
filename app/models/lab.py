@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Numeric, Boolean, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -29,6 +29,13 @@ class LabTest(BaseModel):
 class LabOrder(BaseModel):
     """Lab orders for patients"""
     __tablename__ = 'lab_orders'
+    __table_args__ = (
+        Index('idx_lab_orders_facility_dept', 'facility_slug', 'department_id'),
+        Index('idx_lab_orders_facility_branch', 'facility_slug', 'branch_id'),
+        Index('idx_lab_orders_status_facility', 'status', 'facility_slug'),
+        Index('idx_lab_orders_facility_date', 'facility_slug', 'order_date'),
+        Index('idx_lab_orders_facility_patient', 'facility_slug', 'patient_id'),
+    )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     test_id = Column(String(36), ForeignKey('lab_tests.id'), nullable=False)
@@ -38,10 +45,10 @@ class LabOrder(BaseModel):
     branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     ordered_by = Column(String(36), ForeignKey('users.id'))
     performed_by = Column(String(36), ForeignKey('users.id'))
-    status = Column(String(50), default='PENDING')  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED
+    status = Column(String(50), default='PENDING', index=True)  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED
     priority = Column(String(20), default='ROUTINE')  # ROUTINE, URGENT, EMERGENCY
     notes = Column(Text)
-    order_date = Column(DateTime, nullable=False)
+    order_date = Column(DateTime, nullable=False, index=True)
     collection_date = Column(DateTime)
     completed_date = Column(DateTime)
 
@@ -66,7 +73,7 @@ class LabResult(BaseModel):
     """Lab results for orders"""
     __tablename__ = 'lab_results'
 
-    order_id = Column(String(36), ForeignKey('lab_orders.id'), nullable=False)
+    order_id = Column(String(36), ForeignKey('lab_orders.id'), nullable=False, index=True)
     value = Column(String(100))
     is_abnormal = Column(Boolean, default=False)
     notes = Column(Text)

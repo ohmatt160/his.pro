@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Numeric, Integer, Boolean, Date, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Numeric, Integer, Boolean, Date, DateTime, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -6,6 +6,9 @@ from app.models.base_model import BaseModel
 class Medication(BaseModel):
     """Medication inventory"""
     __tablename__ = 'medications'
+    __table_args__ = (
+        Index('idx_medications_facility_active', 'facility_slug', 'is_active'),
+    )
 
     name = Column(String(200), nullable=False)
     code = Column(String(50), unique=True, nullable=False)
@@ -35,9 +38,9 @@ class PharmacyInventory(BaseModel):
     """Pharmacy inventory tracking"""
     __tablename__ = 'pharmacy_inventory'
 
-    medication_id = Column(String(36), ForeignKey('medications.id'), nullable=False)
+    medication_id = Column(String(36), ForeignKey('medications.id'), nullable=False, index=True)
     quantity = Column(Integer, default=0)
-    expiry_date = Column(Date)
+    expiry_date = Column(Date, index=True)
     batch_number = Column(String(100))
     location = Column(String(50))  # Storage location
 
@@ -51,18 +54,25 @@ class PharmacyInventory(BaseModel):
 class Prescription(BaseModel):
     """Prescriptions for patients"""
     __tablename__ = 'prescriptions'
+    __table_args__ = (
+        Index('idx_prescriptions_facility_dept', 'facility_slug', 'department_id'),
+        Index('idx_prescriptions_facility_branch', 'facility_slug', 'branch_id'),
+        Index('idx_prescriptions_status_facility', 'status', 'facility_slug'),
+        Index('idx_prescriptions_facility_date', 'facility_slug', 'prescription_date'),
+        Index('idx_prescriptions_facility_patient', 'facility_slug', 'patient_id'),
+    )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
-    prescribed_by = Column(String(36), ForeignKey('users.id'))
+    prescribed_by = Column(String(36), ForeignKey('users.id'), index=True)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     department_id = Column(String(36), nullable=True, index=True)  # legacy clinic/department scope
     branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
-    status = Column(String(50), default='PENDING')  # PENDING, DISPENSED, CANCELLED
+    status = Column(String(50), default='PENDING', index=True)  # PENDING, DISPENSED, CANCELLED
     notes = Column(Text)
-    prescription_date = Column(DateTime, nullable=False)
-    dispensed_by = Column(String(36), ForeignKey('users.id'))
-    dispensed_date = Column(DateTime)
+    prescription_date = Column(DateTime, nullable=False, index=True)
+    dispensed_by = Column(String(36), ForeignKey('users.id'), index=True)
+    dispensed_date = Column(DateTime, index=True)
 
     # Relationships
     items = relationship('PrescriptionItem', backref='prescription', lazy=True, cascade='all, delete-orphan')
