@@ -27,6 +27,7 @@ export type FacilityModuleId =
 
 export type ModuleAccessRole =
   | "admin"
+  | "branch_admin"
   | "doctor"
   | "nurse"
   | "reception"
@@ -192,16 +193,16 @@ export const routeModuleMap: Record<string, FacilityModuleId> = {
 };
 
 export const moduleRoleAccess: Record<FacilityModuleId, ModuleAccessRole[]> = {
-  reception: ["admin", "reception", "doctor", "nurse"],
-  records: ["admin", "doctor", "nurse"],
-  consultations: ["admin", "doctor", "nurse"],
-  nursing: ["admin", "doctor", "nurse"],
-  lab: ["admin", "doctor", "lab"],
-  pharmacy: ["admin", "doctor", "pharmacist"],
-  billing: ["admin", "reception"],
-  radiology: ["admin", "doctor"],
-  inventory: ["admin", "pharmacist"],
-  reports: ["admin", "doctor", "nurse", "reception"],
+  reception: ["admin", "branch_admin", "reception", "doctor", "nurse"],
+  records: ["admin", "branch_admin", "doctor", "nurse"],
+  consultations: ["admin", "branch_admin", "doctor", "nurse"],
+  nursing: ["admin", "branch_admin", "doctor", "nurse"],
+  lab: ["admin", "branch_admin", "doctor", "lab"],
+  pharmacy: ["admin", "branch_admin", "doctor", "pharmacist"],
+  billing: ["admin", "branch_admin", "reception"],
+  radiology: ["admin", "branch_admin", "doctor"],
+  inventory: ["admin", "branch_admin", "pharmacist"],
+  reports: ["admin", "branch_admin", "doctor", "nurse", "reception"],
 };
 
 export const isRoleAllowedForModule = (

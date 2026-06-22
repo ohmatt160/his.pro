@@ -52,9 +52,13 @@ describe("facility modules", () => {
     const modules = ["reception", "records", "lab", "pharmacy"];
 
     expect(isRoleAllowedForModule("doctor", "lab")).toBe(true);
+    expect(isRoleAllowedForModule("branch_admin", "lab")).toBe(true);
     expect(isRoleAllowedForModule("nurse", "lab")).toBe(false);
     expect(canAccessModule({ modules, moduleId: "lab", role: "doctor" })).toBe(true);
+    expect(canAccessModule({ modules, moduleId: "lab", role: "branch_admin" })).toBe(true);
+    expect(canAccessModule({ modules, moduleId: "pharmacy", role: "branch_admin" })).toBe(true);
     expect(canAccessModule({ modules, moduleId: "lab", role: "nurse" })).toBe(false);
+    expect(canAccessModule({ modules, moduleId: "billing", role: "branch_admin" })).toBe(false);
     expect(canAccessModule({ modules, moduleId: "billing", role: "reception" })).toBe(false);
   });
 
