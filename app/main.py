@@ -264,7 +264,7 @@ def create_app() -> FastAPI:
         return health_status
 
     # API routers
-    app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(auth_router)
     app.include_router(patients_router)
     app.include_router(appointments_router, prefix="/api/v1")
     app.include_router(laboratory_router, prefix="/api/v1")
