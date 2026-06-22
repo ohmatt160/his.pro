@@ -102,7 +102,11 @@ const AppShell = ({ children }: AppShellProps) => {
     apiClient
       .get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`)
       .then((branches) => {
-        const branch = user?.branchId ? branches.find((item) => item.id === user.branchId) || null : null;
+        const branch = branchSlug
+          ? branches.find((item) => item.slug === branchSlug || item.id === user?.branchId) || null
+          : user?.branchId
+            ? branches.find((item) => item.id === user.branchId) || null
+            : null;
         setCurrentBranch(branch);
       })
       .catch(() => setCurrentBranch(null));
@@ -121,7 +125,7 @@ const AppShell = ({ children }: AppShellProps) => {
     } else {
       setUnreadMessages(0);
     }
-  }, [facilitySlug, user?.branchId, canUseChat]);
+  }, [branchSlug, facilitySlug, user?.branchId, canUseChat]);
 
   useEffect(() => {
     if (!canUseChat) {
@@ -153,7 +157,9 @@ const AppShell = ({ children }: AppShellProps) => {
   }, [facilitySlug]);
 
   const selectedModules = normalizeModules(
-    currentBranch
+    branchSlug
+      ? currentBranch?.modules || []
+      : currentBranch
       ? currentBranch.modules || []
       : workspace?.selectedModules?.length
         ? workspace.selectedModules

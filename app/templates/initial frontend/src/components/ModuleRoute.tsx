@@ -3,8 +3,6 @@ import { Navigate, useParams } from "react-router-dom";
 import {
   getFacilityWorkspace,
   getWorkspaceDashboardPath,
-  WORKSPACE_UPDATED_EVENT,
-  type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import { canAccessModule, type FacilityModuleId } from "@/lib/modules";
 import { useAuth } from "@/context/AuthContext";
@@ -42,11 +40,16 @@ const ModuleRoute = ({
     ])
       .then(([workspace, branches]) => {
         const branch = branchSlug ? branches.find((item) => item.slug === branchSlug) : null;
+        const userBelongsToBranch =
+          !branchSlug ||
+          user?.branchSlug === branchSlug ||
+          Boolean(user?.branchSlugs?.includes(branchSlug));
         const modules = branchSlug ? branch?.modules || [] : workspace?.selectedModules || [];
         if (mounted) {
           setAllowed(
             Boolean(
               workspace &&
+                userBelongsToBranch &&
                 canAccessModule({
                   modules,
                   moduleId: module,
@@ -67,28 +70,6 @@ const ModuleRoute = ({
     };
   }, [branchSlug, facilitySlug, module, user?.role]);
 
-  useEffect(() => {
-    const handleWorkspaceUpdated = (event: Event) => {
-      const workspace = (event as CustomEvent<SavedFacilityWorkspace>).detail;
-      if (workspace?.facilitySlug !== facilitySlug) {
-        return;
-      }
-
-      setAllowed(
-        canAccessModule({
-          modules: workspace.selectedModules,
-          moduleId: module,
-          role: user?.role,
-        })
-      );
-    };
-
-    window.addEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
-    return () => {
-      window.removeEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
-    };
-  }, [facilitySlug, module, user?.role]);
-
   if (allowed === null) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -98,7 +79,7 @@ const ModuleRoute = ({
   }
 
   if (!allowed) {
-    if (user && user.role !== "admin") {
+    if (user && !["admin", "branch_admin"].includes(user.role)) {
       return <Navigate to={branchSlug ? `/${facilitySlug}/branches/${branchSlug}/portal` : `/portal/${facilitySlug}`} replace />;
     }
 

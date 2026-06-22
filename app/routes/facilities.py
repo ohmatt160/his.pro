@@ -177,9 +177,10 @@ def get_branch_or_404(facility: Facility, branch_id_or_slug: str) -> Branch:
 def require_branch_access(user: User, branch: Branch) -> None:
     if user.role == "ADMIN":
         return
-    allowed = {str(user.branch_id or ""), *[str(item) for item in (user.branch_ids or [])]}
-    legacy_allowed = {str(user.department_id or ""), *[str(item) for item in (user.departments or [])]}
-    if str(branch.id) not in allowed and str(branch.id) not in legacy_allowed:
+    allowed = {str(user.branch_id or ""), str(user.department_id or "")}
+    allowed.update(str(item) for item in (user.branch_ids or []))
+    allowed.update(str(item) for item in (user.departments or []))
+    if str(branch.id) not in allowed and str(branch.slug) not in allowed:
         raise HTTPException(status_code=403, detail="Cannot access another branch")
 
 def build_facility_response(facility: Facility) -> FacilityResponse:
@@ -543,9 +544,14 @@ async def list_branches(
     branches = get_facility_branches(facility)
     if current_user.role == "ADMIN":
         return [build_branch_response(branch) for branch in branches]
-    allowed = {str(current_user.branch_id or current_user.department_id or "")}
-    allowed.update(str(item) for item in (current_user.branch_ids or current_user.departments or []))
-    return [build_branch_response(branch) for branch in branches if str(branch.id) in allowed]
+    allowed = {str(current_user.branch_id or ""), str(current_user.department_id or "")}
+    allowed.update(str(item) for item in (current_user.branch_ids or []))
+    allowed.update(str(item) for item in (current_user.departments or []))
+    return [
+        build_branch_response(branch)
+        for branch in branches
+        if str(branch.id) in allowed or str(branch.slug) in allowed
+    ]
 
 
 @router.post("/{facility_slug}/branches", response_model=BranchResponse, status_code=status.HTTP_201_CREATED)

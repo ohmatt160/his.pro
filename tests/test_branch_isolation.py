@@ -289,6 +289,21 @@ class BranchIsolationTest(unittest.TestCase):
                 )
                 self.assertEqual(west_radiology_lookup.status_code, 404, west_radiology_lookup.text)
 
+                from app.models.user import User
+
+                east_user = self.db_session.query(User).filter_by(email="east.admin@example.com").first()
+                self.assertIsNotNone(east_user)
+                east_user.branch_id = east_slug
+                east_user.branch_ids = [east_slug]
+                east_user.department_id = east_slug
+                east_user.departments = [east_slug]
+                self.db_session.add(east_user)
+                self.db_session.commit()
+
+                slug_based_branches = await client.get("/api/v1/facilities/campus-hospital/branches", headers=east_admin)
+                self.assertEqual(slug_based_branches.status_code, 200, slug_based_branches.text)
+                self.assertEqual([branch["slug"] for branch in slug_based_branches.json()], [east_slug])
+
         async def create_facility_admin(client):
             auth = await client.post(
                 "/api/v1/auth/ensure",

@@ -91,9 +91,9 @@ const Dashboard = () => {
   const location = useLocation();
   const routedData = (location.state as SavedFacilityWorkspace | null) || null;
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
-    routedData
+    branchSlug ? null : routedData
   );
-  const [isLoading, setIsLoading] = useState(!Boolean(routedData));
+  const [isLoading, setIsLoading] = useState(branchSlug ? true : !Boolean(routedData));
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(
     null
   );
@@ -102,7 +102,7 @@ const Dashboard = () => {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("all");
 
   useEffect(() => {
-    if (!workspace && facilitySlug) {
+    if (!branchSlug && !workspace && facilitySlug) {
       setIsLoading(true);
       getFacilityWorkspace(facilitySlug)
         .then((result) => {
@@ -114,7 +114,7 @@ const Dashboard = () => {
         })
         .finally(() => setIsLoading(false));
     }
-  }, [facilitySlug, workspace, navigate]);
+  }, [branchSlug, facilitySlug, workspace, navigate]);
 
   useEffect(() => {
     if (!facilitySlug || !user) {
@@ -153,9 +153,11 @@ const Dashboard = () => {
       }>(`/facilities/${facilitySlug}`)
       .then((facility) => {
         const branchList = facility.branches || facility.departments || [];
-        const activeBranch = user.branchId
-          ? branchList.find((branch) => branch.id === user.branchId) || null
-          : null;
+        const activeBranch = branchSlug
+          ? branchList.find((branch) => branch.slug === branchSlug || branch.id === user.branchId) || null
+          : user.branchId
+            ? branchList.find((branch) => branch.id === user.branchId) || null
+            : null;
         setDepartments(facility.hospital_type === "multi_clinic" ? branchList : []);
         setCurrentBranch(activeBranch);
         setWorkspace((current) => ({
@@ -169,9 +171,14 @@ const Dashboard = () => {
           facilitySlug: facility.slug,
           createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
         }));
+        setIsLoading(false);
       })
-      .catch(() => undefined);
-  }, [facilitySlug, user]);
+      .catch(() => {
+        if (branchSlug) {
+          setIsLoading(false);
+        }
+      });
+  }, [branchSlug, facilitySlug, user]);
 
   if (isLoading) {
     return (
@@ -190,7 +197,7 @@ const Dashboard = () => {
     ? (branchSlug ? `/${resolvedFacilitySlug}/branches/${branchSlug}/dashboard/staff` : getStaffAccessPath(resolvedFacilitySlug))
     : "";
   const rawSelectedModules =
-    (data.selectedModules as string[] | undefined) || [
+    Array.isArray(data.selectedModules) ? data.selectedModules as string[] : [
       "reception",
       "records",
       "consultations",
