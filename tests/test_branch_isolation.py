@@ -324,7 +324,14 @@ class BranchIsolationTest(unittest.TestCase):
                 json={"username": body["loginId"], "password": "BranchPass2026"},
             )
             self.assertEqual(login.status_code, 200, login.text)
-            return {"Authorization": f"Bearer {login.json()['access_token']}"}
+            headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+            profile = await client.get("/api/v1/users/me", headers=headers)
+            self.assertEqual(profile.status_code, 200, profile.text)
+            self.assertEqual(profile.json()["branch_slug"], branch_slug)
+            self.assertIn(branch_slug, profile.json()["branch_slugs"])
+
+            return headers
 
         asyncio.run(run_test())
 

@@ -4,6 +4,7 @@ Converted from Flask-RESTx user_profile_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field, EmailStr
 from typing import Optional
@@ -16,6 +17,7 @@ from app.services.user_profile_service import UserProfileService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
 from app.models.user import User
+from app.models.branch import Branch
 from app.services.audit_log_service import AuditLogService
 
 logger = logging.getLogger(__name__)
@@ -23,12 +25,40 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 
 
+def _user_branch_values(user: User) -> set[str]:
+    values = {str(value) for value in (user.branch_ids or []) if value}
+    values.update(str(value) for value in (user.departments or []) if value)
+    if user.branch_id:
+        values.add(str(user.branch_id))
+    if user.department_id:
+        values.add(str(user.department_id))
+    return values
+
+
+def _user_branch_slugs(user: User, db: Session) -> list[str]:
+    branch_values = _user_branch_values(user)
+    if not branch_values:
+        return []
+
+    branches = (
+        db.query(Branch)
+        .filter(
+            Branch.is_active == True,
+            or_(Branch.id.in_(branch_values), Branch.slug.in_(branch_values)),
+        )
+        .all()
+    )
+    return [branch.slug for branch in branches if branch.slug]
+
+
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Get current user's profile"""
+    branch_slugs = _user_branch_slugs(current_user, db)
     return UserResponse(
         id=str(current_user.id),
         username=current_user.username,
@@ -41,6 +71,8 @@ async def get_current_user_profile(
         facility_slug=current_user.facility_slug,
         branch_id=current_user.branch_id or current_user.department_id,
         branch_ids=current_user.branch_ids or current_user.departments or [],
+        branch_slug=branch_slugs[0] if branch_slugs else None,
+        branch_slugs=branch_slugs,
         is_active=current_user.is_active,
         created_at=current_user.created_at.isoformat() if current_user.created_at else "",
         updated_at=current_user.updated_at.isoformat() if current_user.updated_at else None
@@ -76,6 +108,7 @@ async def update_current_user(
         request=request,
     )
 
+    branch_slugs = _user_branch_slugs(updated_user, db)
     return UserResponse(
         id=str(updated_user.id),
         username=updated_user.username,
@@ -88,6 +121,8 @@ async def update_current_user(
         facility_slug=updated_user.facility_slug,
         branch_id=updated_user.branch_id or updated_user.department_id,
         branch_ids=updated_user.branch_ids or updated_user.departments or [],
+        branch_slug=branch_slugs[0] if branch_slugs else None,
+        branch_slugs=branch_slugs,
         is_active=updated_user.is_active,
         created_at=updated_user.created_at.isoformat() if updated_user.created_at else "",
         updated_at=updated_user.updated_at.isoformat() if updated_user.updated_at else None
