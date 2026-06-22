@@ -268,6 +268,10 @@ const StaffAccess = () => {
       setStaffError("Enter a valid work email address or leave it blank.");
       return;
     }
+    if (newStaff.role === "branch_admin" && !newStaff.departmentId) {
+      setStaffError("Select the branch this branch admin will manage.");
+      return;
+    }
 
     setCreatingStaff(true);
     setStaffError("");
@@ -865,7 +869,8 @@ const StaffAccess = () => {
                 disabled={
                   creatingStaff ||
                   !newStaff.fullName.trim() ||
-                  !newStaff.department.trim()
+                  !newStaff.department.trim() ||
+                  (newStaff.role === "branch_admin" && !newStaff.departmentId)
                 }
               >
                 {creatingStaff ? "Creating..." : "Create Account"}

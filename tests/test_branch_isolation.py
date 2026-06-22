@@ -70,6 +70,19 @@ class BranchIsolationTest(unittest.TestCase):
                 east_admin = await create_branch_admin(client, owner_headers, east_id, "east.admin@example.com", east_slug)
                 west_admin = await create_branch_admin(client, owner_headers, west_id, "west.admin@example.com", west_slug)
 
+                missing_branch_admin = await client.post(
+                    "/api/v1/facilities/campus-hospital/staff",
+                    json={
+                        "fullName": "No Branch Admin",
+                        "role": "branch_admin",
+                        "department": "Administration",
+                        "email": "no.branch.admin@example.com",
+                        "password": "BranchPass2026",
+                    },
+                    headers=owner_headers,
+                )
+                self.assertEqual(missing_branch_admin.status_code, 400, missing_branch_admin.text)
+
                 lab_test = await client.post(
                     "/api/v1/laboratory/tests",
                     json={

@@ -96,7 +96,7 @@ def build_branch_response(branch: Branch) -> BranchResponse:
         is_public=bool(branch.is_public),
         is_active=bool(branch.is_active),
         login_url_path=f"/{branch.facility_slug}/branches/{branch.slug}/login",
-        dashboard_url_path=f"/dashboard/{branch.facility_slug}?branch={branch.slug}",
+        dashboard_url_path=f"/{branch.facility_slug}/branches/{branch.slug}/dashboard",
         created_at=branch.created_at.isoformat() if branch.created_at else "",
         updated_at=branch.updated_at.isoformat() if branch.updated_at else None,
     )
@@ -325,7 +325,12 @@ def next_staff_login_id(facility: Facility, role: str) -> str:
         )
         .count()
     )
-    return f"{facility.slug}-{prefix}-{existing_count + 1:03d}"
+    next_number = existing_count + 1
+    while True:
+        login_id = f"{facility.slug}-{prefix}-{next_number:03d}"
+        if not db_session.query(User).filter_by(username=login_id).first():
+            return login_id
+        next_number += 1
 
 
 def build_staff_response(
@@ -903,6 +908,8 @@ async def create_facility_staff(
     if current_user.role == 'BRANCH_ADMIN':
         branch_id = current_user.branch_id or current_user.department_id
         branch_ids = [branch_id] if branch_id else []
+    if role == "BRANCH_ADMIN" and not branch_id:
+        raise HTTPException(status_code=400, detail="Select a branch before creating a branch admin")
     if branch_id:
         get_branch_or_404(facility, branch_id)
     for assigned_branch_id in branch_ids:
