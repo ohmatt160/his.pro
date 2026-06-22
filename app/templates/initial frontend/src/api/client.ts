@@ -23,12 +23,6 @@ const getApiBaseUrl = () => {
     return configuredUrl;
   }
 
-  if (import.meta.env.PROD) {
-    throw new Error(
-      "VITE_API_BASE_URL is required in production. Set it to your backend /api/v1 URL."
-    );
-  }
-
   return "/api/v1";
 };
 

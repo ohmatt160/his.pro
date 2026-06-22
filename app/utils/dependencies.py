@@ -27,6 +27,14 @@ def _token_from_request(
     credentials: HTTPAuthorizationCredentials | None,
     cookie_name: str,
 ) -> str | None:
+    proxied_authorization = request.headers.get("x-hispro-authorization")
+    if proxied_authorization:
+        try:
+            scheme, token = proxied_authorization.split()
+            if scheme.lower() == "bearer":
+                return token
+        except ValueError:
+            pass
     if credentials and credentials.credentials:
         return credentials.credentials
     return request.cookies.get(cookie_name)
@@ -142,7 +150,7 @@ def optional_user(
     """
     Optional authentication - returns user if token is valid, otherwise None
     """
-    authorization = request.headers.get("Authorization")
+    authorization = request.headers.get("x-hispro-authorization") or request.headers.get("Authorization")
     cookie_token = request.cookies.get("hispro_access_token")
     if not authorization and not cookie_token:
         return None

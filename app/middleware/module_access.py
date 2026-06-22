@@ -68,7 +68,7 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = None
-        authorization = request.headers.get("Authorization")
+        authorization = request.headers.get("x-hispro-authorization") or request.headers.get("Authorization")
         if authorization:
             try:
                 scheme, value = authorization.split()

@@ -134,7 +134,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         
         # Check for Authorization header
-        authorization: str = request.headers.get("Authorization")
+        authorization: str = request.headers.get("x-hispro-authorization") or request.headers.get("Authorization")
         cookie_token = request.cookies.get("hispro_access_token")
         if not authorization:
             if cookie_token:

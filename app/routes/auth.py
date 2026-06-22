@@ -77,6 +77,14 @@ def _get_token_from_request(
     credentials: HTTPAuthorizationCredentials | None,
     cookie_name: str,
 ) -> str | None:
+    proxied_authorization = request.headers.get("x-hispro-authorization")
+    if proxied_authorization:
+        try:
+            scheme, token = proxied_authorization.split()
+            if scheme.lower() == "bearer":
+                return token
+        except ValueError:
+            pass
     if credentials and credentials.credentials:
         return credentials.credentials
     return request.cookies.get(cookie_name)
