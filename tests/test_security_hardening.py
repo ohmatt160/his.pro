@@ -19,7 +19,7 @@ class SecurityHardeningTest(unittest.TestCase):
         cls.temp_dir = tempfile.TemporaryDirectory()
         cls.database_path = os.path.join(cls.temp_dir.name, "security-test.db")
         os.environ["DATABASE_URL"] = f"sqlite:///{cls.database_path}"
-        os.environ["ALLOWED_ORIGINS"] = "https://his-pro.vercel.app"
+        os.environ["ALLOWED_ORIGINS"] = "https://his-pro-v1-0.vercel.app,https://his-pro.vercel.app"
         os.environ["RATE_LIMIT_NAMESPACE"] = f"security-test-{os.path.basename(cls.temp_dir.name)}"
 
         app, Base, db_session, engine, httpx = import_isolated_app()
@@ -61,6 +61,19 @@ class SecurityHardeningTest(unittest.TestCase):
             },
         )
         self.assertNotIn("access-control-allow-origin", {k.lower(): v for k, v in cors.headers.items()})
+
+        live_login_preflight = await client.options(
+            "/api/v1/auth/login?facility_slug=sunrise&branch_slug=sunset",
+            headers={
+                "Origin": "https://his-pro-v1-0.vercel.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        live_headers = {k.lower(): v for k, v in live_login_preflight.headers.items()}
+        self.assertEqual(live_login_preflight.status_code, 204)
+        self.assertEqual(live_headers.get("access-control-allow-origin"), "https://his-pro-v1-0.vercel.app")
+        self.assertEqual(live_headers.get("access-control-allow-credentials"), "true")
 
         malicious = await client.get(
             "/api/v1/patients",

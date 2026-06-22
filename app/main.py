@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 import redis
 
-from app.middleware.cors_force import ForceCORSHeadersMiddleware
 # Import database and models
 from app.models.base_model import Base
 from app.extensions import engine, get_db
@@ -48,6 +47,7 @@ from app.routes.public_profile import router as public_profile_router
 
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.cors_force import ForceCORSHeadersMiddleware
 from app.middleware.jwt import JWTMiddleware
 from app.middleware.module_access import ModuleAccessMiddleware
 from app.middleware.security import InputValidationMiddleware, SecurityHeadersMiddleware
@@ -180,10 +180,6 @@ def create_app() -> FastAPI:
         finally:
             db_session.remove()
 
-        # Keep CORS as the outermost middleware so preflight and middleware-generated
-        # error responses still include credentialed CORS headers.
-
-
     @app.get("/debug/cors")
     async def debug_cors():
         return {
@@ -192,7 +188,15 @@ def create_app() -> FastAPI:
             "frontend_url": frontend_url,
         }
 
-    app.add_middleware(ForceCORSHeadersMiddleware, allowed_origins=allowed_origins)
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(InputValidationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ModuleAccessMiddleware)
+    app.add_middleware(JWTMiddleware)
+    register_error_handlers(app)
+
+    # Keep CORS as the outer edge of the ASGI stack so preflight and
+    # middleware-generated errors always include credentialed CORS headers.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -202,15 +206,11 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "Accept"],
         expose_headers=["Authorization"],
     )
-
-
-
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(InputValidationMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(ModuleAccessMiddleware)
-    app.add_middleware(JWTMiddleware)
-    register_error_handlers(app)
+    app.add_middleware(
+        ForceCORSHeadersMiddleware,
+        allowed_origins=allowed_origins,
+        allowed_origin_regex=allowed_origin_regex,
+    )
 
 
     # Health check
