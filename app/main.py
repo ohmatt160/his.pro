@@ -201,7 +201,7 @@ def create_app() -> FastAPI:
             "frontend_url": frontend_url,
         }
 
-    app.add_middleware(ForceCORSHeadersMiddleware(allowed_origins))
+    app.add_middleware(ForceCORSHeadersMiddleware, allowed_origins=allowed_origins)
     app.add_middleware(CORSMiddleware, ...)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)

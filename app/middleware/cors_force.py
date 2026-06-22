@@ -1,13 +1,9 @@
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp, Scope, Receive, Send
 
-
 class ForceCORSHeadersMiddleware:
-    """Force CORS headers on every response - bypasses HF proxy stripping"""
-
-    def __init__(self, app: ASGIApp, allowed_origins: list):
+    def __init__(self, app: ASGIApp, allowed_origins: list = None):
         self.app = app
-        self.allowed_origins = allowed_origins
+        self.allowed_origins = allowed_origins or []
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] != "http":
