@@ -199,15 +199,15 @@ def create_app() -> FastAPI:
             "force_cors_loaded": "ForceCORSHeadersMiddleware" in str(middlewares)
         }
 
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(InputValidationMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(ModuleAccessMiddleware)
-    app.add_middleware(JWTMiddleware)
-    register_error_handlers(app)
 
     # Keep CORS as the outer edge of the ASGI stack so preflight and
     # middleware-generated errors always include credentialed CORS headers.
+    app.add_middleware(
+        ForceCORSHeadersMiddleware,
+        allowed_origins=allowed_origins,
+        allowed_origin_regex=allowed_origin_regex,
+    )
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -217,12 +217,13 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "Accept"],
         expose_headers=["Authorization"],
     )
-    app.add_middleware(
-        ForceCORSHeadersMiddleware,
-        allowed_origins=allowed_origins,
-        allowed_origin_regex=allowed_origin_regex,
-    )
 
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(InputValidationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ModuleAccessMiddleware)
+    app.add_middleware(JWTMiddleware)
+    register_error_handlers(app)
 
     # Health check
     @app.get("/health")
