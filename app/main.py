@@ -177,15 +177,9 @@ def create_app() -> FastAPI:
         finally:
             db_session.remove()
 
-    app.add_middleware(RateLimitMiddleware)
-    app.add_middleware(InputValidationMiddleware)
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(ModuleAccessMiddleware)
-    app.add_middleware(JWTMiddleware)
-    register_error_handlers(app)
+        # Keep CORS as the outermost middleware so preflight and middleware-generated
+        # error responses still include credentialed CORS headers.
 
-    # Keep CORS as the outermost middleware so preflight and middleware-generated
-    # error responses still include credentialed CORS headers.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -195,6 +189,14 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "Accept"],
         expose_headers=["Authorization"],
     )
+
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(InputValidationMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(ModuleAccessMiddleware)
+    app.add_middleware(JWTMiddleware)
+    register_error_handlers(app)
+
 
     # Health check
     @app.get("/health")
