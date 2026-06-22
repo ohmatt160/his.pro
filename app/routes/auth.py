@@ -32,7 +32,7 @@ from app.extensions import get_db
 logger = logging.getLogger(__name__)
 
 # Create router
-router = APIRouter(prefix="auth", tags=["authentication"])
+router = APIRouter(prefix="/auth", tags=["authentication"])
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
