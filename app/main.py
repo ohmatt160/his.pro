@@ -202,11 +202,11 @@ def create_app() -> FastAPI:
 
     # Keep CORS as the outer edge of the ASGI stack so preflight and
     # middleware-generated errors always include credentialed CORS headers.
-    # app.add_middleware(
-    #     ForceCORSHeadersMiddleware,
-    #     allowed_origins=allowed_origins,
-    #     allowed_origin_regex=allowed_origin_regex,
-    # )
+    app.add_middleware(
+        ForceCORSHeadersMiddleware,
+        allowed_origins=allowed_origins,
+        allowed_origin_regex=allowed_origin_regex,
+    )
 
     # app.add_middleware(
     #     CORSMiddleware,
