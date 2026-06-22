@@ -183,15 +183,6 @@ def create_app() -> FastAPI:
         # Keep CORS as the outermost middleware so preflight and middleware-generated
         # error responses still include credentialed CORS headers.
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_origin_regex=allowed_origin_regex,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "Accept"],
-        expose_headers=["Authorization"],
-    )
 
     @app.get("/debug/cors")
     async def debug_cors():
@@ -202,7 +193,18 @@ def create_app() -> FastAPI:
         }
 
     app.add_middleware(ForceCORSHeadersMiddleware, allowed_origins=allowed_origins)
-    app.add_middleware(CORSMiddleware, ...)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=["Content-Type", "Authorization", "Accept"],
+        expose_headers=["Authorization"],
+    )
+
+
+
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
