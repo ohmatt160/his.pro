@@ -36,7 +36,6 @@ else:
         connect_args = {
             "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5")),
             "application_name": os.getenv("DB_APPLICATION_NAME", "hispro-api"),
-            "options": f"-c statement_timeout={int(os.getenv('DB_STATEMENT_TIMEOUT_MS', '30000'))}",
         }
     engine = create_engine(
         DATABASE_URL,
