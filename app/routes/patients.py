@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import logging
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import get_db
 from app.schemas.patients import (
@@ -25,11 +26,17 @@ from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import user_branch_id
 from app.models.user import User
 from app.models.facility import Facility
+from app.extensions import engine
+from app.utils.schema import ensure_database_schema_current
 
 logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/patients", tags=["patients"])
+
+
+def _load_patient_page(**kwargs):
+    return PatientService.get_all_patients(**kwargs)
 
 
 def build_patient_response(patient) -> PatientResponse:
@@ -80,15 +87,22 @@ async def get_patients(
             if not facility:
                 raise HTTPException(status_code=403, detail="Your facility is inactive or not found")
 
-        result = PatientService.get_all_patients(
-            facility_slug=facility_slug,
-            page=page,
-            per_page=per_page,
-            search=search,
-            current_user=current_user,
-            department_id=department_id,
-            branch_id=branch_id,
-        )
+        patient_query_args = {
+            "facility_slug": facility_slug,
+            "page": page,
+            "per_page": per_page,
+            "search": search,
+            "current_user": current_user,
+            "department_id": department_id,
+            "branch_id": branch_id,
+        }
+        try:
+            result = _load_patient_page(**patient_query_args)
+        except SQLAlchemyError:
+            logger.warning("[Patients] Patient query failed; checking additive schema compatibility", exc_info=True)
+            db.rollback()
+            ensure_database_schema_current(engine)
+            result = _load_patient_page(**patient_query_args)
 
         # Serialize patients
         patients_list = []

@@ -10,7 +10,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session, joinedload
 
-from app.extensions import db_session, get_db
+from app.extensions import db_session, engine, get_db
 from app.models.staff_chat import ChatConversation, ChatMessage
 from app.models.user import User
 from app.schemas.staff_chat import (
@@ -40,6 +40,16 @@ ALLOWED_UPLOAD_TYPES = {
     "application/vnd.ms-excel": ".xls",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
+_CHAT_SCHEMA_CHECKED = False
+
+
+def _ensure_chat_schema() -> None:
+    global _CHAT_SCHEMA_CHECKED
+    if _CHAT_SCHEMA_CHECKED:
+        return
+    ChatConversation.__table__.create(bind=engine, checkfirst=True)
+    ChatMessage.__table__.create(bind=engine, checkfirst=True)
+    _CHAT_SCHEMA_CHECKED = True
 
 
 def _require_facility(current_user: User) -> str:
@@ -225,6 +235,7 @@ async def list_chat_staff(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
     staff = (
         db_session.query(User)
@@ -263,6 +274,7 @@ async def create_or_get_conversation(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
     if data.participant_id == str(current_user.id):
         raise HTTPException(status_code=400, detail="Cannot start a conversation with yourself")
@@ -297,6 +309,7 @@ async def list_conversations(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
     conversations = [
         conversation
@@ -317,6 +330,7 @@ async def list_messages(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
     unread_messages = (
         db_session.query(ChatMessage)
@@ -354,6 +368,7 @@ async def send_message(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
     content = Validators.sanitize_string(data.content) if data.content else None
     if not content and not data.file_url:
@@ -417,6 +432,7 @@ async def mark_conversation_read(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
     now = datetime.utcnow()
     unread_messages = (
@@ -463,4 +479,5 @@ async def get_unread_count(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
+    _ensure_chat_schema()
     return ChatUnreadCountResponse(unread_count=_total_unread(current_user))

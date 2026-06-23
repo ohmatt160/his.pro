@@ -80,7 +80,7 @@ def _lab_result_response(result) -> LabResultResponse:
 @router.get("/tests", response_model=List[LabTestResponse])
 async def get_lab_tests(
     active_only: bool = Query(True),
-    current_user: User = Depends(role_required('ADMIN', 'LAB_TECH', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     tests = LabService.get_all_lab_tests(active_only=active_only)
@@ -103,7 +103,7 @@ async def create_lab_test(
 @router.get("/tests/{test_id}", response_model=LabTestResponse)
 async def get_lab_test(
     test_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'LAB_TECH', 'DOCTOR')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     test = LabService.get_lab_test_by_id(test_id)
