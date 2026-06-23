@@ -21,6 +21,7 @@ from app.schemas.consultations import (
 )
 from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.medical_record_service import MedicalRecordService
+from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
 
@@ -33,7 +34,7 @@ def _require_facility(current_user: User) -> str:
     return current_user.facility_slug
 
 
-def _get_patient(patient_id: str, facility_slug: str) -> Patient:
+def _get_patient(patient_id: str, facility_slug: str, current_user: User | None = None) -> Patient:
     patient = db_session.query(Patient).filter_by(
         id=patient_id,
         facility_slug=facility_slug,
@@ -41,7 +42,21 @@ def _get_patient(patient_id: str, facility_slug: str) -> Patient:
     ).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+    branch_id = None if not current_user or current_user.role == "ADMIN" else user_branch_id(current_user)
+    if branch_id and not belongs_to_branch(patient, branch_id):
+        raise HTTPException(status_code=404, detail="Patient not found")
     return patient
+
+
+def _apply_branch_patient_scope(query, current_user: User):
+    branch_id = None if current_user.role == "ADMIN" else user_branch_id(current_user)
+    if not branch_id:
+        return query
+    return query.join(Patient, MedicalRecord.patient_id == Patient.id).filter(
+        Patient.facility_slug == current_user.facility_slug,
+        Patient.is_active == True,
+        (Patient.branch_id == branch_id) | (Patient.department_id == branch_id),
+    )
 
 
 def _get_appointment(appointment_id: str | None, facility_slug: str) -> Appointment | None:
@@ -108,17 +123,18 @@ def _consultation_response(record: MedicalRecord) -> ConsultationResponse:
 async def list_consultations(
     patient_id: Optional[str] = Query(None),
     appointment_id: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     query = db_session.query(MedicalRecord).filter_by(facility_slug=facility_slug)
+    query = _apply_branch_patient_scope(query, current_user)
     if patient_id:
-        _get_patient(patient_id, facility_slug)
-        query = query.filter_by(patient_id=patient_id)
+        _get_patient(patient_id, facility_slug, current_user)
+        query = query.filter(MedicalRecord.patient_id == patient_id)
     if appointment_id:
         _get_appointment(appointment_id, facility_slug)
-        query = query.filter_by(appointment_id=appointment_id)
+        query = query.filter(MedicalRecord.appointment_id == appointment_id)
 
     records = query.order_by(MedicalRecord.created_at.desc()).limit(100).all()
     return [_consultation_response(record) for record in records]
@@ -127,11 +143,11 @@ async def list_consultations(
 @router.post("/start", response_model=ConsultationResponse, status_code=status.HTTP_201_CREATED)
 async def start_consultation(
     data: ConsultationStart,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
-    patient = _get_patient(data.patient_id, facility_slug)
+    patient = _get_patient(data.patient_id, facility_slug, current_user)
     appointment = _get_appointment(data.appointment_id, facility_slug)
     if appointment and appointment.patient_id != patient.id:
         raise HTTPException(status_code=400, detail="Appointment does not belong to patient")
@@ -176,7 +192,7 @@ async def start_consultation(
 @router.get("/{consultation_id}", response_model=ConsultationResponse)
 async def get_consultation(
     consultation_id: str,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
@@ -186,6 +202,7 @@ async def get_consultation(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="Consultation not found")
+    _get_patient(str(record.patient_id), facility_slug, current_user)
     return _consultation_response(record)
 
 
@@ -193,7 +210,7 @@ async def get_consultation(
 async def update_consultation(
     consultation_id: str,
     data: ConsultationUpdate,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
@@ -203,6 +220,7 @@ async def update_consultation(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="Consultation not found")
+    _get_patient(str(record.patient_id), facility_slug, current_user)
 
     payload = data.model_dump(exclude_unset=True)
     if "chief_complaint" in payload and payload["chief_complaint"] is not None:
@@ -243,7 +261,7 @@ async def update_consultation(
 @router.post("/{consultation_id}/complete", response_model=ConsultationResponse)
 async def complete_consultation(
     consultation_id: str,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
@@ -253,6 +271,7 @@ async def complete_consultation(
     ).first()
     if not record:
         raise HTTPException(status_code=404, detail="Consultation not found")
+    _get_patient(str(record.patient_id), facility_slug, current_user)
 
     if not record.diagnosis and not record.treatment_plan:
         raise HTTPException(status_code=400, detail="Diagnosis or treatment plan is required before completion")

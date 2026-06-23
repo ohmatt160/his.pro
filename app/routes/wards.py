@@ -18,6 +18,7 @@ from app.schemas.wards import (
     WardBedUpdate,
 )
 from app.services.patient_notification_service import PatientNotificationService
+from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
 
@@ -30,13 +31,16 @@ def _require_facility(current_user: User) -> str:
     return current_user.facility_slug
 
 
-def _get_patient(patient_id: str, facility_slug: str) -> Patient:
+def _get_patient(patient_id: str, facility_slug: str, current_user: User | None = None) -> Patient:
     patient = db_session.query(Patient).filter_by(
         id=patient_id,
         facility_slug=facility_slug,
         is_active=True,
     ).first()
     if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    branch_id = None if not current_user or current_user.role == "ADMIN" else user_branch_id(current_user)
+    if branch_id and not belongs_to_branch(patient, branch_id):
         raise HTTPException(status_code=404, detail="Patient not found")
     return patient
 
@@ -100,9 +104,12 @@ def _admission_response(admission: WardAdmission) -> WardAdmissionResponse:
 async def list_beds(
     ward_name: Optional[str] = Query(None, max_length=120),
     status_filter: Optional[str] = Query(None, alias="status", pattern="^(AVAILABLE|OCCUPIED|MAINTENANCE)$"),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST")),
     db: Session = Depends(get_db),
 ):
+    if current_user.role != "ADMIN" and user_branch_id(current_user):
+        return []
+
     facility_slug = _require_facility(current_user)
     query = db_session.query(WardBed).filter_by(facility_slug=facility_slug)
     if ward_name:
@@ -174,16 +181,23 @@ async def update_bed(
 async def list_admissions(
     status_filter: Optional[str] = Query(None, alias="status", pattern="^(ACTIVE|DISCHARGED|TRANSFERRED)$"),
     patient_id: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     query = db_session.query(WardAdmission).filter_by(facility_slug=facility_slug)
+    branch_id = None if current_user.role == "ADMIN" else user_branch_id(current_user)
+    if branch_id:
+        query = query.join(Patient, WardAdmission.patient_id == Patient.id).filter(
+            Patient.facility_slug == facility_slug,
+            Patient.is_active == True,
+            (Patient.branch_id == branch_id) | (Patient.department_id == branch_id),
+        )
     if status_filter:
-        query = query.filter_by(status=status_filter)
+        query = query.filter(WardAdmission.status == status_filter)
     if patient_id:
-        _get_patient(patient_id, facility_slug)
-        query = query.filter_by(patient_id=patient_id)
+        _get_patient(patient_id, facility_slug, current_user)
+        query = query.filter(WardAdmission.patient_id == patient_id)
     admissions = query.order_by(WardAdmission.admitted_at.desc()).limit(100).all()
     return [_admission_response(admission) for admission in admissions]
 
@@ -191,11 +205,11 @@ async def list_admissions(
 @router.post("/admissions", response_model=WardAdmissionResponse, status_code=status.HTTP_201_CREATED)
 async def admit_patient(
     data: WardAdmissionCreate,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
-    _get_patient(data.patient_id, facility_slug)
+    _get_patient(data.patient_id, facility_slug, current_user)
 
     existing = db_session.query(WardAdmission).filter_by(
         facility_slug=facility_slug,
@@ -236,11 +250,12 @@ async def admit_patient(
 async def update_admission(
     admission_id: str,
     data: WardAdmissionUpdate,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     admission = _get_admission(admission_id, facility_slug)
+    _get_patient(str(admission.patient_id), facility_slug, current_user)
     payload = data.model_dump(exclude_unset=True)
 
     if "bed_id" in payload:
@@ -275,11 +290,12 @@ async def update_admission(
 async def add_observation(
     admission_id: str,
     data: NursingObservationCreate,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     admission = _get_admission(admission_id, facility_slug)
+    _get_patient(str(admission.patient_id), facility_slug, current_user)
     if admission.status != "ACTIVE":
         raise HTTPException(status_code=400, detail="Cannot update a closed admission")
 
@@ -306,11 +322,12 @@ async def add_observation(
 @router.post("/admissions/{admission_id}/discharge", response_model=WardAdmissionResponse)
 async def discharge_patient(
     admission_id: str,
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     admission = _get_admission(admission_id, facility_slug)
+    _get_patient(str(admission.patient_id), facility_slug, current_user)
     if admission.status != "ACTIVE":
         raise HTTPException(status_code=400, detail="Admission is already closed")
 
@@ -321,7 +338,7 @@ async def discharge_patient(
         bed.status = "AVAILABLE"
         db_session.add(bed)
     db_session.add(admission)
-    patient = admission.patient or _get_patient(admission.patient_id, facility_slug)
+    patient = admission.patient or _get_patient(admission.patient_id, facility_slug, current_user)
     PatientNotificationService.create(
         facility_slug=facility_slug,
         patient=patient,

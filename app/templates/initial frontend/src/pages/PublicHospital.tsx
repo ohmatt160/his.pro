@@ -113,7 +113,7 @@ const PublicHospital = () => {
                       <p className="text-sm font-semibold text-foreground">{service.name}</p>
                       {service.duration && <p className="flex items-center gap-1 text-xs text-muted-foreground"><Clock className="h-3 w-3" /> {service.duration}</p>}
                     </div>
-                    <p className="text-sm font-semibold text-foreground">{service.price ? `NGN ${service.price.toLocaleString()}` : "Ask clinic"}</p>
+                    <p className="text-sm font-semibold text-foreground">{service.price ? `₦${service.price.toLocaleString()}` : "Ask clinic"}</p>
                   </div>
                 ))}
               </CardContent>

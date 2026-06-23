@@ -83,7 +83,7 @@ const PricingSection = () => {
               <div className="mb-6">
                 {plan.monthly ? (
                   <>
-                    <span className="text-4xl font-extrabold">${yearly ? plan.yearly : plan.monthly}</span>
+                    <span className="text-4xl font-extrabold">₦{yearly ? plan.yearly : plan.monthly}</span>
                     <span className={`text-sm ml-1 ${plan.highlight ? "opacity-70" : "text-muted-foreground"}`}>/month</span>
                   </>
                 ) : (

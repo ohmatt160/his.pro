@@ -297,7 +297,7 @@ const PublicProfile = () => {
                             <div>
                               <p className="text-sm font-semibold text-foreground">{service.name}</p>
                               <p className="text-xs text-muted-foreground">
-                                {service.price ? `NGN ${service.price.toLocaleString()}` : "No price"} {service.duration ? `· ${service.duration}` : ""}
+                                {service.price ? `₦${service.price.toLocaleString()}` : "No price"} {service.duration ? `· ${service.duration}` : ""}
                               </p>
                             </div>
                             <Button type="button" size="icon" variant="ghost" onClick={() => removeService(index)} aria-label="Remove service">
