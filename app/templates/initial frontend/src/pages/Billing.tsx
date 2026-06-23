@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
   hasResourceErrors,
@@ -112,7 +112,7 @@ const formatCurrency = (value: number) =>
 
 const Billing = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, Payment[]>>({});
@@ -126,7 +126,7 @@ const Billing = () => {
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<BillingResource>>({});
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const patientNames = useMemo(() => {
     return patients.reduce<Record<string, string>>((acc, patient) => {
@@ -425,7 +425,7 @@ const Billing = () => {
 
         <div className="flex justify-end">
           <Button asChild variant="outline" className="gap-2">
-            <Link to={`/dashboard/${facilitySlug}/patients`}>
+            <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
               <Users className="h-4 w-4" /> Patient Registry
             </Link>
           </Button>

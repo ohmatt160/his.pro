@@ -57,8 +57,7 @@ async def get_dashboard_stats(
 ):
     """Get dashboard statistics for a facility"""
     try:
-        # Non-ADMIN users can only view their own facility
-        if current_user.role not in {'ADMIN', 'BRANCH_ADMIN'} and current_user.facility_slug != facility_slug:
+        if current_user.facility_slug != facility_slug:
             raise HTTPException(status_code=403, detail="You can only view your own facility's data")
 
         # Get today's date range
@@ -86,29 +85,33 @@ async def get_dashboard_stats(
         today_appointments = appointment_query.count()
 
         # 3. Pending lab orders
-        pending_lab_orders = db_session.query(LabOrder).filter(
+        pending_lab_query = db_session.query(LabOrder).filter(
             LabOrder.facility_slug == facility_slug,
             LabOrder.status.in_(['ordered', 'collected', 'processing'])
-        ).count()
+        )
+        pending_lab_orders = apply_branch_filter(pending_lab_query, LabOrder, effective_department_id).count()
 
         # 4. Pending radiology orders
-        pending_radiology_orders = db_session.query(Radiology).filter(
+        pending_radiology_query = db_session.query(Radiology).filter(
             Radiology.facility_slug == facility_slug,
             Radiology.status.in_(['pending', 'ordered'])
-        ).count()
+        )
+        pending_radiology_orders = apply_branch_filter(pending_radiology_query, Radiology, effective_department_id).count()
 
         # 5. Low inventory items
-        low_inventory_items = db_session.query(Inventory).filter(
-            Inventory.facility_slug == facility_slug,
-            Inventory.is_active == True,
-            Inventory.current_stock <= Inventory.reorder_level
-        ).count()
+        low_inventory_items = 0 if effective_department_id else db_session.query(Inventory).filter(
+                Inventory.facility_slug == facility_slug,
+                Inventory.is_active == True,
+                Inventory.current_stock <= Inventory.reorder_level
+            ).count()
 
         # 6. Active alerts (not read and not expired)
         active_alerts_query = db_session.query(Alert).filter(
             Alert.facility_slug == facility_slug,
             Alert.is_read == False
         ).filter(or_(Alert.expires_at == None, Alert.expires_at > datetime.utcnow()))
+        if effective_department_id:
+            active_alerts_query = active_alerts_query.filter(Alert.recipient_id == current_user.id)
         active_alerts = active_alerts_query.count()
 
         # 7. Queue status breakdown
@@ -143,6 +146,6 @@ async def get_dashboard_stats(
         logger.warning("[Dashboard] Returning empty stats for %s after database read failed: %s", facility_slug, e, exc_info=True)
         db_session.rollback()
         return _empty_dashboard_stats(facility_slug)
-    except Exception as e:
-        logger.error(f"[Dashboard] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Dashboard error: {str(e)}")
+    except Exception:
+        logger.exception("[Dashboard] Unexpected error while loading stats for %s", facility_slug)
+        raise HTTPException(status_code=500, detail="Dashboard could not be loaded")

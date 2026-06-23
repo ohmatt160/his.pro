@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   emptyObservationForm,
   observationPayload,
@@ -76,7 +76,7 @@ const emptyAdmissionForm = {
 
 const Wards = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [beds, setBeds] = useState<WardBed[]>([]);
   const [admissions, setAdmissions] = useState<WardAdmission[]>([]);
@@ -90,13 +90,13 @@ const Wards = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<WardResource>>({});
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const paths = {
-    patients: `/dashboard/${facilitySlug}/patients`,
-    records: `/dashboard/${facilitySlug}/records`,
-    pharmacy: `/dashboard/${facilitySlug}/pharmacy`,
-    queue: `/dashboard/${facilitySlug}/queue`,
+    patients: getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined),
+    records: getWorkspaceRoutePath(facilitySlug, "records", branchSlug || undefined),
+    pharmacy: getWorkspaceRoutePath(facilitySlug, "pharmacy", branchSlug || undefined),
+    queue: getWorkspaceRoutePath(facilitySlug, "queue", branchSlug || undefined),
   };
 
   const loadData = async () => {

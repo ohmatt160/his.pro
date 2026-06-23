@@ -31,7 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
   hasResourceErrors,
@@ -78,7 +78,7 @@ const emptyOrderForm = {
 
 const Radiology = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [orders, setOrders] = useState<RadiologyOrder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,7 +90,7 @@ const Radiology = () => {
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<RadiologyResource>>({});
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const patientNames = useMemo(
     () =>
@@ -331,7 +331,7 @@ const Radiology = () => {
 
         <div className="flex justify-end">
           <Button asChild variant="outline" className="gap-2">
-            <Link to={`/dashboard/${facilitySlug}/patients`}>
+            <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
               <Users className="h-4 w-4" /> Patient Registry
             </Link>
           </Button>

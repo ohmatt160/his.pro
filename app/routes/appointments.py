@@ -90,9 +90,9 @@ async def get_appointments(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Appointment] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve appointments: {str(e)}")
+    except Exception:
+        logger.exception("[Appointment] Failed to retrieve appointments")
+        raise HTTPException(status_code=500, detail="Appointments could not be loaded")
 
 
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
@@ -164,9 +164,9 @@ async def create_appointment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Appointment] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create appointment: {str(e)}")
+    except Exception:
+        logger.exception("[Appointment] Failed to create appointment")
+        raise HTTPException(status_code=500, detail="Appointment could not be created")
 
 
 @router.get("/{appointment_id}", response_model=AppointmentResponse)
@@ -208,9 +208,9 @@ async def get_appointment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Appointment] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve appointment: {str(e)}")
+    except Exception:
+        logger.exception("[Appointment] Failed to retrieve appointment %s", appointment_id)
+        raise HTTPException(status_code=500, detail="Appointment could not be loaded")
 
 
 @router.put("/{appointment_id}", response_model=AppointmentResponse)
@@ -259,9 +259,9 @@ async def update_appointment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Appointment] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update appointment: {str(e)}")
+    except Exception:
+        logger.exception("[Appointment] Failed to update appointment %s", appointment_id)
+        raise HTTPException(status_code=500, detail="Appointment could not be updated")
 
 
 @router.delete("/{appointment_id}", response_model=MessageResponse)
@@ -290,6 +290,6 @@ async def cancel_appointment(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Appointment] Exception: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to cancel appointment: {str(e)}")
+    except Exception:
+        logger.exception("[Appointment] Failed to cancel appointment %s", appointment_id)
+        raise HTTPException(status_code=500, detail="Appointment could not be cancelled")

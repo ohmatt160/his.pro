@@ -201,7 +201,7 @@ export const moduleRoleAccess: Record<FacilityModuleId, ModuleAccessRole[]> = {
   pharmacy: ["admin", "branch_admin", "doctor", "pharmacist"],
   billing: ["admin", "branch_admin", "reception"],
   radiology: ["admin", "branch_admin", "doctor"],
-  inventory: ["admin", "branch_admin", "pharmacist"],
+  inventory: ["admin", "pharmacist"],
   reports: ["admin", "branch_admin", "doctor", "nurse", "reception"],
 };
 

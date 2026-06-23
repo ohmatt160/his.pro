@@ -24,7 +24,7 @@ export const routeRoles = {
   laboratory: ["admin", "branch_admin", "lab"],
   pharmacy: ["admin", "branch_admin", "pharmacist"],
   radiology: ["admin", "branch_admin", "doctor"],
-  inventory: ["admin", "branch_admin", "pharmacist"],
+  inventory: ["admin", "pharmacist"],
   reports: ["admin", "branch_admin"],
   alerts: ["admin", "branch_admin", "doctor", "nurse", "reception", "pharmacist", "lab"],
   chat: ["admin", "branch_admin", "doctor", "nurse", "reception", "pharmacist", "lab"],

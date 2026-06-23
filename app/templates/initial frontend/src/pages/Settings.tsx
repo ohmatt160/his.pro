@@ -36,7 +36,8 @@ import {
 } from "@/lib/auth-session";
 import {
   setCachedFacilityWorkspace,
-  getFacilityDashboardPath,
+  getWorkspaceDashboardPath,
+  getWorkspaceRoutePath,
 } from "@/lib/facility-workspace";
 import { moduleCatalog, normalizeModules, type FacilityModuleId } from "@/lib/modules";
 import {
@@ -144,8 +145,8 @@ const Settings = () => {
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<SettingsResource>>({});
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
-  const auditLogsPath = `/dashboard/${facilitySlug}/audit-logs`;
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
+  const auditLogsPath = getWorkspaceRoutePath(facilitySlug, "audit-logs", branchSlug || undefined);
   const isBranchAdmin = user?.role === "branch_admin";
 
   const getCurrentBranch = (source: Facility | null = facility) => {

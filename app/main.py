@@ -5,7 +5,7 @@ Converted from Flask/Flask-RESTx for better scalability
 
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -121,12 +121,15 @@ def create_app() -> FastAPI:
 
     register_tenant_hooks()
 
+    app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
+    is_production = app_env == 'production'
+
     app = FastAPI(
         title="HIS.Pro API",
         version="1.0",
         description="Health Information System API - FastAPI Version",
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
         openapi_url="/api/v1/openapi.json",
         lifespan=lifespan
     )
@@ -158,7 +161,6 @@ def create_app() -> FastAPI:
     if frontend_url and frontend_url not in allowed_origins:
         allowed_origins.append(frontend_url)
 
-    app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
     if app_env == 'production' and not allowed_origins:
         allowed_origins = production_origins.copy()
     elif not allowed_origins:
@@ -180,8 +182,10 @@ def create_app() -> FastAPI:
         finally:
             db_session.remove()
 
-    @app.get("/debug/cors")
+    @app.get("/debug/cors", include_in_schema=False)
     async def debug_cors():
+        if is_production:
+            raise HTTPException(status_code=404, detail="Not found")
         return {
             "allowed_origins": allowed_origins,
             "app_env": app_env,
@@ -189,8 +193,10 @@ def create_app() -> FastAPI:
         }
 
     # Add this debug endpoint temporarily
-    @app.get("/debug/middleware")
+    @app.get("/debug/middleware", include_in_schema=False)
     async def debug_middleware():
+        if is_production:
+            raise HTTPException(status_code=404, detail="Not found")
         import app.middleware.cors_force as cf
         middlewares = [m.__class__.__name__ for m in app.user_middleware]
         return {
@@ -233,14 +239,14 @@ def create_app() -> FastAPI:
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             health_status["database"] = "connected"
-        except Exception as e:
-            health_status["database"] = f"error: {str(e)}"
+        except Exception:
+            health_status["database"] = "error"
             health_status["status"] = "unhealthy"
         if redis_client:
             try:
                 redis_client.ping()
                 health_status["redis"] = "connected"
-            except:
+            except Exception:
                 health_status["redis"] = "error"
         else:
             health_status["redis"] = "not configured"

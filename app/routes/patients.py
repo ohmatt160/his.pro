@@ -105,9 +105,9 @@ async def get_patients(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patients] Exception in get_patients: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve patients: {str(e)}")
+    except Exception:
+        logger.exception("[Patients] Failed to retrieve patients")
+        raise HTTPException(status_code=500, detail="Patients could not be loaded")
 
 
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
@@ -159,9 +159,9 @@ async def create_patient(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patient] Exception creating patient: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create patient: {str(e)}")
+    except Exception:
+        logger.exception("[Patient] Failed to create patient")
+        raise HTTPException(status_code=500, detail="Patient could not be created")
 
 
 @router.get("/{patient_id}", response_model=PatientResponse)
@@ -193,9 +193,9 @@ async def get_patient(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patient] Exception getting patient {patient_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve patient: {str(e)}")
+    except Exception:
+        logger.exception("[Patient] Failed to retrieve patient %s", patient_id)
+        raise HTTPException(status_code=500, detail="Patient could not be loaded")
 
 
 @router.get("/{patient_id}/timeline", response_model=PatientTimelineResponse)
@@ -226,9 +226,9 @@ async def get_patient_timeline(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patient] Exception getting patient {patient_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve patient: {str(e)}")
+    except Exception:
+        logger.exception("[Patient] Failed to retrieve patient timeline %s", patient_id)
+        raise HTTPException(status_code=500, detail="Patient timeline could not be loaded")
 
 
 @router.put("/{patient_id}", response_model=PatientResponse)
@@ -270,9 +270,9 @@ async def update_patient(
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patient] Exception updating patient {patient_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update patient: {str(e)}")
+    except Exception:
+        logger.exception("[Patient] Failed to update patient %s", patient_id)
+        raise HTTPException(status_code=500, detail="Patient could not be updated")
 
 
 @router.delete("/{patient_id}", response_model=MessageResponse)
@@ -297,12 +297,15 @@ async def delete_patient(
         if not patient:
             raise HTTPException(status_code=404, detail="Patient not found")
 
+        if not PatientService.user_can_access_patient(patient_id, facility_slug, current_user):
+            raise HTTPException(status_code=403, detail="You are not authorized to access this patient")
+
         PatientService.delete_patient(patient)
 
         return MessageResponse(message="Patient deleted successfully")
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"[Patient] Exception deleting patient {patient_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete patient: {str(e)}")
+    except Exception:
+        logger.exception("[Patient] Failed to delete patient %s", patient_id)
+        raise HTTPException(status_code=500, detail="Patient could not be deleted")

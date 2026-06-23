@@ -38,7 +38,7 @@ import {
   getStaffAccessPath,
   type FacilityStaffAccount,
 } from "@/lib/facility-staff";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import { addSettledError, getResourceError, settledValue } from "@/lib/resource-loading";
 
 type Patient = {
@@ -125,7 +125,7 @@ export const loadAppointmentResources = async (
 
 const Appointments = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [staff, setStaff] = useState<FacilityStaffAccount[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -137,8 +137,8 @@ const Appointments = () => {
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<AppointmentResourceState["errors"]>({});
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
-  const patientsPath = `/dashboard/${facilitySlug}/patients`;
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
+  const patientsPath = getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined);
   const staffPath = getStaffAccessPath(facilitySlug);
 
   const clinicians = useMemo(

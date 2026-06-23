@@ -32,7 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
   hasResourceErrors,
@@ -88,7 +88,7 @@ const toList = (value: string) =>
 
 const MedicalRecords = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,7 +98,7 @@ const MedicalRecords = () => {
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<MedicalRecordResource>>({});
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const patientNames = useMemo(
     () =>
@@ -300,7 +300,7 @@ const MedicalRecords = () => {
                       {record.follow_up_date ? `Follow-up ${record.follow_up_date}` : "No follow-up"}
                     </p>
                     <Button asChild variant="outline" size="sm" className="gap-2 self-start">
-                      <Link to={`/dashboard/${facilitySlug}/patients/${record.patient_id}/timeline`}>
+                      <Link to={getWorkspaceRoutePath(facilitySlug, `patients/${record.patient_id}/timeline`, branchSlug || undefined)}>
                         <ClipboardList className="h-4 w-4" /> Timeline
                       </Link>
                     </Button>
@@ -313,7 +313,7 @@ const MedicalRecords = () => {
 
         <div className="flex justify-end">
           <Button asChild variant="outline" className="gap-2">
-            <Link to={`/dashboard/${facilitySlug}/patients`}>
+            <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
               <Users className="h-4 w-4" /> Patient Registry
             </Link>
           </Button>

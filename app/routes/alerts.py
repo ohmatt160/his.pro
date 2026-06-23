@@ -19,6 +19,7 @@ from app.utils.validators import Validators
 from app.models.user import User
 from app.models.alert import Alert
 from app.services.audit_log_service import AuditLogService
+from app.utils.branch_scope import belongs_to_branch, user_branch_id
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -44,11 +45,20 @@ def _alert_response(alert: Alert) -> AlertResponse:
 
 
 def _visible_alert_query(current_user: User):
-    return db_session.query(Alert).options(joinedload(Alert.recipient)).filter(
+    query = db_session.query(Alert).options(joinedload(Alert.recipient)).filter(
         Alert.facility_slug == current_user.facility_slug,
-        or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None),
         or_(Alert.expires_at == None, Alert.expires_at > datetime.utcnow()),
     )
+    if current_user.role == "ADMIN":
+        return query.filter(or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None))
+    return query.filter(Alert.recipient_id == current_user.id)
+
+
+def _ensure_alert_recipient_allowed(recipient: User | None, current_user: User):
+    if not recipient or recipient.facility_slug != current_user.facility_slug:
+        raise HTTPException(status_code=404, detail="Recipient not found")
+    if current_user.role != "ADMIN" and not belongs_to_branch(recipient, user_branch_id(current_user)):
+        raise HTTPException(status_code=404, detail="Recipient not found")
 
 
 def _parse_expiry(value: str | None):
@@ -107,12 +117,11 @@ async def create_alert(
         raise HTTPException(status_code=400, detail=f"Invalid alert_type. Must be one of: {', '.join(Alert.ALERT_TYPES)}")
 
     recipient_id = data.recipient_id
+    if current_user.role != "ADMIN" and not recipient_id:
+        raise HTTPException(status_code=400, detail="Select a recipient for branch alerts")
     if recipient_id:
         recipient = db_session.query(User).filter_by(id=recipient_id).first()
-        if not recipient:
-            raise HTTPException(status_code=404, detail="Recipient not found")
-        if recipient.facility_slug != facility_slug:
-            raise HTTPException(status_code=404, detail="Recipient not found")
+        _ensure_alert_recipient_allowed(recipient, current_user)
 
     expires_at = _parse_expiry(data.expires_at)
 
@@ -161,7 +170,11 @@ async def create_role_alert(
         facility_slug=facility_slug,
         role=data.recipient_role,
         is_active=True,
-    ).all()
+    )
+    if current_user.role != "ADMIN":
+        branch_id = user_branch_id(current_user)
+        recipients = recipients.filter(or_(User.branch_id == branch_id, User.department_id == branch_id))
+    recipients = recipients.all()
     if not recipients:
         raise HTTPException(status_code=404, detail="No active users found for this role")
 
@@ -225,7 +238,7 @@ async def update_alert(
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
-    alert = db_session.query(Alert).filter_by(id=alert_id, facility_slug=facility_slug).first()
+    alert = _visible_alert_query(current_user).filter(Alert.id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 

@@ -27,7 +27,7 @@ import {
   formFromConsultation,
   payloadFromConsultationForm,
 } from "@/lib/consultations";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
   hasResourceErrors,
@@ -61,7 +61,7 @@ const activeAppointmentStatuses = ["SCHEDULED", "CONFIRMED", "IN_PROGRESS"];
 
 const Consultations = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [consultations, setConsultations] = useState<Consultation[]>([]);
@@ -71,15 +71,15 @@ const Consultations = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<ConsultationResource>>({});
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const paths = {
-    patients: `/dashboard/${facilitySlug}/patients`,
-    records: `/dashboard/${facilitySlug}/records`,
-    appointments: `/dashboard/${facilitySlug}/appointments`,
-    laboratory: `/dashboard/${facilitySlug}/laboratory`,
-    pharmacy: `/dashboard/${facilitySlug}/pharmacy`,
-    radiology: `/dashboard/${facilitySlug}/radiology`,
+    patients: getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined),
+    records: getWorkspaceRoutePath(facilitySlug, "records", branchSlug || undefined),
+    appointments: getWorkspaceRoutePath(facilitySlug, "appointments", branchSlug || undefined),
+    laboratory: getWorkspaceRoutePath(facilitySlug, "laboratory", branchSlug || undefined),
+    pharmacy: getWorkspaceRoutePath(facilitySlug, "pharmacy", branchSlug || undefined),
+    radiology: getWorkspaceRoutePath(facilitySlug, "radiology", branchSlug || undefined),
   };
 
   const loadData = async () => {

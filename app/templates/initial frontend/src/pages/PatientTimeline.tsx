@@ -23,6 +23,7 @@ import {
   type PatientTimelineEvent,
   type PatientTimelinePatient,
 } from "@/lib/patient-timeline";
+import { getWorkspaceRoutePath } from "@/lib/facility-workspace";
 
 const moduleIcons: Record<string, React.ElementType> = {
   reception: CalendarDays,
@@ -36,7 +37,7 @@ const moduleIcons: Record<string, React.ElementType> = {
 
 const PatientTimeline = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", patientId = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "", patientId = "" } = useParams();
   const [patient, setPatient] = useState<PatientTimelinePatient | null>(null);
   const [events, setEvents] = useState<PatientTimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,7 +88,7 @@ const PatientTimeline = () => {
             <Button
               variant="ghost"
               className="mb-2 -ml-3 gap-2 text-muted-foreground"
-              onClick={() => navigate(`/dashboard/${facilitySlug}/patients`)}
+              onClick={() => navigate(getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined))}
             >
               <ArrowLeft className="h-4 w-4" /> Patients
             </Button>
@@ -100,10 +101,10 @@ const PatientTimeline = () => {
           </div>
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
-              <Link to={`/dashboard/${facilitySlug}/records`}>Records</Link>
+              <Link to={getWorkspaceRoutePath(facilitySlug, "records", branchSlug || undefined)}>Records</Link>
             </Button>
             <Button asChild variant="outline">
-              <Link to={`/dashboard/${facilitySlug}/consultations`}>
+              <Link to={getWorkspaceRoutePath(facilitySlug, "consultations", branchSlug || undefined)}>
                 Consultations
               </Link>
             </Button>

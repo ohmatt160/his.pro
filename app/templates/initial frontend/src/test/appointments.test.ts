@@ -52,9 +52,9 @@ describe("appointment resource loading", () => {
     expect(result.appointments).toEqual([]);
     expect(result.queue).toEqual([]);
     expect(result.errors).toEqual({
-      clinicians: "clinicians unavailable",
-      appointments: "appointments unavailable",
-      queue: "queue unavailable",
+      clinicians: "Clinicians could not be loaded.",
+      appointments: "Appointments could not be loaded.",
+      queue: "Queue could not be loaded.",
     });
   });
 
@@ -99,7 +99,7 @@ describe("appointment resource loading", () => {
     expect(result.appointments).toEqual([]);
     expect(result.queue).toHaveLength(1);
     expect(result.errors).toEqual({
-      patients: "patients unavailable",
+      patients: "Patients could not be loaded.",
     });
   });
 });
