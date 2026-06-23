@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
+import { getPatientOptions } from "@/api/patients";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -88,7 +89,7 @@ const Consultations = () => {
       const [appointmentResponse, patientResponse, consultationResponse] =
         await Promise.allSettled([
           apiClient.get<Appointment[]>("/appointments"),
-          apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
+          getPatientOptions<Patient>(),
           apiClient.get<Consultation[]>("/consultations"),
         ]);
 

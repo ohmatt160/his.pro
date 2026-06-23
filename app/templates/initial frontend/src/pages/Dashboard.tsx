@@ -46,7 +46,6 @@ import {
 import {
   getWorkspaceDashboardPath,
   getWorkspaceRoutePath,
-  getFacilityWorkspace,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import {
@@ -54,17 +53,11 @@ import {
   isModuleEnabled,
   normalizeModules,
 } from "@/lib/modules";
-import { apiClient } from "@/api/client";
-
-type DashboardStats = {
-  patient_count: number;
-  today_appointments: number;
-  pending_lab_orders: number;
-  pending_radiology_orders: number;
-  low_inventory_items: number;
-  active_alerts: number;
-  active_queue_count: number;
-};
+import {
+  useDashboardStatsQuery,
+  useFacilityQuery,
+  useWorkspaceQuery,
+} from "@/hooks/useWorkspaceQueries";
 
 type FacilityDepartment = {
   id: string;
@@ -93,92 +86,71 @@ const Dashboard = () => {
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
     branchSlug ? null : routedData
   );
-  const [isLoading, setIsLoading] = useState(branchSlug ? true : !Boolean(routedData));
-  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(
-    null
-  );
+  const [isLoading, setIsLoading] = useState(branchSlug ? true : !routedData);
   const [departments, setDepartments] = useState<FacilityDepartment[]>([]);
   const [currentBranch, setCurrentBranch] = useState<FacilityDepartment | null>(null);
   const [selectedDepartmentId, setSelectedDepartmentId] = useState("all");
 
-  useEffect(() => {
-    if (!branchSlug && !workspace && facilitySlug) {
-      setIsLoading(true);
-      getFacilityWorkspace(facilitySlug)
-        .then((result) => {
-          if (result) {
-            setWorkspace(result);
-          } else {
-            navigate(`/login/${facilitySlug}`, { replace: true });
-          }
-        })
-        .finally(() => setIsLoading(false));
-    }
-  }, [branchSlug, facilitySlug, workspace, navigate]);
+  const workspaceQuery = useWorkspaceQuery(facilitySlug);
+  const scopedBranchId =
+    user?.branchId || (selectedDepartmentId !== "all" ? selectedDepartmentId : "");
+  const { data: dashboardStats = null } = useDashboardStatsQuery(
+    facilitySlug,
+    scopedBranchId,
+    Boolean(user)
+  );
+  const facilityQuery = useFacilityQuery(
+    facilitySlug,
+    Boolean(user && ["admin", "branch_admin"].includes(user.role))
+  );
 
   useEffect(() => {
-    if (!facilitySlug || !user) {
+    if (branchSlug || workspace || !facilitySlug || workspaceQuery.isPending) {
+      return;
+    }
+    if (workspaceQuery.data) {
+      setWorkspace(workspaceQuery.data);
+      setIsLoading(false);
+    } else if (workspaceQuery.isSuccess) {
+      navigate(`/login/${facilitySlug}`, { replace: true });
+    }
+  }, [
+    branchSlug,
+    facilitySlug,
+    navigate,
+    workspace,
+    workspaceQuery.data,
+    workspaceQuery.isPending,
+    workspaceQuery.isSuccess,
+  ]);
+
+  useEffect(() => {
+    const facility = facilityQuery.data;
+    if (!facility || !user) {
       return;
     }
 
-    const scopedBranchId = user.branchId || (selectedDepartmentId !== "all" ? selectedDepartmentId : "");
-    const branchQuery = scopedBranchId ? `&branch_id=${encodeURIComponent(scopedBranchId)}` : "";
-
-    apiClient
-      .get<DashboardStats>(
-        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${branchQuery}`
-      )
-      .then(setDashboardStats)
-      .catch(() => setDashboardStats(null));
-  }, [facilitySlug, user, selectedDepartmentId]);
-
-  useEffect(() => {
-    if (!facilitySlug || !user || !["admin", "branch_admin"].includes(user.role)) {
-      return;
-    }
-
-    apiClient
-      .get<{
-        name: string;
-        slug: string;
-        type: string;
-        country?: string | null;
-        phone?: string | null;
-        email?: string | null;
-        modules?: string[];
-        hospital_type?: string;
-        departments?: FacilityDepartment[];
-        branches?: FacilityDepartment[];
-        created_at?: string;
-      }>(`/facilities/${facilitySlug}`)
-      .then((facility) => {
-        const branchList = facility.branches || facility.departments || [];
-        const activeBranch = branchSlug
-          ? branchList.find((branch) => branch.slug === branchSlug || branch.id === user.branchId) || null
-          : user.branchId
-            ? branchList.find((branch) => branch.id === user.branchId) || null
-            : null;
-        setDepartments(facility.hospital_type === "multi_clinic" ? branchList : []);
-        setCurrentBranch(activeBranch);
-        setWorkspace((current) => ({
-          facilityName: activeBranch ? `${activeBranch.name} · ${facility.name}` : facility.name,
-          facilityType: activeBranch ? "branch" : facility.type,
-          country: facility.country || current?.country || "",
-          fullName: user.fullName || current?.fullName || "Admin",
-          email: user.email || facility.email || current?.email || "",
-          phone: facility.phone || current?.phone || "",
-          selectedModules: normalizeModules(activeBranch ? activeBranch.modules || [] : facility.modules),
-          facilitySlug: facility.slug,
-          createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
-        }));
-        setIsLoading(false);
-      })
-      .catch(() => {
-        if (branchSlug) {
-          setIsLoading(false);
-        }
-      });
-  }, [branchSlug, facilitySlug, user]);
+    const branchList = facility.branches || facility.departments || [];
+    const activeBranch = branchSlug
+      ? branchList.find((branch) => branch.slug === branchSlug || branch.id === user.branchId) || null
+      : user.branchId
+        ? branchList.find((branch) => branch.id === user.branchId) || null
+        : null;
+    setDepartments(facility.hospital_type === "multi_clinic" ? branchList : []);
+    setCurrentBranch(activeBranch);
+    setWorkspace((current) => ({
+      facilityName: activeBranch ? `${activeBranch.name} · ${facility.name}` : facility.name,
+      facilityType: activeBranch ? "branch" : facility.type,
+      country: facility.country || current?.country || "",
+      fullName: user.fullName || current?.fullName || "Admin",
+      email: user.email || facility.email || current?.email || "",
+      phone: facility.phone || current?.phone || "",
+      selectedModules: normalizeModules(activeBranch ? activeBranch.modules || [] : facility.modules),
+      facilitySlug: facility.slug,
+      createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
+    }));
+    setIsLoading(false);
+  }, [branchSlug, facilityQuery.data, user]);
 
   if (isLoading) {
     return (

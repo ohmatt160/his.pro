@@ -4,7 +4,7 @@ Converted from Flask-RESTx inventory_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, Field
 from decimal import Decimal
 from datetime import datetime
@@ -74,7 +74,11 @@ async def get_inventory_items(
 ):
     """Paginated list of inventory items"""
     facility = _require_facility(current_user)
-    query = db_session.query(Inventory).filter_by(is_active=True, facility_slug=facility)
+    query = (
+        db_session.query(Inventory)
+        .options(joinedload(Inventory.supplier))
+        .filter_by(is_active=True, facility_slug=facility)
+    )
 
     # Category filter
     if category:

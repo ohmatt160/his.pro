@@ -34,7 +34,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
-import { apiClient } from "@/api/client";
 import {
   createStaffAccount,
   getBranchLoginLink,
@@ -47,17 +46,7 @@ import {
   type FacilityStaffAccount,
   type StaffRole,
 } from "@/lib/facility-staff";
-import { getFacilityWorkspace } from "@/lib/facility-workspace";
-
-type FacilityBranch = {
-  id: string;
-  name: string;
-  slug?: string;
-  location?: string;
-  modules?: string[];
-  login_url_path?: string;
-  dashboard_url_path?: string;
-};
+import { useBranchesQuery, useWorkspaceQuery } from "@/hooks/useWorkspaceQueries";
 
 const roleBadgeColors: Record<StaffRole, string> = {
   admin: "bg-slate-100 text-slate-700 border-slate-200",
@@ -115,21 +104,7 @@ const item = {
 const StaffAccess = () => {
   const { facilitySlug = "", branchSlug = "" } = useParams();
   const { user } = useAuth();
-  const [workspace, setWorkspace] = useState<
-    | {
-        facilityName: string;
-        facilityType: string;
-        country: string;
-        fullName: string;
-        email: string;
-        phone: string;
-        selectedModules: string[];
-      }
-    | null
-    | undefined
-  >(undefined);
   const [staffList, setStaffList] = useState<FacilityStaffAccount[]>([]);
-  const [facilityDepartments, setFacilityDepartments] = useState<FacilityBranch[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -150,17 +125,14 @@ const StaffAccess = () => {
     email: "",
     phone: "",
   });
+  const { data: workspace } = useWorkspaceQuery(facilitySlug);
+  const { data: facilityDepartments = [] } = useBranchesQuery(facilitySlug);
 
   useEffect(() => {
     if (!facilitySlug) {
       return;
     }
 
-    getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
-    apiClient
-      .get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`)
-      .then(setFacilityDepartments)
-      .catch(() => setFacilityDepartments([]));
     getFacilityStaff(facilitySlug)
       .then((staff) => {
         setStaffList(staff);

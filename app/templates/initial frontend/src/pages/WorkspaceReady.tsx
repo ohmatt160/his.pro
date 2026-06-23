@@ -39,7 +39,7 @@ const WorkspaceReady = () => {
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
     routeState
   );
-  const [isLoading, setIsLoading] = useState(!Boolean(routeState));
+  const [isLoading, setIsLoading] = useState(!routeState);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {

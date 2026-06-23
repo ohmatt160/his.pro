@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -7,6 +7,11 @@ from app.models.base_model import BaseModel
 class Alert(BaseModel):
     """Alert model for system notifications and alerts"""
     __tablename__ = 'alerts'
+    __table_args__ = (
+        Index('idx_alerts_facility_unread', 'facility_slug', 'is_read', 'expires_at'),
+        Index('idx_alerts_facility_recipient_unread', 'facility_slug', 'recipient_id', 'is_read'),
+        Index('idx_alerts_facility_created', 'facility_slug', 'created_at'),
+    )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)

@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import logging
-from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import get_db
 from app.schemas.patients import (
     PatientListResponse,
     PatientResponse,
     PatientCreate,
+    PatientOptionResponse,
     PatientTimelineResponse,
     PatientUpdate,
 )
@@ -26,8 +26,6 @@ from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import user_branch_id
 from app.models.user import User
 from app.models.facility import Facility
-from app.extensions import engine
-from app.utils.schema import ensure_database_schema_current
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +62,37 @@ def build_patient_response(patient) -> PatientResponse:
     )
 
 
+@router.get("/options", response_model=list[PatientOptionResponse])
+async def get_patient_options(
+    search: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=200),
+    department_id: Optional[str] = Query(None, max_length=36),
+    branch_id: Optional[str] = Query(None, max_length=36),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+):
+    facility_slug = current_user.facility_slug
+    if not facility_slug:
+        raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    rows = PatientService.get_patient_options(
+        facility_slug=facility_slug,
+        current_user=current_user,
+        search=search,
+        limit=limit,
+        department_id=department_id,
+        branch_id=branch_id,
+    )
+    return [
+        PatientOptionResponse(
+            id=str(row.id),
+            first_name=row.first_name,
+            last_name=row.last_name,
+            full_name=f"{row.first_name} {row.last_name}".strip(),
+            phone=row.phone,
+        )
+        for row in rows
+    ]
+
+
 @router.get("", response_model=PatientListResponse)
 async def get_patients(
     page: int = Query(1, ge=1),
@@ -87,22 +116,15 @@ async def get_patients(
             if not facility:
                 raise HTTPException(status_code=403, detail="Your facility is inactive or not found")
 
-        patient_query_args = {
-            "facility_slug": facility_slug,
-            "page": page,
-            "per_page": per_page,
-            "search": search,
-            "current_user": current_user,
-            "department_id": department_id,
-            "branch_id": branch_id,
-        }
-        try:
-            result = _load_patient_page(**patient_query_args)
-        except SQLAlchemyError:
-            logger.warning("[Patients] Patient query failed; checking additive schema compatibility", exc_info=True)
-            db.rollback()
-            ensure_database_schema_current(engine)
-            result = _load_patient_page(**patient_query_args)
+        result = _load_patient_page(
+            facility_slug=facility_slug,
+            page=page,
+            per_page=per_page,
+            search=search,
+            current_user=current_user,
+            department_id=department_id,
+            branch_id=branch_id,
+        )
 
         # Serialize patients
         patients_list = []

@@ -37,5 +37,5 @@ RUN mkdir -p /data uploads
 # Expose port
 EXPOSE 7860
 
-# Run the application with gunicorn
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-7860} --workers ${WEB_CONCURRENCY:-1} --worker-class uvicorn.workers.UvicornWorker --timeout 120 app.main:app"]
+# Bootstrap legacy databases once, apply migrations, then accept traffic.
+CMD ["sh", "-c", "python scripts/migrate.py && gunicorn --bind 0.0.0.0:${PORT:-7860} --workers ${WEB_CONCURRENCY:-1} --worker-class uvicorn.workers.UvicornWorker --timeout 120 app.main:app"]

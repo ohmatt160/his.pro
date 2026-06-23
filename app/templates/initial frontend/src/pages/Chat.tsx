@@ -51,6 +51,19 @@ const Chat = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
+  const applyConversations = (conversationList: ChatConversation[]) => {
+    setConversations(conversationList);
+    setActiveConversation((current) => {
+      if (!current) return null;
+      return conversationList.find((conversation) => conversation.id === current.id) || current;
+    });
+  };
+
+  const refreshConversations = async () => {
+    const conversationList = await staffChatApi.getConversations();
+    applyConversations(conversationList);
+  };
+
   const refresh = async () => {
     setError("");
     try {
@@ -59,11 +72,7 @@ const Chat = () => {
         staffChatApi.getConversations(),
       ]);
       setStaff(staffList);
-      setConversations(conversationList);
-      if (activeConversation) {
-        const refreshed = conversationList.find((conversation) => conversation.id === activeConversation.id);
-        if (refreshed) setActiveConversation(refreshed);
-      }
+      applyConversations(conversationList);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load chat.");
     } finally {
@@ -73,8 +82,12 @@ const Chat = () => {
 
   useEffect(() => {
     refresh();
-    const staffTimer = window.setInterval(refresh, 30000);
-    return () => window.clearInterval(staffTimer);
+    const conversationTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        refreshConversations().catch(() => undefined);
+      }
+    }, 30_000);
+    return () => window.clearInterval(conversationTimer);
   }, []);
 
   useEffect(() => {
@@ -89,7 +102,7 @@ const Chat = () => {
       .then((nextMessages) => {
         if (!cancelled) {
           setMessages(nextMessages);
-          staffChatApi.markRead(activeConversation.id).then(refresh).catch(() => undefined);
+          staffChatApi.markRead(activeConversation.id).then(refreshConversations).catch(() => undefined);
         }
       })
       .catch((messageError) => {
@@ -148,7 +161,7 @@ const Chat = () => {
       });
       setMessages((current) => [...current, message]);
       setDraft("");
-      await refresh();
+      await refreshConversations();
     } catch (sendError) {
       setError(sendError instanceof Error ? sendError.message : "Message could not be sent.");
     } finally {
@@ -170,7 +183,7 @@ const Chat = () => {
         file_type: upload.file_type,
       });
       setMessages((current) => [...current, message]);
-      await refresh();
+      await refreshConversations();
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Attachment could not be sent.");
     } finally {

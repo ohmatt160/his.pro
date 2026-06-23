@@ -67,6 +67,14 @@ class PatientListResponse(BaseModel):
     pages: int
 
 
+class PatientOptionResponse(BaseModel):
+    id: str
+    first_name: str
+    last_name: str
+    full_name: str
+    phone: Optional[str] = None
+
+
 class PatientTimelineEvent(BaseModel):
     id: str
     event_type: str

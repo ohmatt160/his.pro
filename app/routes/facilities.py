@@ -160,15 +160,31 @@ def get_facility_branches(facility: Facility) -> list[Branch]:
 
 
 def get_branch_or_404(facility: Facility, branch_id_or_slug: str) -> Branch:
+    get_facility_branches(facility)
     branch = (
         db_session.query(Branch)
         .filter(
             Branch.facility_slug == facility.slug,
             Branch.is_active == True,
-            or_(Branch.id == branch_id_or_slug, Branch.slug == branch_id_or_slug),
+            or_(
+                Branch.id == branch_id_or_slug,
+                Branch.slug == branch_id_or_slug,
+            ),
         )
         .first()
     )
+    if not branch:
+        branch = next(
+            (
+                candidate
+                for candidate in db_session.query(Branch)
+                .filter_by(facility_slug=facility.slug, is_active=True)
+                .all()
+                if str((candidate.settings or {}).get("legacy_department_id") or "")
+                == str(branch_id_or_slug)
+            ),
+            None,
+        )
     if not branch:
         raise HTTPException(status_code=404, detail="Branch not found")
     return branch

@@ -14,6 +14,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
+import { getPatientOptions } from "@/api/patients";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -167,7 +168,7 @@ const Billing = () => {
     setLoading(true);
     try {
       const [patientResponse, invoiceResponse] = await Promise.allSettled([
-        apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
+        getPatientOptions<Patient>(),
         apiClient.get<Invoice[]>("/billing/invoices"),
       ]);
 

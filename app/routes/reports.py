@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import false, func, or_
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 
 from app.extensions import db_session
 from app.models.alert import Alert
@@ -347,7 +348,12 @@ async def get_revenue_report(
             .group_by(Invoice.status)
             .all()
         )
-        recent_payments = payments_query.order_by(Payment.payment_date.desc()).limit(10).all()
+        recent_payments = (
+            payments_query.options(joinedload(Payment.invoice))
+            .order_by(Payment.payment_date.desc())
+            .limit(10)
+            .all()
+        )
 
         return RevenueDetailReport(
             facility_slug=facility_slug,
@@ -546,7 +552,12 @@ async def get_inventory_detail_report(
                 by_category=[],
                 generated_at=datetime.utcnow().isoformat(),
             )
-        items = db_session.query(Inventory).filter_by(facility_slug=facility_slug, is_active=True).all()
+        items = (
+            db_session.query(Inventory)
+            .options(joinedload(Inventory.supplier))
+            .filter_by(facility_slug=facility_slug, is_active=True)
+            .all()
+        )
         low_stock = [item for item in items if item.current_stock <= item.reorder_level]
         stock_value = sum(_money(item.current_stock * item.unit_cost) for item in items)
         category_totals: dict[str, float] = {}

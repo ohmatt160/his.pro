@@ -5,6 +5,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AUTH_EXPIRED_EVENT, apiClient, type AuthUser } from "@/api/client";
 import { refreshProfile } from "@/lib/auth-session";
 import {
@@ -51,6 +52,7 @@ const markActivity = () => {
 const hasTimedOut = () => Date.now() - getLastActivityAt() > IDLE_TIMEOUT_MS;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  const queryClient = useQueryClient();
   const [token, setTokenState] = useState<string | null>(apiClient.getToken());
   const [user, setUserState] = useState<AuthUser | null>(apiClient.getUser());
   const [loading, setLoading] = useState(true);
@@ -117,6 +119,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     const expireSession = (message: string) => {
+      queryClient.clear();
       apiClient.clearToken();
       apiClient.clearUser();
       window.localStorage.removeItem(LAST_ACTIVITY_KEY);
@@ -150,12 +153,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       window.removeEventListener(AUTH_EXPIRED_EVENT, onAuthExpired);
       document.removeEventListener("visibilitychange", onFocus);
     };
-  }, [user]);
+  }, [queryClient, user]);
 
   const login = async ({ facilitySlug, branchSlug, login, password }: LoginCredentials) => {
     setLoading(true);
 
     try {
+      queryClient.clear();
       const response = await authenticateStaff({
         facilitySlug,
         branchSlug,
@@ -176,6 +180,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = () => {
+    queryClient.clear();
     apiClient.post("/auth/logout").catch(() => undefined);
     apiClient.clearToken();
     apiClient.clearUser();
@@ -186,6 +191,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logoutEverywhere = async () => {
+    queryClient.clear();
     await apiClient.post("/auth/logout-everywhere").catch(() => undefined);
     apiClient.clearToken();
     apiClient.clearUser();

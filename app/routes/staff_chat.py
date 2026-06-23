@@ -6,11 +6,11 @@ from typing import Iterable
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session, joinedload
 
-from app.extensions import db_session, engine, get_db
+from app.extensions import db_session, get_db
 from app.models.staff_chat import ChatConversation, ChatMessage
 from app.models.user import User
 from app.schemas.staff_chat import (
@@ -40,18 +40,6 @@ ALLOWED_UPLOAD_TYPES = {
     "application/vnd.ms-excel": ".xls",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
 }
-_CHAT_SCHEMA_CHECKED = False
-
-
-def _ensure_chat_schema() -> None:
-    global _CHAT_SCHEMA_CHECKED
-    if _CHAT_SCHEMA_CHECKED:
-        return
-    ChatConversation.__table__.create(bind=engine, checkfirst=True)
-    ChatMessage.__table__.create(bind=engine, checkfirst=True)
-    _CHAT_SCHEMA_CHECKED = True
-
-
 def _require_facility(current_user: User) -> str:
     if not current_user.facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
@@ -126,6 +114,10 @@ def _participant_ids(conversation: ChatConversation) -> list[str]:
     return sorted(str(participant_id) for participant_id in conversation.participant_ids or [])
 
 
+def _participant_key(participant_ids: Iterable[str]) -> str:
+    return ":".join(sorted(str(participant_id) for participant_id in participant_ids))
+
+
 def _is_participant(conversation: ChatConversation, user_id: str) -> bool:
     return str(user_id) in _participant_ids(conversation)
 
@@ -146,32 +138,41 @@ def _get_conversation_for_user(conversation_id: str, current_user: User) -> Chat
     return conversation
 
 
-def _conversation_response(conversation: ChatConversation, current_user: User) -> ChatConversationResponse:
+def _conversation_response(
+    conversation: ChatConversation,
+    current_user: User,
+    *,
+    other: User | None = None,
+    last_message: ChatMessage | None = None,
+    unread_count: int | None = None,
+    preloaded: bool = False,
+) -> ChatConversationResponse:
     other_id = _other_participant_id(conversation, current_user)
-    other = (
-        db_session.query(User)
-        .filter_by(id=other_id, facility_slug=current_user.facility_slug, is_active=True)
-        .first()
-        if other_id
-        else None
-    )
-    last_message = (
-        db_session.query(ChatMessage)
-        .options(joinedload(ChatMessage.sender))
-        .filter_by(conversation_id=conversation.id, facility_slug=current_user.facility_slug)
-        .order_by(ChatMessage.created_at.desc())
-        .first()
-    )
-    unread_count = (
-        db_session.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conversation.id,
-            ChatMessage.facility_slug == current_user.facility_slug,
-            ChatMessage.sender_id != current_user.id,
-            ChatMessage.is_read == False,
+    if not preloaded and other is None and other_id:
+        other = (
+            db_session.query(User)
+            .filter_by(id=other_id, facility_slug=current_user.facility_slug, is_active=True)
+            .first()
         )
-        .count()
-    )
+    if not preloaded and last_message is None:
+        last_message = (
+            db_session.query(ChatMessage)
+            .options(joinedload(ChatMessage.sender))
+            .filter_by(conversation_id=conversation.id, facility_slug=current_user.facility_slug)
+            .order_by(ChatMessage.created_at.desc())
+            .first()
+        )
+    if not preloaded and unread_count is None:
+        unread_count = (
+            db_session.query(ChatMessage)
+            .filter(
+                ChatMessage.conversation_id == conversation.id,
+                ChatMessage.facility_slug == current_user.facility_slug,
+                ChatMessage.sender_id != current_user.id,
+                ChatMessage.is_read == False,
+            )
+            .count()
+        )
 
     return ChatConversationResponse(
         id=str(conversation.id),
@@ -235,7 +236,6 @@ async def list_chat_staff(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
     staff = (
         db_session.query(User)
@@ -274,7 +274,6 @@ async def create_or_get_conversation(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
     if data.participant_id == str(current_user.id):
         raise HTTPException(status_code=400, detail="Cannot start a conversation with yourself")
@@ -288,13 +287,31 @@ async def create_or_get_conversation(
         raise HTTPException(status_code=404, detail="Staff member not found")
 
     participants = sorted([str(current_user.id), str(participant.id)])
-    existing = db_session.query(ChatConversation).filter_by(facility_slug=facility_slug).all()
-    conversation = next((item for item in existing if _participant_ids(item) == participants), None)
+    participant_key = _participant_key(participants)
+    conversation = (
+        db_session.query(ChatConversation)
+        .filter_by(facility_slug=facility_slug, participant_key=participant_key)
+        .first()
+    )
+    if not conversation:
+        legacy_conversations = (
+            db_session.query(ChatConversation)
+            .filter_by(facility_slug=facility_slug, participant_key=None)
+            .all()
+        )
+        conversation = next(
+            (item for item in legacy_conversations if _participant_ids(item) == participants),
+            None,
+        )
+        if conversation:
+            conversation.participant_key = participant_key
+            db_session.commit()
 
     if not conversation:
         conversation = ChatConversation(
             facility_slug=facility_slug,
             participant_ids=participants,
+            participant_key=participant_key,
             last_message_at=datetime.utcnow(),
         )
         db_session.add(conversation)
@@ -309,17 +326,101 @@ async def list_conversations(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     facility_slug = _require_facility(current_user)
-    conversations = [
-        conversation
-        for conversation in db_session.query(ChatConversation)
-        .filter_by(facility_slug=facility_slug)
+    user_id = str(current_user.id)
+    keyed_filter = or_(
+        ChatConversation.participant_key.like(f"{user_id}:%"),
+        ChatConversation.participant_key.like(f"%:{user_id}"),
+    )
+    candidates = (
+        db_session.query(ChatConversation)
+        .filter(
+            ChatConversation.facility_slug == facility_slug,
+            or_(keyed_filter, ChatConversation.participant_key == None),
+        )
         .order_by(ChatConversation.last_message_at.desc())
         .all()
-        if _is_participant(conversation, str(current_user.id))
+    )
+    conversations = [item for item in candidates if _is_participant(item, user_id)]
+    if not conversations:
+        return []
+
+    for conversation in conversations:
+        if not conversation.participant_key:
+            conversation.participant_key = _participant_key(_participant_ids(conversation))
+    db_session.flush()
+
+    conversation_ids = [conversation.id for conversation in conversations]
+    other_ids = {
+        other_id
+        for conversation in conversations
+        if (other_id := _other_participant_id(conversation, current_user))
+    }
+    staff_by_id = {
+        str(user.id): user
+        for user in db_session.query(User)
+        .filter(
+            User.facility_slug == facility_slug,
+            User.id.in_(other_ids),
+            User.is_active == True,
+        )
+        .all()
+    }
+
+    latest_message_at = (
+        db_session.query(
+            ChatMessage.conversation_id.label("conversation_id"),
+            func.max(ChatMessage.created_at).label("created_at"),
+        )
+        .filter(
+            ChatMessage.facility_slug == facility_slug,
+            ChatMessage.conversation_id.in_(conversation_ids),
+        )
+        .group_by(ChatMessage.conversation_id)
+        .subquery()
+    )
+    latest_messages = (
+        db_session.query(ChatMessage)
+        .options(joinedload(ChatMessage.sender))
+        .join(
+            latest_message_at,
+            and_(
+                ChatMessage.conversation_id == latest_message_at.c.conversation_id,
+                ChatMessage.created_at == latest_message_at.c.created_at,
+            ),
+        )
+        .all()
+    )
+    latest_by_conversation = {}
+    for message in latest_messages:
+        latest_by_conversation.setdefault(str(message.conversation_id), message)
+
+    unread_by_conversation = {
+        str(conversation_id): int(count)
+        for conversation_id, count in (
+            db_session.query(ChatMessage.conversation_id, func.count(ChatMessage.id))
+            .filter(
+                ChatMessage.facility_slug == facility_slug,
+                ChatMessage.conversation_id.in_(conversation_ids),
+                ChatMessage.sender_id != current_user.id,
+                ChatMessage.is_read == False,
+            )
+            .group_by(ChatMessage.conversation_id)
+            .all()
+        )
+    }
+
+    return [
+        _conversation_response(
+            conversation,
+            current_user,
+            other=staff_by_id.get(_other_participant_id(conversation, current_user) or ""),
+            last_message=latest_by_conversation.get(str(conversation.id)),
+            unread_count=unread_by_conversation.get(str(conversation.id), 0),
+            preloaded=True,
+        )
+        for conversation in conversations
     ]
-    return [_conversation_response(conversation, current_user) for conversation in conversations]
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[ChatMessageResponse])
@@ -330,9 +431,9 @@ async def list_messages(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
-    unread_messages = (
+    now = datetime.utcnow()
+    updated = (
         db_session.query(ChatMessage)
         .filter(
             ChatMessage.conversation_id == conversation.id,
@@ -340,13 +441,12 @@ async def list_messages(
             ChatMessage.sender_id != current_user.id,
             ChatMessage.is_read == False,
         )
-        .all()
+        .update(
+            {ChatMessage.is_read: True, ChatMessage.read_at: now},
+            synchronize_session=False,
+        )
     )
-    now = datetime.utcnow()
-    for message in unread_messages:
-        message.is_read = True
-        message.read_at = now
-    if unread_messages:
+    if updated:
         db_session.commit()
 
     messages = (
@@ -368,7 +468,6 @@ async def send_message(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
     content = Validators.sanitize_string(data.content) if data.content else None
     if not content and not data.file_url:
@@ -432,36 +531,48 @@ async def mark_conversation_read(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     conversation = _get_conversation_for_user(conversation_id, current_user)
     now = datetime.utcnow()
-    unread_messages = (
-        db_session.query(ChatMessage)
-        .filter(
-            ChatMessage.conversation_id == conversation.id,
-            ChatMessage.facility_slug == current_user.facility_slug,
-            ChatMessage.sender_id != current_user.id,
-            ChatMessage.is_read == False,
-        )
-        .all()
+    db_session.query(ChatMessage).filter(
+        ChatMessage.conversation_id == conversation.id,
+        ChatMessage.facility_slug == current_user.facility_slug,
+        ChatMessage.sender_id != current_user.id,
+        ChatMessage.is_read == False,
+    ).update(
+        {ChatMessage.is_read: True, ChatMessage.read_at: now},
+        synchronize_session=False,
     )
-    for message in unread_messages:
-        message.is_read = True
-        message.read_at = now
     db_session.commit()
     return ChatUnreadCountResponse(unread_count=_total_unread(current_user))
 
 
+def _conversation_ids_for_user(current_user: User) -> list[str]:
+    facility_slug = _require_facility(current_user)
+    user_id = str(current_user.id)
+    keyed_filter = or_(
+        ChatConversation.participant_key.like(f"{user_id}:%"),
+        ChatConversation.participant_key.like(f"%:{user_id}"),
+    )
+    candidates = (
+        db_session.query(ChatConversation.id, ChatConversation.participant_ids)
+        .filter(
+            ChatConversation.facility_slug == facility_slug,
+            or_(keyed_filter, ChatConversation.participant_key == None),
+        )
+        .all()
+    )
+    return [
+        str(conversation_id)
+        for conversation_id, participant_ids in candidates
+        if user_id in {str(value) for value in participant_ids or []}
+    ]
+
+
 def _total_unread(current_user: User) -> int:
     facility_slug = _require_facility(current_user)
-    conversations = [
-        conversation
-        for conversation in db_session.query(ChatConversation).filter_by(facility_slug=facility_slug).all()
-        if _is_participant(conversation, str(current_user.id))
-    ]
-    if not conversations:
+    conversation_ids = _conversation_ids_for_user(current_user)
+    if not conversation_ids:
         return 0
-    conversation_ids = [conversation.id for conversation in conversations]
     return (
         db_session.query(ChatMessage)
         .filter(
@@ -479,5 +590,4 @@ async def get_unread_count(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
-    _ensure_chat_schema()
     return ChatUnreadCountResponse(unread_count=_total_unread(current_user))

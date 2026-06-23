@@ -4,6 +4,8 @@ Converted from Flask/Flask-RESTx for better scalability
 """
 
 import os
+import logging
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
@@ -64,6 +66,7 @@ ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
 # Redis client global
 redis_client = None
+logger = logging.getLogger(__name__)
 
 
 
@@ -81,10 +84,13 @@ async def lifespan(app: FastAPI):
     static_folder = os.path.join(base_dir, 'app', 'static')
     STATIC_FOLDER = static_folder
     
-    # Initialize database using existing engine from extensions.
+    # Production/staging schemas are prepared by scripts/migrate.py before
+    # Gunicorn starts. Development keeps the additive compatibility path.
     try:
-        Base.metadata.create_all(bind=engine)
-        ensure_database_schema_current(engine)
+        app_env = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")).lower()
+        if app_env not in {"production", "staging"}:
+            Base.metadata.create_all(bind=engine)
+            ensure_database_schema_current(engine)
         backfill_facility_ids()
         print("[OK] Database tables initialized")
     except Exception as e:
@@ -181,6 +187,23 @@ def create_app() -> FastAPI:
             raise
         finally:
             db_session.remove()
+
+    @app.middleware("http")
+    async def request_timing_middleware(request: Request, call_next):
+        started_at = time.perf_counter()
+        response = await call_next(request)
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+        slow_request_ms = float(os.getenv("SLOW_REQUEST_MS", "1000"))
+        if elapsed_ms >= slow_request_ms:
+            logger.warning(
+                "Slow request %.1fms %s %s status=%s",
+                elapsed_ms,
+                request.method,
+                request.url.path,
+                response.status_code,
+            )
+        return response
 
     @app.get("/debug/cors", include_in_schema=False)
     async def debug_cors():

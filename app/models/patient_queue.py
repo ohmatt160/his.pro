@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -7,6 +7,11 @@ from app.models.base_model import BaseModel
 class PatientQueue(BaseModel):
     """PatientQueue model for managing patient visit队列"""
     __tablename__ = 'patient_queues'
+    __table_args__ = (
+        Index('idx_patient_queues_facility_branch_status', 'facility_slug', 'branch_id', 'status'),
+        Index('idx_patient_queues_facility_created', 'facility_slug', 'created_at'),
+        Index('idx_patient_queues_facility_patient', 'facility_slug', 'patient_id'),
+    )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)

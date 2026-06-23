@@ -12,6 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
+import { getPatientOptions } from "@/api/patients";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -187,7 +188,7 @@ const Laboratory = () => {
     setLoading(true);
     try {
       const [patientResponse, testResponse, orderResponse] = await Promise.allSettled([
-        apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
+        getPatientOptions<Patient>(),
         apiClient.get<LabTest[]>("/laboratory/tests"),
         apiClient.get<LabOrder[]>("/laboratory/orders"),
       ]);

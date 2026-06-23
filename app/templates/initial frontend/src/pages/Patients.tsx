@@ -17,6 +17,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
+import { invalidatePatientOptions } from "@/api/patients";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -175,6 +176,7 @@ const Patients = () => {
 
     try {
       await apiClient.post<Patient>("/patients", payload);
+      invalidatePatientOptions();
       setShowCreate(false);
       setForm(emptyForm);
       await loadPatients("");

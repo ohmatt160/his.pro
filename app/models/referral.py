@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Index
 
 from app.models.base_model import BaseModel
 
@@ -6,6 +6,10 @@ from app.models.base_model import BaseModel
 class Referral(BaseModel):
     """Department-to-department patient referral within one facility."""
     __tablename__ = "referrals"
+    __table_args__ = (
+        Index('idx_referrals_facility_to_status', 'facility_slug', 'to_department_id', 'status'),
+        Index('idx_referrals_facility_patient_created', 'facility_slug', 'patient_id', 'created_at'),
+    )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)

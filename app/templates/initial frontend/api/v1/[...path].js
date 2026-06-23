@@ -4,7 +4,6 @@ export const config = {
   },
 };
 
-const DEFAULT_BACKEND_URL = "https://ohmatt160-his-pro.hf.space";
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "content-length",
@@ -40,12 +39,18 @@ const asArray = (value) => {
 };
 
 export default async function handler(request, response) {
-  const backendUrl = (process.env.HF_BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, "");
+  const backendUrl = process.env.HF_BACKEND_URL?.trim().replace(/\/+$/, "");
   const hfToken = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
 
-  if (!hfToken) {
+  if (!backendUrl || !hfToken) {
+    console.error("HIS.Pro proxy configuration is incomplete", {
+      hasBackendUrl: Boolean(backendUrl),
+      hasHfToken: Boolean(hfToken),
+    });
     response.status(500).json({
       message: "Backend proxy is not configured.",
+      code: "PROXY_NOT_CONFIGURED",
+      status: 500,
     });
     return;
   }

@@ -1,6 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db_session
 from app.models.appointment import Appointment
@@ -10,7 +11,7 @@ from app.models.medical_record import MedicalRecord
 from app.models.order_workflow import OrderWorkflowEvent
 from app.models.patient import Patient
 from app.models.patient_notification import PatientNotification
-from app.models.pharmacy import Prescription
+from app.models.pharmacy import Prescription, PrescriptionItem
 from app.models.radiology import Radiology
 from app.models.ward import WardAdmission
 
@@ -109,6 +110,7 @@ class PatientTimelineService:
 
         lab_orders = (
             db_session.query(LabOrder)
+            .options(joinedload(LabOrder.test), selectinload(LabOrder.results))
             .filter_by(patient_id=patient.id, facility_slug=facility_slug)
             .all()
         )
@@ -174,6 +176,9 @@ class PatientTimelineService:
 
         prescriptions = (
             db_session.query(Prescription)
+            .options(
+                selectinload(Prescription.items).joinedload(PrescriptionItem.medication)
+            )
             .filter_by(patient_id=patient.id, facility_slug=facility_slug)
             .all()
         )
@@ -211,6 +216,7 @@ class PatientTimelineService:
 
         invoices = (
             db_session.query(Invoice)
+            .options(selectinload(Invoice.payments))
             .filter_by(patient_id=patient.id, facility_slug=facility_slug)
             .all()
         )

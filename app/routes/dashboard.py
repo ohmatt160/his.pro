@@ -6,7 +6,7 @@ Converted from Flask-RESTx dashboard_resource.py
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
 import logging
@@ -64,10 +64,6 @@ async def get_dashboard_stats(
         today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
 
-        # Helper to get counts
-        def count_query(model, **filters):
-            return db_session.query(model).filter_by(**filters).count()
-
         effective_department_id = effective_branch_id(current_user, branch_id, department_id)
 
         # 1. Patient count
@@ -117,11 +113,17 @@ async def get_dashboard_stats(
         # 7. Queue status breakdown
         queue_query = db_session.query(PatientQueue).filter_by(facility_slug=facility_slug)
         queue_query = apply_branch_filter(queue_query, PatientQueue, effective_department_id)
+        queue_rows = (
+            queue_query.with_entities(PatientQueue.status, func.count(PatientQueue.id))
+            .group_by(PatientQueue.status)
+            .all()
+        )
+        queue_counts = {str(queue_status): int(count) for queue_status, count in queue_rows}
         queue_status = {
-            'waiting': queue_query.filter_by(status='waiting').count(),
-            'in_progress': queue_query.filter_by(status='in_progress').count(),
-            'completed': queue_query.filter_by(status='completed').count(),
-            'no_show': queue_query.filter_by(status='no_show').count()
+            'waiting': queue_counts.get('waiting', 0),
+            'in_progress': queue_counts.get('in_progress', 0),
+            'completed': queue_counts.get('completed', 0),
+            'no_show': queue_counts.get('no_show', 0),
         }
         active_queue_count = queue_status['waiting'] + queue_status['in_progress']
 

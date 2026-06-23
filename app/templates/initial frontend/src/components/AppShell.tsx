@@ -1,4 +1,5 @@
-import { useEffect, useState, type ElementType, type ReactNode } from "react";
+import { useEffect, useMemo, type ElementType, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   Activity,
@@ -25,25 +26,19 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { getBranchLoginPath, getBranchStaffAccessPath, getBranchStaffPortalPath, getFacilityLoginPath, getStaffAccessPath, getStaffPortalPath } from "@/lib/facility-staff";
 import {
-  getFacilityWorkspace,
   getWorkspaceRoutePath,
   WORKSPACE_UPDATED_EVENT,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import { isModuleEnabled, normalizeModules } from "@/lib/modules";
 import { roleAllows, routeRoles, type WorkspaceRole } from "@/lib/role-access";
-import { apiClient } from "@/api/client";
-
-type DashboardStats = {
-  active_alerts: number;
-};
-
-type FacilityBranch = {
-  id: string;
-  name: string;
-  slug?: string;
-  modules?: string[];
-};
+import {
+  useBranchesQuery,
+  useDashboardStatsQuery,
+  useUnreadMessagesQuery,
+  useWorkspaceQuery,
+  workspaceQueryKeys,
+} from "@/hooks/useWorkspaceQueries";
 
 type AppShellProps = {
   children: ReactNode;
@@ -89,65 +84,38 @@ const AppShell = ({ children }: AppShellProps) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [currentBranch, setCurrentBranch] = useState<FacilityBranch | null>(null);
-  const [unreadMessages, setUnreadMessages] = useState(0);
+  const queryClient = useQueryClient();
   const canUseChat = roleAllows(user?.role, routeRoles.chat);
-
-  useEffect(() => {
-    if (!facilitySlug) {
-      return;
-    }
-    getFacilityWorkspace(facilitySlug).then(setWorkspace).catch(() => setWorkspace(null));
-    apiClient
-      .get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`)
-      .then((branches) => {
-        const branch = branchSlug
-          ? branches.find((item) => item.slug === branchSlug || item.id === user?.branchId) || null
-          : user?.branchId
-            ? branches.find((item) => item.id === user.branchId) || null
-            : null;
-        setCurrentBranch(branch);
-      })
-      .catch(() => setCurrentBranch(null));
-    const branchQuery = user?.branchId ? `&branch_id=${encodeURIComponent(user.branchId)}` : "";
-    apiClient
-      .get<DashboardStats>(
-        `/dashboard/stats?facility_slug=${encodeURIComponent(facilitySlug)}${branchQuery}`
-      )
-      .then(setStats)
-      .catch(() => setStats(null));
-    if (canUseChat) {
-      apiClient
-        .get<{ unread_count: number }>("/chat/unread-count")
-        .then((result) => setUnreadMessages(result.unread_count))
-        .catch(() => setUnreadMessages(0));
-    } else {
-      setUnreadMessages(0);
-    }
-  }, [branchSlug, facilitySlug, user?.branchId, canUseChat]);
-
-  useEffect(() => {
-    if (!canUseChat) {
-      setUnreadMessages(0);
-      return;
-    }
-
-    const timer = window.setInterval(() => {
-      apiClient
-        .get<{ unread_count: number }>("/chat/unread-count")
-        .then((result) => setUnreadMessages(result.unread_count))
-        .catch(() => undefined);
-    }, 15000);
-    return () => window.clearInterval(timer);
-  }, [canUseChat]);
+  const { data: workspace = null } = useWorkspaceQuery(facilitySlug);
+  const { data: branches = [] } = useBranchesQuery(facilitySlug);
+  const currentBranch = useMemo(
+    () =>
+      branchSlug
+        ? branches.find((item) => item.slug === branchSlug || item.id === user?.branchId) || null
+        : user?.branchId
+          ? branches.find((item) => item.id === user.branchId) || null
+          : null,
+    [branchSlug, branches, user?.branchId]
+  );
+  const { data: stats = null } = useDashboardStatsQuery(
+    facilitySlug,
+    user?.branchId || "",
+    Boolean(user)
+  );
+  const { data: unreadResult } = useUnreadMessagesQuery(
+    user?.id || user?.loginId || "",
+    canUseChat
+  );
+  const unreadMessages = unreadResult?.unread_count || 0;
 
   useEffect(() => {
     const handleWorkspaceUpdated = (event: Event) => {
       const workspaceDetail = (event as CustomEvent<SavedFacilityWorkspace>).detail;
       if (workspaceDetail?.facilitySlug === facilitySlug) {
-        setWorkspace(workspaceDetail);
+        queryClient.setQueryData(
+          workspaceQueryKeys.workspace(facilitySlug),
+          workspaceDetail
+        );
       }
     };
 
@@ -155,7 +123,7 @@ const AppShell = ({ children }: AppShellProps) => {
     return () => {
       window.removeEventListener(WORKSPACE_UPDATED_EVENT, handleWorkspaceUpdated);
     };
-  }, [facilitySlug]);
+  }, [facilitySlug, queryClient]);
 
   const selectedModules = normalizeModules(
     branchSlug

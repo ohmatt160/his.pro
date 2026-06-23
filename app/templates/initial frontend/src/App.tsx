@@ -40,7 +40,20 @@ const Consultations = lazy(() => import("./pages/Consultations.tsx"));
 const Wards = lazy(() => import("./pages/Wards.tsx"));
 const WorkspaceReady = lazy(() => import("./pages/WorkspaceReady.tsx"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60_000,
+      gcTime: 10 * 60_000,
+      retry: 1,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 const RouteFallback = () => (
   <div className="flex min-h-screen items-center justify-center bg-background px-4">

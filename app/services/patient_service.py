@@ -78,6 +78,45 @@ class PatientService:
             'per_page': per_page,
             'pages': pages
         }
+
+    @staticmethod
+    def get_patient_options(
+        facility_slug,
+        current_user,
+        search=None,
+        limit=50,
+        department_id=None,
+        branch_id=None,
+    ):
+        """Return the minimum patient fields needed by selectors."""
+        query = Patient.query.filter_by(facility_slug=facility_slug, is_active=True)
+        if search:
+            query = query.filter(
+                Patient.first_name.ilike(f"%{search}%")
+                | Patient.last_name.ilike(f"%{search}%")
+            )
+        query = PatientService.apply_department_filter(
+            query,
+            current_user,
+            department_id,
+            branch_id,
+        )
+        query = PatientService.apply_patient_access_filter(
+            query,
+            facility_slug,
+            current_user,
+        )
+        return (
+            query.with_entities(
+                Patient.id,
+                Patient.first_name,
+                Patient.last_name,
+                Patient.phone,
+            )
+            .order_by(Patient.first_name.asc(), Patient.last_name.asc())
+            .limit(limit)
+            .all()
+        )
     
     @staticmethod
     def update_patient(patient, data):

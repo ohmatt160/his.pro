@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { apiClient } from "@/api/client";
+import { getPatientOptions } from "@/api/patients";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -102,7 +103,7 @@ export const loadAppointmentResources = async (
 ): Promise<AppointmentResourceState> => {
   const [patientResult, staffResult, appointmentResult, queueResult] =
     await Promise.allSettled([
-      apiClient.get<PatientListResponse>("/patients?page=1&per_page=100"),
+      getPatientOptions<Patient>(),
       getFacilityClinicians(facilitySlug),
       apiClient.get<Appointment[]>("/appointments"),
       apiClient.get<{ queue_entries: QueueEntry[] }>("/queue?per_page=100"),

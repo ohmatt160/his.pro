@@ -51,7 +51,7 @@ def _visible_alert_query(current_user: User):
     )
     if current_user.role == "ADMIN":
         return query.filter(or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None))
-    return query.filter(Alert.recipient_id == current_user.id)
+    return query.filter(or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None))
 
 
 def _ensure_alert_recipient_allowed(recipient: User | None, current_user: User):

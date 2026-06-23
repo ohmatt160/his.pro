@@ -31,6 +31,13 @@ if 'sqlite' in DATABASE_URL:
         echo=False
     )
 else:
+    connect_args = {}
+    if DATABASE_URL.startswith(("postgresql://", "postgresql+psycopg2://")):
+        connect_args = {
+            "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT", "5")),
+            "application_name": os.getenv("DB_APPLICATION_NAME", "hispro-api"),
+            "options": f"-c statement_timeout={int(os.getenv('DB_STATEMENT_TIMEOUT_MS', '30000'))}",
+        }
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
@@ -38,8 +45,20 @@ else:
         max_overflow=DB_MAX_OVERFLOW,
         pool_timeout=DB_POOL_TIMEOUT,
         pool_recycle=DB_POOL_RECYCLE,
+        pool_use_lifo=True,
+        connect_args=connect_args,
         echo=False
     )
+
+
+if "sqlite" in DATABASE_URL:
+    @event.listens_for(engine, "connect")
+    def _configure_sqlite_connection(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute(f"PRAGMA busy_timeout={int(os.getenv('SQLITE_BUSY_TIMEOUT_MS', '10000'))}")
+        cursor.close()
 
 
 @event.listens_for(engine, "before_cursor_execute")

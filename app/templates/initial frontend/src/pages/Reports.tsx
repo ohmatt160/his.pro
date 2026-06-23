@@ -46,11 +46,22 @@ type ReportBundle = {
   inventory: InventoryDetailReport | null;
 };
 
+type ReportTab = keyof ReportBundle;
+
+const emptyReports: ReportBundle = {
+  summary: null,
+  revenue: null,
+  departments: null,
+  operations: null,
+  inventory: null,
+};
+
 const Reports = () => {
   const navigate = useNavigate();
   const { facilitySlug = "", branchSlug = "" } = useParams();
   const [range, setRange] = useState(() => defaultReportRange());
-  const [reports, setReports] = useState<ReportBundle | null>(null);
+  const [reports, setReports] = useState<ReportBundle>(emptyReports);
+  const [activeTab, setActiveTab] = useState<ReportTab>("summary");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
@@ -68,41 +79,25 @@ const Reports = () => {
     audit: getWorkspaceRoutePath(facilitySlug, "audit-logs", branchSlug || undefined),
   };
 
-  const loadReports = async () => {
+  const loadReport = async (tab: ReportTab, force = false) => {
+    if (!force && reports[tab]) {
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const query = new URLSearchParams(range).toString();
-      const [summaryResult, revenueResult, departmentsResult, operationsResult, inventoryResult] =
-        await Promise.allSettled([
-          apiClient.get<FacilityReportSummary>(`/reports/summary?${query}`),
-          apiClient.get<RevenueDetailReport>(`/reports/revenue?${query}`),
-          apiClient.get<DepartmentActivityReport>(`/reports/departments?${query}`),
-          apiClient.get<OperationsReport>(`/reports/operations?${query}`),
-          apiClient.get<InventoryDetailReport>("/reports/inventory"),
-        ]);
-
-      const failed = [
-        summaryResult.status === "rejected" ? "overview" : "",
-        revenueResult.status === "rejected" ? "revenue" : "",
-        departmentsResult.status === "rejected" ? "departments" : "",
-        operationsResult.status === "rejected" ? "operations" : "",
-        inventoryResult.status === "rejected" ? "inventory" : "",
-      ].filter(Boolean);
-
-      setReports({
-        summary: summaryResult.status === "fulfilled" ? summaryResult.value : null,
-        revenue: revenueResult.status === "fulfilled" ? revenueResult.value : null,
-        departments: departmentsResult.status === "fulfilled" ? departmentsResult.value : null,
-        operations: operationsResult.status === "fulfilled" ? operationsResult.value : null,
-        inventory: inventoryResult.status === "fulfilled" ? inventoryResult.value : null,
-      });
-
-      setError(
-        failed.length
-          ? `Some report sections could not be loaded: ${failed.join(", ")}. Try Run again.`
-          : ""
-      );
+      const value =
+        tab === "summary"
+          ? await apiClient.get<FacilityReportSummary>(`/reports/summary?${query}`)
+          : tab === "revenue"
+            ? await apiClient.get<RevenueDetailReport>(`/reports/revenue?${query}`)
+            : tab === "departments"
+              ? await apiClient.get<DepartmentActivityReport>(`/reports/departments?${query}`)
+              : tab === "operations"
+                ? await apiClient.get<OperationsReport>(`/reports/operations?${query}`)
+                : await apiClient.get<InventoryDetailReport>("/reports/inventory");
+      setReports((current) => ({ ...current, [tab]: value }));
     } catch (reportError) {
       setError(reportError instanceof Error ? reportError.message : "Reports could not be loaded.");
     } finally {
@@ -111,14 +106,28 @@ const Reports = () => {
   };
 
   useEffect(() => {
-    loadReports();
+    loadReport("summary");
   }, []);
+
+  const handleTabChange = (value: string) => {
+    const tab = value === "overview" ? "summary" : value as ReportTab;
+    setActiveTab(tab);
+    loadReport(tab).catch(() => undefined);
+  };
+
+  const runActiveReport = () => {
+    setReports((current) => ({
+      ...current,
+      summary: activeTab === "summary" ? null : current.summary,
+      [activeTab]: null,
+    }));
+    loadReport(activeTab, true).catch(() => undefined);
+  };
 
   const sections = useMemo(
     () =>
-      reports
-        ? reports.summary
-          ? [
+      reports.summary
+        ? [
             { label: "Patients", section: reports.summary.patients, icon: Users, to: paths.patients },
             { label: "Appointments", section: reports.summary.appointments, icon: CalendarDays, to: paths.appointments },
             { label: "Queue", section: reports.summary.queue, icon: Activity, to: paths.queue },
@@ -128,8 +137,7 @@ const Reports = () => {
             { label: "Radiology", section: reports.summary.radiology, icon: ScanLine, to: paths.radiology },
             { label: "Alerts", section: reports.summary.alerts, icon: Bell, to: paths.audit },
           ]
-          : []
-        : [],
+          : [],
     [paths, reports]
   );
 
@@ -179,7 +187,7 @@ const Reports = () => {
             <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
               <DateField label="From" value={range.date_from} onChange={(value) => setRange((current) => ({ ...current, date_from: value }))} />
               <DateField label="To" value={range.date_to} onChange={(value) => setRange((current) => ({ ...current, date_to: value }))} />
-              <Button onClick={loadReports} disabled={loading} className="gradient-cta gap-2 border-0 text-primary-foreground">
+              <Button onClick={runActiveReport} disabled={loading} className="gradient-cta gap-2 border-0 text-primary-foreground">
                 <TrendingUp className="h-4 w-4" /> Run
               </Button>
             </div>
@@ -192,7 +200,7 @@ const Reports = () => {
           </p>
         )}
 
-        <Tabs defaultValue="overview" className="space-y-6">
+        <Tabs defaultValue="overview" onValueChange={handleTabChange} className="space-y-6">
           <TabsList className="grid h-auto w-full grid-cols-2 gap-1 md:grid-cols-5">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="revenue">Revenue</TabsTrigger>

@@ -4,7 +4,7 @@ Converted from Flask-RESTx queue_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import case
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -44,7 +44,11 @@ async def get_queue(
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
-    query = db_session.query(PatientQueue).filter_by(facility_slug=facility_slug)
+    query = (
+        db_session.query(PatientQueue)
+        .options(joinedload(PatientQueue.patient), joinedload(PatientQueue.appointment))
+        .filter_by(facility_slug=facility_slug)
+    )
 
     if status:
         query = query.filter_by(status=status)

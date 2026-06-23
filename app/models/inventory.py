@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Column, String, Integer, Date, Numeric, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, Date, Numeric, Boolean, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -8,6 +8,11 @@ from app.models.base_model import BaseModel
 class Inventory(BaseModel):
     """Inventory model for managing medical supplies and medications"""
     __tablename__ = 'inventory'
+    __table_args__ = (
+        Index('idx_inventory_facility_active', 'facility_slug', 'is_active'),
+        Index('idx_inventory_facility_category_active', 'facility_slug', 'category', 'is_active'),
+        Index('idx_inventory_facility_sku', 'facility_slug', 'sku'),
+    )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=False, index=True)

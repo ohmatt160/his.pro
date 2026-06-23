@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from sqlalchemy import or_
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.extensions import db_session
 from app.models.appointment import Appointment
@@ -123,6 +124,7 @@ class TaskService:
 
         appointments = (
             db_session.query(Appointment)
+            .options(joinedload(Appointment.patient))
             .filter(
                 Appointment.facility_slug == facility_slug,
                 Appointment.appointment_date >= today_start,
@@ -153,6 +155,7 @@ class TaskService:
 
         incomplete_records = (
             db_session.query(MedicalRecord)
+            .options(joinedload(MedicalRecord.patient))
             .filter(
                 MedicalRecord.facility_slug == facility_slug,
                 or_(MedicalRecord.diagnosis == None, MedicalRecord.treatment_plan == None),
@@ -180,6 +183,7 @@ class TaskService:
 
         completed_lab_orders = (
             db_session.query(LabOrder)
+            .options(joinedload(LabOrder.test))
             .filter(
                 LabOrder.facility_slug == facility_slug,
                 LabOrder.status == "COMPLETED",
@@ -207,6 +211,7 @@ class TaskService:
 
         completed_radiology = (
             db_session.query(Radiology)
+            .options(joinedload(Radiology.patient))
             .filter_by(facility_slug=facility_slug, status="completed")
             .limit(25)
             .all()
@@ -235,6 +240,7 @@ class TaskService:
         tasks = []
         admissions = (
             db_session.query(WardAdmission)
+            .options(joinedload(WardAdmission.patient))
             .filter_by(facility_slug=facility_slug, status="ACTIVE")
             .limit(50)
             .all()
@@ -264,6 +270,7 @@ class TaskService:
         tasks = []
         orders = (
             db_session.query(LabOrder)
+            .options(joinedload(LabOrder.test))
             .filter(
                 LabOrder.facility_slug == facility_slug,
                 LabOrder.status.in_(["PENDING", "COLLECTED", "IN_PROGRESS"]),
@@ -301,6 +308,7 @@ class TaskService:
         tasks = []
         prescriptions = (
             db_session.query(Prescription)
+            .options(selectinload(Prescription.items))
             .filter_by(facility_slug=facility_slug, status="PENDING")
             .limit(50)
             .all()
@@ -356,6 +364,7 @@ class TaskService:
         tasks = []
         queue_entries = (
             db_session.query(PatientQueue)
+            .options(joinedload(PatientQueue.patient))
             .filter(
                 PatientQueue.facility_slug == facility_slug,
                 PatientQueue.status.in_(["waiting", "in_progress"]),
