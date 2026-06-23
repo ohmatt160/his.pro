@@ -88,6 +88,10 @@ class StaffChatTest(unittest.TestCase):
                 self.assertIn(alpha_nurse["staffRecordId"], staff_ids)
                 self.assertNotIn(beta_nurse["staffRecordId"], staff_ids)
 
+                chat_health = await client.get("/api/v1/chat/health", headers=alpha_admin["headers"])
+                self.assertEqual(chat_health.status_code, 200, chat_health.text)
+                self.assertTrue(chat_health.json()["ok"])
+
                 cross_tenant_conversation = await client.post(
                     "/api/v1/chat/conversations",
                     json={"participant_id": beta_nurse["staffRecordId"]},

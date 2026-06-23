@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_
+from sqlalchemy import false, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import db_session
@@ -34,6 +34,7 @@ from app.schemas.reports import (
     RevenueReport,
 )
 from app.services.task_service import TaskService
+from app.utils.branch_scope import user_branch_id
 from app.utils.dependencies import role_required
 
 logger = logging.getLogger(__name__)
@@ -66,10 +67,59 @@ def _money(value) -> float:
     return float(value)
 
 
-def _status_section(model, facility_slug: str, status_column, created_column, start: datetime, end: datetime) -> ReportSection:
+def _branch_predicates(model, branch_id: str | None):
+    if not branch_id:
+        return []
+    predicates = []
+    if hasattr(model, "branch_id"):
+        predicates.append(model.branch_id == branch_id)
+    if hasattr(model, "department_id"):
+        predicates.append(model.department_id == branch_id)
+    return predicates
+
+
+def _apply_branch_scope(query, model, branch_id: str | None):
+    predicates = _branch_predicates(model, branch_id)
+    if not branch_id:
+        return query
+    if not predicates:
+        return query.filter(false())
+    return query.filter(or_(*predicates))
+
+
+def _branch_scope_for(current_user: User) -> str | None:
+    return None if current_user.role == "ADMIN" else user_branch_id(current_user)
+
+
+def _model_query(model, facility_slug: str, branch_id: str | None = None):
+    return _apply_branch_scope(
+        db_session.query(model).filter(model.facility_slug == facility_slug),
+        model,
+        branch_id,
+    )
+
+
+def _medical_record_query(facility_slug: str, start: datetime, end: datetime, branch_id: str | None = None):
+    query = db_session.query(MedicalRecord).filter(
+        MedicalRecord.facility_slug == facility_slug,
+        MedicalRecord.created_at >= start,
+        MedicalRecord.created_at <= end,
+    )
+    if not branch_id:
+        return query
+    return query.join(Patient, MedicalRecord.patient_id == Patient.id).filter(
+        or_(Patient.branch_id == branch_id, Patient.department_id == branch_id)
+    )
+
+
+def _status_section(model, facility_slug: str, status_column, created_column, start: datetime, end: datetime, branch_id: str | None = None) -> ReportSection:
     rows = (
-        db_session.query(status_column, func.count(model.id))
-        .filter(model.facility_slug == facility_slug, created_column >= start, created_column <= end)
+        _apply_branch_scope(
+            db_session.query(status_column, func.count(model.id))
+            .filter(model.facility_slug == facility_slug, created_column >= start, created_column <= end),
+            model,
+            branch_id,
+        )
         .group_by(status_column)
         .all()
     )
@@ -83,10 +133,14 @@ def _require_facility(current_user: User) -> str:
     return current_user.facility_slug
 
 
-def _status_rows(model, facility_slug: str, status_column, created_column, start: datetime, end: datetime) -> dict[str, int]:
+def _status_rows(model, facility_slug: str, status_column, created_column, start: datetime, end: datetime, branch_id: str | None = None) -> dict[str, int]:
     rows = (
-        db_session.query(status_column, func.count(model.id))
-        .filter(model.facility_slug == facility_slug, created_column >= start, created_column <= end)
+        _apply_branch_scope(
+            db_session.query(status_column, func.count(model.id))
+            .filter(model.facility_slug == facility_slug, created_column >= start, created_column <= end),
+            model,
+            branch_id,
+        )
         .group_by(status_column)
         .all()
     )
@@ -153,26 +207,21 @@ def _empty_summary(facility_slug: str, start: datetime, end: datetime) -> Facili
 async def get_report_summary(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
 ):
     facility_slug = _require_facility(current_user)
+    branch_id = _branch_scope_for(current_user)
 
     start, end = _date_bounds(date_from, date_to)
     try:
-        patients_total = db_session.query(Patient).filter(
-            Patient.facility_slug == facility_slug,
+        patients_total = _model_query(Patient, facility_slug, branch_id).filter(
             Patient.created_at >= start,
             Patient.created_at <= end,
         ).count()
 
-        consultations_total = db_session.query(MedicalRecord).filter(
-            MedicalRecord.facility_slug == facility_slug,
-            MedicalRecord.created_at >= start,
-            MedicalRecord.created_at <= end,
-        ).count()
+        consultations_total = _medical_record_query(facility_slug, start, end, branch_id).count()
 
-        invoices = db_session.query(Invoice).filter(
-            Invoice.facility_slug == facility_slug,
+        invoices = _model_query(Invoice, facility_slug, branch_id).filter(
             Invoice.invoice_date >= start,
             Invoice.invoice_date <= end,
         )
@@ -180,7 +229,7 @@ async def get_report_summary(
         outstanding_invoice_count = invoices.filter(Invoice.status.in_(["PENDING", "PARTIAL"])).count()
         invoiced_total = _money(invoices.with_entities(func.coalesce(func.sum(Invoice.total), 0)).scalar())
 
-        payments_total = _money(
+        payments_total_query = (
             db_session.query(func.coalesce(func.sum(Payment.amount), 0))
             .join(Invoice, Payment.invoice_id == Invoice.id)
             .filter(
@@ -188,40 +237,52 @@ async def get_report_summary(
                 Payment.payment_date >= start,
                 Payment.payment_date <= end,
             )
-            .scalar()
         )
+        if branch_id:
+            payments_total_query = payments_total_query.filter(
+                or_(Invoice.branch_id == branch_id, Invoice.department_id == branch_id)
+            )
+        payments_total = _money(payments_total_query.scalar())
 
-        active_items = db_session.query(Inventory).filter_by(
-            facility_slug=facility_slug,
-            is_active=True,
-        ).count()
-        low_stock_items = db_session.query(Inventory).filter(
-            Inventory.facility_slug == facility_slug,
-            Inventory.is_active == True,
-            Inventory.current_stock <= Inventory.reorder_level,
-        ).count()
-        stock_value = _money(
-            db_session.query(func.coalesce(func.sum(Inventory.current_stock * Inventory.unit_cost), 0))
-            .filter(Inventory.facility_slug == facility_slug, Inventory.is_active == True)
-            .scalar()
-        )
+        if branch_id:
+            active_items = 0
+            low_stock_items = 0
+            stock_value = 0
+        else:
+            active_items = db_session.query(Inventory).filter_by(
+                facility_slug=facility_slug,
+                is_active=True,
+            ).count()
+            low_stock_items = db_session.query(Inventory).filter(
+                Inventory.facility_slug == facility_slug,
+                Inventory.is_active == True,
+                Inventory.current_stock <= Inventory.reorder_level,
+            ).count()
+            stock_value = _money(
+                db_session.query(func.coalesce(func.sum(Inventory.current_stock * Inventory.unit_cost), 0))
+                .filter(Inventory.facility_slug == facility_slug, Inventory.is_active == True)
+                .scalar()
+            )
 
-        active_alerts = db_session.query(Alert).filter(
+        active_alerts_query = db_session.query(Alert).filter(
             Alert.facility_slug == facility_slug,
             Alert.is_read == False,
-        ).filter(or_(Alert.expires_at == None, Alert.expires_at > datetime.utcnow())).count()
+        ).filter(or_(Alert.expires_at == None, Alert.expires_at > datetime.utcnow()))
+        if branch_id:
+            active_alerts_query = active_alerts_query.filter(Alert.recipient_id == current_user.id)
+        active_alerts = active_alerts_query.count()
 
         return FacilityReportSummary(
             facility_slug=facility_slug,
             date_from=start.date().isoformat(),
             date_to=end.date().isoformat(),
             patients=ReportSection(total=patients_total, by_status={"active": patients_total}),
-            appointments=_status_section(Appointment, facility_slug, Appointment.status, Appointment.created_at, start, end),
+            appointments=_status_section(Appointment, facility_slug, Appointment.status, Appointment.created_at, start, end, branch_id),
             consultations=ReportSection(total=consultations_total, by_status={"records": consultations_total}),
-            admissions=_status_section(WardAdmission, facility_slug, WardAdmission.status, WardAdmission.created_at, start, end),
-            queue=_status_section(PatientQueue, facility_slug, PatientQueue.status, PatientQueue.created_at, start, end),
-            laboratory=_status_section(LabOrder, facility_slug, LabOrder.status, LabOrder.created_at, start, end),
-            radiology=_status_section(Radiology, facility_slug, Radiology.status, Radiology.created_at, start, end),
+            admissions=_status_section(WardAdmission, facility_slug, WardAdmission.status, WardAdmission.created_at, start, end, branch_id),
+            queue=_status_section(PatientQueue, facility_slug, PatientQueue.status, PatientQueue.created_at, start, end, branch_id),
+            laboratory=_status_section(LabOrder, facility_slug, LabOrder.status, LabOrder.created_at, start, end, branch_id),
+            radiology=_status_section(Radiology, facility_slug, Radiology.status, Radiology.created_at, start, end, branch_id),
             billing=RevenueReport(
                 invoice_count=invoice_count,
                 outstanding_invoice_count=outstanding_invoice_count,
@@ -247,13 +308,13 @@ async def get_report_summary(
 async def get_revenue_report(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "RECEPTIONIST")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "RECEPTIONIST")),
 ):
     facility_slug = _require_facility(current_user)
+    branch_id = _branch_scope_for(current_user)
     start, end = _date_bounds(date_from, date_to)
     try:
-        invoices_query = db_session.query(Invoice).filter(
-            Invoice.facility_slug == facility_slug,
+        invoices_query = _model_query(Invoice, facility_slug, branch_id).filter(
             Invoice.invoice_date >= start,
             Invoice.invoice_date <= end,
         )
@@ -271,6 +332,8 @@ async def get_revenue_report(
                 Payment.payment_date <= end,
             )
         )
+        if branch_id:
+            payments_query = payments_query.filter(or_(Invoice.branch_id == branch_id, Invoice.department_id == branch_id))
         collected_total = _money(payments_query.with_entities(func.coalesce(func.sum(Payment.amount), 0)).scalar())
         receipt_count = payments_query.filter(Payment.receipt_filename != None).count()
 
@@ -345,16 +408,13 @@ async def get_revenue_report(
 async def get_department_activity_report(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
 ):
     facility_slug = _require_facility(current_user)
+    branch_id = _branch_scope_for(current_user)
     start, end = _date_bounds(date_from, date_to)
     try:
-        consultation_count = db_session.query(MedicalRecord).filter(
-            MedicalRecord.facility_slug == facility_slug,
-            MedicalRecord.created_at >= start,
-            MedicalRecord.created_at <= end,
-        ).count()
+        consultation_count = _medical_record_query(facility_slug, start, end, branch_id).count()
 
         departments = [
             DepartmentActivityRow(
@@ -368,25 +428,25 @@ async def get_department_activity_report(
             _department_row(
                 department="Laboratory",
                 module="lab",
-                by_status=_status_rows(LabOrder, facility_slug, LabOrder.status, LabOrder.created_at, start, end),
+                by_status=_status_rows(LabOrder, facility_slug, LabOrder.status, LabOrder.created_at, start, end, branch_id),
                 completed_statuses={"COMPLETED"},
             ),
             _department_row(
                 department="Radiology",
                 module="radiology",
-                by_status=_status_rows(Radiology, facility_slug, Radiology.status, Radiology.created_at, start, end),
+                by_status=_status_rows(Radiology, facility_slug, Radiology.status, Radiology.created_at, start, end, branch_id),
                 completed_statuses={"completed"},
             ),
             _department_row(
                 department="Pharmacy",
                 module="pharmacy",
-                by_status=_status_rows(Prescription, facility_slug, Prescription.status, Prescription.created_at, start, end),
+                by_status=_status_rows(Prescription, facility_slug, Prescription.status, Prescription.created_at, start, end, branch_id),
                 completed_statuses={"DISPENSED"},
             ),
             _department_row(
                 department="Wards",
                 module="nursing",
-                by_status=_status_rows(WardAdmission, facility_slug, WardAdmission.status, WardAdmission.created_at, start, end),
+                by_status=_status_rows(WardAdmission, facility_slug, WardAdmission.status, WardAdmission.created_at, start, end, branch_id),
                 completed_statuses={"DISCHARGED", "TRANSFERRED"},
             ),
         ]
@@ -414,13 +474,14 @@ async def get_department_activity_report(
 async def get_operations_report(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")),
 ):
     facility_slug = _require_facility(current_user)
+    branch_id = _branch_scope_for(current_user)
     start, end = _date_bounds(date_from, date_to)
     try:
         task_roles = ["DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST"]
-        role_tasks = {
+        role_tasks = {} if branch_id else {
             role: TaskService.get_tasks_for_role(facility_slug, role, limit=100)
             for role in task_roles
         }
@@ -430,8 +491,8 @@ async def get_operations_report(
             facility_slug=facility_slug,
             date_from=start.date().isoformat(),
             date_to=end.date().isoformat(),
-            queue=_status_section(PatientQueue, facility_slug, PatientQueue.status, PatientQueue.created_at, start, end),
-            appointments=_status_section(Appointment, facility_slug, Appointment.status, Appointment.created_at, start, end),
+            queue=_status_section(PatientQueue, facility_slug, PatientQueue.status, PatientQueue.created_at, start, end, branch_id),
+            appointments=_status_section(Appointment, facility_slug, Appointment.status, Appointment.created_at, start, end, branch_id),
             active_tasks_by_role=[
                 ReportMetricRow(label=role, value=len(tasks))
                 for role, tasks in role_tasks.items()
@@ -470,10 +531,21 @@ async def get_operations_report(
 
 @router.get("/inventory", response_model=InventoryDetailReport)
 async def get_inventory_detail_report(
-    current_user: User = Depends(role_required("ADMIN", "PHARMACIST")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "PHARMACIST")),
 ):
     facility_slug = _require_facility(current_user)
+    branch_id = _branch_scope_for(current_user)
     try:
+        if branch_id:
+            return InventoryDetailReport(
+                facility_slug=facility_slug,
+                active_items=0,
+                low_stock_items=0,
+                stock_value=0,
+                reorder_items=[],
+                by_category=[],
+                generated_at=datetime.utcnow().isoformat(),
+            )
         items = db_session.query(Inventory).filter_by(facility_slug=facility_slug, is_active=True).all()
         low_stock = [item for item in items if item.current_stock <= item.reorder_level]
         stock_value = sum(_money(item.current_stock * item.unit_cost) for item in items)

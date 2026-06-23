@@ -85,30 +85,58 @@ export default async function handler(request, response) {
     ? undefined
     : await readBody(request);
 
-  const backendResponse = await fetch(target, {
-    method: request.method,
-    headers,
-    body,
-    redirect: "manual",
-  });
+  try {
+    const backendResponse = await fetch(target, {
+      method: request.method,
+      headers,
+      body,
+      redirect: "manual",
+    });
 
-  response.status(backendResponse.status);
-  backendResponse.headers.forEach((value, key) => {
-    const lowerKey = key.toLowerCase();
-    if (
-      HOP_BY_HOP_HEADERS.has(lowerKey) ||
-      lowerKey.startsWith("access-control-")
-    ) {
+    const responseBody = Buffer.from(await backendResponse.arrayBuffer());
+    const contentType = backendResponse.headers.get("content-type") || "";
+
+    if (backendResponse.status >= 500 && contentType.includes("text/html")) {
+      console.error("HIS.Pro upstream returned HTML error", {
+        method: request.method,
+        path,
+        status: backendResponse.status,
+      });
+      response.status(backendResponse.status).json({
+        message: "Backend request failed. Please try again.",
+        code: "UPSTREAM_ERROR",
+        status: backendResponse.status,
+      });
       return;
     }
-    if (lowerKey === "set-cookie") {
-      response.setHeader("set-cookie", splitSetCookie(value));
-      return;
-    }
-    response.setHeader(key, value);
-  });
-  response.setHeader("cache-control", "no-store");
 
-  const responseBody = Buffer.from(await backendResponse.arrayBuffer());
-  response.end(responseBody);
+    response.status(backendResponse.status);
+    backendResponse.headers.forEach((value, key) => {
+      const lowerKey = key.toLowerCase();
+      if (
+        HOP_BY_HOP_HEADERS.has(lowerKey) ||
+        lowerKey.startsWith("access-control-")
+      ) {
+        return;
+      }
+      if (lowerKey === "set-cookie") {
+        response.setHeader("set-cookie", splitSetCookie(value));
+        return;
+      }
+      response.setHeader(key, value);
+    });
+    response.setHeader("cache-control", "no-store");
+    response.end(responseBody);
+  } catch (error) {
+    console.error("HIS.Pro proxy failed", {
+      method: request.method,
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    response.status(502).json({
+      message: "Backend is temporarily unavailable. Please try again.",
+      code: "PROXY_ERROR",
+      status: 502,
+    });
+  }
 }

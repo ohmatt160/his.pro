@@ -35,8 +35,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getStaffAccessPath } from "@/lib/facility-staff";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getBranchStaffAccessPath, getStaffAccessPath } from "@/lib/facility-staff";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 
 type Patient = {
   id: string;
@@ -84,7 +84,7 @@ const bloodTypes = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 
 const Patients = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -101,8 +101,10 @@ const Patients = () => {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
 
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
-  const staffPath = getStaffAccessPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
+  const staffPath = branchSlug
+    ? getBranchStaffAccessPath(facilitySlug, branchSlug)
+    : getStaffAccessPath(facilitySlug);
 
   const loadPatients = async (query = search) => {
     setLoading(true);
@@ -325,7 +327,7 @@ const Patients = () => {
                         </Button>
                       )}
                       <Button asChild variant="outline" size="sm" className="gap-2">
-                        <Link to={`/dashboard/${facilitySlug}/patients/${patient.id}/timeline`}>
+                        <Link to={getWorkspaceRoutePath(facilitySlug, `patients/${patient.id}/timeline`, branchSlug || undefined)}>
                           <ClipboardList className="h-4 w-4" /> Timeline
                         </Link>
                       </Button>

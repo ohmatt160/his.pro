@@ -7,6 +7,7 @@ from typing import Iterable
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, or_
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session, joinedload
 
 from app.extensions import db_session, get_db
@@ -236,6 +237,24 @@ async def list_chat_staff(
     )
     staff.sort(key=lambda user: (not _is_online(user), _full_name(user).lower()))
     return [_staff_response(user) for user in staff]
+
+
+@router.get("/health")
+async def chat_health(
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN")),
+    db: Session = Depends(get_db),
+):
+    facility_slug = _require_facility(current_user)
+    inspector = inspect(db.bind)
+    tables = set(inspector.get_table_names())
+    return {
+        "ok": "chat_conversations" in tables and "chat_messages" in tables,
+        "facility_slug": facility_slug,
+        "tables": {
+            "chat_conversations": "chat_conversations" in tables,
+            "chat_messages": "chat_messages" in tables,
+        },
+    }
 
 
 @router.post("/conversations", response_model=ChatConversationResponse, status_code=status.HTTP_201_CREATED)

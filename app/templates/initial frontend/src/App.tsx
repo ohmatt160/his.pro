@@ -79,15 +79,15 @@ const branchWorkspaceRoutes = (basePath: string) => (
     <Route path={`${basePath}/records`} element={<ProtectedRoute allowedRoles={routeRoles.records}><ModuleRoute module="records"><WithAppShell><MedicalRecords /></WithAppShell></ModuleRoute></ProtectedRoute>} />
     <Route path={`${basePath}/alerts`} element={<ProtectedRoute allowedRoles={routeRoles.alerts}><WithAppShell><Alerts /></WithAppShell></ProtectedRoute>} />
     <Route path={`${basePath}/chat`} element={<ProtectedRoute allowedRoles={routeRoles.chat}><WithAppShell><Chat /></WithAppShell></ProtectedRoute>} />
-    <Route path={`${basePath}/audit-logs`} element={<ProtectedRoute requireAdmin><WithAppShell><AuditLogs /></WithAppShell></ProtectedRoute>} />
+    <Route path={`${basePath}/audit-logs`} element={<ProtectedRoute requireFacilityAdmin><WithAppShell><AuditLogs /></WithAppShell></ProtectedRoute>} />
     <Route path={`${basePath}/settings`} element={<ProtectedRoute requireAdmin><WithAppShell><Settings /></WithAppShell></ProtectedRoute>} />
     <Route path={`${basePath}/suppliers`} element={<ProtectedRoute allowedRoles={routeRoles.inventory}><ModuleRoute module="inventory"><WithAppShell><Suppliers /></WithAppShell></ModuleRoute></ProtectedRoute>} />
     <Route path={`${basePath}/queue`} element={<ProtectedRoute allowedRoles={routeRoles.queue}><ModuleRoute module="reception"><WithAppShell><Queue /></WithAppShell></ModuleRoute></ProtectedRoute>} />
     <Route path={`${basePath}/consultations`} element={<ProtectedRoute allowedRoles={routeRoles.consultations}><ModuleRoute module="consultations"><WithAppShell><Consultations /></WithAppShell></ModuleRoute></ProtectedRoute>} />
     <Route path={`${basePath}/wards`} element={<ProtectedRoute allowedRoles={routeRoles.wards}><ModuleRoute module="nursing"><WithAppShell><Wards /></WithAppShell></ModuleRoute></ProtectedRoute>} />
     <Route path={`${basePath}/reports`} element={<ProtectedRoute allowedRoles={routeRoles.reports}><ModuleRoute module="reports"><WithAppShell><Reports /></WithAppShell></ModuleRoute></ProtectedRoute>} />
-    <Route path={`${basePath}/public-profile`} element={<ProtectedRoute requireAdmin><WithAppShell><PublicProfile /></WithAppShell></ProtectedRoute>} />
-    <Route path={`${basePath}/public-profile/:section`} element={<ProtectedRoute requireAdmin><WithAppShell><PublicProfile /></WithAppShell></ProtectedRoute>} />
+    <Route path={`${basePath}/public-profile`} element={<ProtectedRoute requireFacilityAdmin><WithAppShell><PublicProfile /></WithAppShell></ProtectedRoute>} />
+    <Route path={`${basePath}/public-profile/:section`} element={<ProtectedRoute requireFacilityAdmin><WithAppShell><PublicProfile /></WithAppShell></ProtectedRoute>} />
   </>
 );
 
@@ -272,7 +272,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/audit-logs"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireFacilityAdmin>
                     <WithAppShell>
                       <AuditLogs />
                     </WithAppShell>
@@ -362,7 +362,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/public-profile"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireFacilityAdmin>
                     <WithAppShell>
                       <PublicProfile />
                     </WithAppShell>
@@ -372,7 +372,7 @@ const App = () => (
               <Route
                 path="/dashboard/:facilitySlug/public-profile/:section"
                 element={
-                  <ProtectedRoute requireAdmin>
+                  <ProtectedRoute requireFacilityAdmin>
                     <WithAppShell>
                       <PublicProfile />
                     </WithAppShell>

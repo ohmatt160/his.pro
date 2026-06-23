@@ -8,12 +8,14 @@ import { roleAllows, type WorkspaceRole } from "@/lib/role-access";
 interface ProtectedRouteProps {
   children: ReactNode;
   requireAdmin?: boolean;
+  requireFacilityAdmin?: boolean;
   allowedRoles?: WorkspaceRole[];
 }
 
 const ProtectedRoute = ({
   children,
   requireAdmin = false,
+  requireFacilityAdmin = false,
   allowedRoles,
 }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
@@ -57,6 +59,10 @@ const ProtectedRoute = ({
 
   if (requireAdmin && !["admin", "branch_admin"].includes(user.role)) {
     return <Navigate to={portalPath} replace />;
+  }
+
+  if (requireFacilityAdmin && user.role !== "admin") {
+    return <Navigate to={getWorkspaceDashboardPath(facilitySlug, branchSlug || user.branchSlug)} replace />;
   }
 
   if (!roleAllows(user.role, allowedRoles)) {

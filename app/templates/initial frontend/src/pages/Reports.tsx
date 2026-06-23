@@ -36,7 +36,7 @@ import {
   type ReportSection,
   type RevenueDetailReport,
 } from "@/lib/reports";
-import { getFacilityDashboardPath } from "@/lib/facility-workspace";
+import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 
 type ReportBundle = {
   summary: FacilityReportSummary | null;
@@ -48,24 +48,24 @@ type ReportBundle = {
 
 const Reports = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useParams();
   const [range, setRange] = useState(() => defaultReportRange());
   const [reports, setReports] = useState<ReportBundle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const dashboardPath = getFacilityDashboardPath(facilitySlug);
+  const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
 
   const paths = {
-    patients: `/dashboard/${facilitySlug}/patients`,
-    appointments: `/dashboard/${facilitySlug}/appointments`,
-    queue: `/dashboard/${facilitySlug}/queue`,
-    consultations: `/dashboard/${facilitySlug}/consultations`,
-    wards: `/dashboard/${facilitySlug}/wards`,
-    laboratory: `/dashboard/${facilitySlug}/laboratory`,
-    radiology: `/dashboard/${facilitySlug}/radiology`,
-    inventory: `/dashboard/${facilitySlug}/inventory`,
-    billing: `/dashboard/${facilitySlug}/billing`,
-    audit: `/dashboard/${facilitySlug}/audit-logs`,
+    patients: getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined),
+    appointments: getWorkspaceRoutePath(facilitySlug, "appointments", branchSlug || undefined),
+    queue: getWorkspaceRoutePath(facilitySlug, "queue", branchSlug || undefined),
+    consultations: getWorkspaceRoutePath(facilitySlug, "consultations", branchSlug || undefined),
+    wards: getWorkspaceRoutePath(facilitySlug, "wards", branchSlug || undefined),
+    laboratory: getWorkspaceRoutePath(facilitySlug, "laboratory", branchSlug || undefined),
+    radiology: getWorkspaceRoutePath(facilitySlug, "radiology", branchSlug || undefined),
+    inventory: getWorkspaceRoutePath(facilitySlug, "inventory", branchSlug || undefined),
+    billing: getWorkspaceRoutePath(facilitySlug, "billing", branchSlug || undefined),
+    audit: getWorkspaceRoutePath(facilitySlug, "audit-logs", branchSlug || undefined),
   };
 
   const loadReports = async () => {

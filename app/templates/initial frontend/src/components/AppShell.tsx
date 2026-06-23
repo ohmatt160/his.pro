@@ -56,6 +56,7 @@ const navItems: Array<{
   module?: Parameters<typeof isModuleEnabled>[1];
   path: (slug: string, branchSlug?: string) => string;
   adminOnly?: boolean;
+  facilityAdminOnly?: boolean;
   roles?: WorkspaceRole[];
 }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "", branchSlug), roles: routeRoles.admin },
@@ -63,9 +64,9 @@ const navItems: Array<{
   { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: (slug, branchSlug) => branchSlug ? getBranchStaffAccessPath(slug, branchSlug) : getStaffAccessPath(slug), roles: routeRoles.admin },
   { id: "chat", label: "Messages", icon: MessageSquare, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "chat", branchSlug), roles: routeRoles.chat },
   { id: "alerts", label: "Alerts", icon: Bell, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "alerts", branchSlug), roles: routeRoles.alerts },
-  { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "audit-logs", branchSlug), adminOnly: true },
+  { id: "audit", label: "Audit Logs", icon: ClipboardList, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "audit-logs", branchSlug), adminOnly: true, facilityAdminOnly: true },
   { id: "reports", label: "Reports", icon: Activity, module: "reports", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "reports", branchSlug), roles: routeRoles.reports },
-  { id: "public-profile", label: "Public Profile", icon: Globe, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "public-profile", branchSlug), roles: routeRoles.admin },
+  { id: "public-profile", label: "Public Profile", icon: Globe, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "public-profile", branchSlug), roles: routeRoles.admin, facilityAdminOnly: true },
   { id: "patients", label: "Patients", icon: Users, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "patients", branchSlug), roles: routeRoles.patients },
   { id: "queue", label: "Reception Queue", icon: ClipboardList, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "queue", branchSlug), roles: routeRoles.queue },
   { id: "appointments", label: "Appointments", icon: CalendarDays, module: "reception", path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "appointments", branchSlug), roles: routeRoles.appointments },
@@ -168,6 +169,9 @@ const AppShell = ({ children }: AppShellProps) => {
   const facilityType = currentBranch ? currentBranch.name : workspace?.facilityType || "facility";
   const visibleNav = navItems.filter((entry) => {
     if (entry.adminOnly && !["admin", "branch_admin"].includes(user?.role || "")) {
+      return false;
+    }
+    if (entry.facilityAdminOnly && user?.role !== "admin") {
       return false;
     }
     return roleAllows(user?.role, entry.roles) && (!entry.module || isModuleEnabled(selectedModules, entry.module));

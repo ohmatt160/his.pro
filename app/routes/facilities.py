@@ -713,7 +713,7 @@ async def deactivate_branch(
 @router.get("/{facility_slug}/departments")
 async def list_departments(
     facility_slug: str,
-    current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
     facility = get_facility_or_404(facility_slug)
