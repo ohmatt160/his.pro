@@ -15,6 +15,7 @@ const AuditLogs = lazy(() => import("./pages/AuditLogs.tsx"));
 const Billing = lazy(() => import("./pages/Billing.tsx"));
 const Chat = lazy(() => import("./pages/Chat.tsx"));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
+const DataProcessingAgreement = lazy(() => import("./pages/DataProcessingAgreement.tsx"));
 const Appointments = lazy(() => import("./pages/Appointments.tsx"));
 const GetStarted = lazy(() => import("./pages/GetStarted.tsx"));
 const Index = lazy(() => import("./pages/Index.tsx"));
@@ -26,6 +27,7 @@ const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 const Patients = lazy(() => import("./pages/Patients.tsx"));
 const PatientTimeline = lazy(() => import("./pages/PatientTimeline.tsx"));
 const Pharmacy = lazy(() => import("./pages/Pharmacy.tsx"));
+const PrivacyPolicy = lazy(() => import("./pages/PrivacyPolicy.tsx"));
 const Queue = lazy(() => import("./pages/Queue.tsx"));
 const PublicProfile = lazy(() => import("./pages/PublicProfile.tsx"));
 const PublicHospital = lazy(() => import("./pages/PublicHospital.tsx"));
@@ -35,6 +37,7 @@ const SettingUp = lazy(() => import("./pages/SettingUp.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
 const StaffAccess = lazy(() => import("./pages/StaffAccess.tsx"));
 const StaffPortal = lazy(() => import("./pages/StaffPortal.tsx"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService.tsx"));
 const Suppliers = lazy(() => import("./pages/Suppliers.tsx"));
 const Consultations = lazy(() => import("./pages/Consultations.tsx"));
 const Wards = lazy(() => import("./pages/Wards.tsx"));
@@ -117,6 +120,9 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Index />} />
               <Route path="/get-started" element={<GetStarted />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
+              <Route path="/dpa" element={<DataProcessingAgreement />} />
               <Route path="/login" element={<Login />} />
               <Route path="/login/:facilitySlug" element={<Login />} />
               <Route path="/:facilitySlug/login" element={<Login />} />

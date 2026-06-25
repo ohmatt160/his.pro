@@ -344,6 +344,7 @@ export const createStaffAccount = async ({
 
 export const updateStaffAccount = async ({
   facilitySlug,
+  staffRecordId,
   loginId,
   fullName,
   role,
@@ -359,7 +360,8 @@ export const updateStaffAccount = async ({
   branchIds,
 }: {
   facilitySlug: string;
-  loginId: string;
+  staffRecordId?: string;
+  loginId?: string;
   fullName?: string;
   role?: StaffRole;
   department?: string;
@@ -373,6 +375,11 @@ export const updateStaffAccount = async ({
   mustChangePassword?: boolean;
   isActive?: boolean;
 }) => {
+  const staffIdentifier = staffRecordId?.trim() || loginId?.trim();
+  if (!staffIdentifier) {
+    throw new Error("Staff account identifier is required.");
+  }
+
   const payload = {
     fullName: fullName?.trim() || undefined,
     role,
@@ -389,7 +396,7 @@ export const updateStaffAccount = async ({
   };
 
   return apiClient.put<FacilityStaffAccount>(
-    `/facilities/${facilitySlug}/staff/${normalizeLoginValue(loginId)}`,
+    `/facilities/${facilitySlug}/staff/${encodeURIComponent(staffIdentifier)}`,
     payload
   );
 };

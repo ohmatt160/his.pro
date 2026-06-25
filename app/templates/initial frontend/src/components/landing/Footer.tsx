@@ -1,11 +1,26 @@
 import { Heart } from "lucide-react";
+import { Link } from "react-router-dom";
 import logo from "@/lib/assets/logo.png";
 
 const footerLinks = {
-  Product: ["Features", "Modules", "Pricing", "Integrations"],
-  Company: ["About", "Blog", "Careers", "Contact"],
-  Support: ["Help Center", "Documentation", "API Reference", "Status"],
-  Legal: ["Terms", "Privacy", "Security", "HIPAA"],
+  Product: [
+    { label: "Features", href: "/#features" },
+    { label: "Modules", href: "/#modules" },
+    { label: "Pricing", href: "/#pricing" },
+  ],
+  Company: [
+    { label: "About", href: "/#about" },
+    { label: "Contact", href: "/#contact" },
+  ],
+  Support: [
+    { label: "Help Center", href: "/#support" },
+    { label: "Status", href: "/#status" },
+  ],
+  Legal: [
+    { label: "Terms of Service", href: "/terms" },
+    { label: "Privacy Policy", href: "/privacy" },
+    { label: "Hospital DPA", href: "/dpa" },
+  ],
 };
 
 const Footer = () => (
@@ -29,10 +44,10 @@ const Footer = () => (
             <h4 className="font-bold text-foreground text-sm mb-4">{title}</h4>
             <ul className="space-y-2.5">
               {links.map((link) => (
-                <li key={link}>
-                  <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                    {link}
-                  </a>
+                <li key={link.href}>
+                  <Link to={link.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    {link.label}
+                  </Link>
                 </li>
               ))}
             </ul>

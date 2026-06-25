@@ -354,7 +354,7 @@ const StaffAccess = () => {
 
       const updated = await updateStaffAccount({
         facilitySlug,
-        loginId: editingStaff.loginId,
+        staffRecordId: editingStaff.staffRecordId,
         fullName: editStaff.fullName,
         role: editingStaff.role === "admin" ? undefined : editStaff.role,
         department: editStaff.department,

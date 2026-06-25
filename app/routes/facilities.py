@@ -4,7 +4,7 @@ Converted from Flask-RESTx facility_resource.py
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, Body
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import logging
@@ -387,6 +387,31 @@ def get_facility_or_404(facility_slug: str) -> Facility:
     if not facility:
         raise HTTPException(status_code=404, detail="Facility not found")
     return facility
+
+
+def get_facility_staff_member_or_404(
+    db: Session,
+    facility: Facility,
+    identifier: str,
+    *,
+    active_only: bool = False,
+) -> User:
+    """Resolve an immutable staff ID or legacy login ID inside one facility."""
+    normalized_identifier = identifier.strip()
+    query = db.query(User).filter(
+        or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
+        or_(
+            User.id == normalized_identifier,
+            func.lower(User.username) == normalized_identifier.lower(),
+        ),
+    )
+    if active_only:
+        query = query.filter(User.is_active == True)
+
+    member = query.first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+    return member
 
 
 def get_current_admin_facility(current_user: User) -> Facility:
@@ -995,17 +1020,12 @@ async def get_facility_staff_member(
     elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
         raise HTTPException(status_code=403, detail='Cannot access another facility')
 
-    member = (
-        db_session.query(User)
-        .filter(
-            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
-            User.username == login_id,
-            User.is_active == True,
-        )
-        .first()
+    member = get_facility_staff_member_or_404(
+        db,
+        facility,
+        login_id,
+        active_only=True,
     )
-    if not member:
-        raise HTTPException(status_code=404, detail="Staff member not found")
 
     return build_staff_response(member)
 
@@ -1026,16 +1046,7 @@ async def update_facility_staff_member(
     elif current_user.facility_slug != facility.slug and str(current_user.facility_id or '') != str(facility.id):
         raise HTTPException(status_code=403, detail='Cannot access another facility')
 
-    member = (
-        db_session.query(User)
-        .filter(
-            or_(User.facility_id == facility.id, User.facility_slug == facility.slug),
-            User.username == login_id,
-        )
-        .first()
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="Staff member not found")
+    member = get_facility_staff_member_or_404(db, facility, login_id)
     if current_user.role == 'BRANCH_ADMIN':
         branch_id = current_user.branch_id or current_user.department_id
         if (member.branch_id or member.department_id) != branch_id:

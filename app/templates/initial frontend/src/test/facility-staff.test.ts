@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { authenticateStaff } from "../lib/facility-staff";
+import { authenticateStaff, updateStaffAccount } from "../lib/facility-staff";
 
 const fetchMock = () => fetch as unknown as ReturnType<typeof vi.fn>;
 
@@ -53,5 +53,45 @@ describe("facility staff authentication", () => {
     expect(profileHeaders.get("Authorization")).toBe("Bearer fresh-access-token");
     expect(auth.access_token).toBe("fresh-access-token");
     expect(window.localStorage.getItem("hispro.auth.token")).toBeNull();
+  });
+
+  it("updates staff by immutable record ID instead of a display login ID", async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          staffRecordId: "staff-uuid-1",
+          facilitySlug: "test-hospital",
+          fullName: "Test Hospital Admin",
+          role: "admin",
+          department: "Administration",
+          email: "admin@test.test",
+          phone: "",
+          loginId: "test-hospital-admin",
+          password: "",
+          temporaryPassword: "",
+          mustChangePassword: false,
+          status: "active",
+          createdAt: "2026-06-25T00:00:00",
+        }),
+        { status: 200 }
+      )
+    );
+
+    await updateStaffAccount({
+      facilitySlug: "test-hospital",
+      staffRecordId: "staff-uuid-1",
+      loginId: "TEST-HOSPITAL-ADMIN",
+      fullName: "Test Hospital Admin",
+    });
+
+    const [requestUrl, requestOptions] = fetchMock().mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(requestUrl).toContain(
+      "/facilities/test-hospital/staff/staff-uuid-1"
+    );
+    expect(requestUrl).not.toContain("TEST-HOSPITAL-ADMIN");
+    expect(requestOptions.method).toBe("PUT");
   });
 });

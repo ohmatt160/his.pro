@@ -616,13 +616,13 @@ const GetStarted = () => {
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
           By continuing on behalf of your facility, you agree to our{" "}
-          <a href="#" className="underline hover:text-foreground">
+          <Link to="/terms" target="_blank" className="underline hover:text-foreground">
             Terms of Service
-          </a>{" "}
+          </Link>{" "}
           and{" "}
-          <a href="#" className="underline hover:text-foreground">
+          <Link to="/privacy" target="_blank" className="underline hover:text-foreground">
             Privacy Policy
-          </a>
+          </Link>
           .
         </p>
       </div>

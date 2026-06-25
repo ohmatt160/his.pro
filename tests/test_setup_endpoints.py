@@ -294,7 +294,7 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertTrue(staff_create.json()["temporaryPassword"])
 
             staff_update = await client.put(
-                "/api/v1/facilities/sunrise-medical-centre/staff/sunrise-medical-centre-NUR-001",
+                f"/api/v1/facilities/sunrise-medical-centre/staff/{staff_create.json()['staffRecordId']}",
                 json={
                     "fullName": "Nurse Ada Okafor",
                     "role": "nurse",
@@ -308,6 +308,21 @@ class SetupEndpointTest(unittest.TestCase):
             self.assertEqual(staff_update.status_code, 200, staff_update.text)
             self.assertEqual(staff_update.json()["phone"], "+234 800 111 3333")
             self.assertEqual(staff_update.json()["temporaryPassword"], "NurseAda2026")
+
+            admin_update_by_legacy_login = await client.put(
+                "/api/v1/facilities/sunrise-medical-centre/staff/SUNRISE-MEDICAL-CENTRE-ADMIN",
+                json={"fullName": "Dr. Amina Yusuf"},
+                headers={"Authorization": f"Bearer {email_login.json()['access_token']}"},
+            )
+            self.assertEqual(
+                admin_update_by_legacy_login.status_code,
+                200,
+                admin_update_by_legacy_login.text,
+            )
+            self.assertEqual(
+                admin_update_by_legacy_login.json()["loginId"],
+                "sunrise-medical-centre-admin",
+            )
 
             doctor_create = await client.post(
                 "/api/v1/facilities/sunrise-medical-centre/staff",
