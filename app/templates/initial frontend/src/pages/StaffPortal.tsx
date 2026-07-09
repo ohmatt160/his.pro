@@ -43,7 +43,9 @@ import {
   getFacilityWorkspace,
   type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
-import { canAccessModule, getRouteModuleId, moduleCatalog } from "@/lib/modules";
+import { canAccessModule, moduleCatalog } from "@/lib/modules";
+import type { FacilityModuleId } from "@/lib/modules";
+import { roleAllows, routeRoles } from "@/lib/role-access";
 import { formatTaskTime, getTasks, taskTone, type WorkTask } from "@/lib/tasks";
 
 type QuickAction = {
@@ -59,6 +61,7 @@ type QueueItem = {
   status: string;
   tone: "success" | "warning" | "critical";
   action: string;
+  to?: string;
 };
 
 type ActivityItem = {
@@ -112,6 +115,152 @@ type StaffPortalUser = {
   fullName: string;
   email: string;
   department: string;
+};
+
+type PortalRouteKey =
+  | "portal"
+  | "patients"
+  | "appointments"
+  | "consultations"
+  | "wards"
+  | "queue"
+  | "pharmacy"
+  | "laboratory"
+  | "records"
+  | "inventory"
+  | "billing"
+  | "chat"
+  | "alerts"
+  | "radiology"
+  | "reports";
+
+const routeModules: Partial<Record<PortalRouteKey, FacilityModuleId>> = {
+  patients: "reception",
+  appointments: "reception",
+  consultations: "consultations",
+  wards: "nursing",
+  queue: "reception",
+  pharmacy: "pharmacy",
+  laboratory: "lab",
+  records: "records",
+  inventory: "inventory",
+  billing: "billing",
+  radiology: "radiology",
+  reports: "reports",
+};
+
+const routeRoleMap: Partial<Record<PortalRouteKey, StaffRole[]>> = {
+  patients: routeRoles.patients,
+  appointments: routeRoles.appointments,
+  consultations: routeRoles.consultations,
+  wards: routeRoles.wards,
+  queue: routeRoles.queue,
+  pharmacy: routeRoles.pharmacy,
+  laboratory: routeRoles.laboratory,
+  records: routeRoles.records,
+  inventory: routeRoles.inventory,
+  billing: routeRoles.billing,
+  chat: routeRoles.chat,
+  alerts: routeRoles.alerts,
+  radiology: routeRoles.radiology,
+  reports: routeRoles.reports,
+};
+
+export const routeKeyForPortalLabel = (
+  role: Exclude<StaffRole, "admin">,
+  label: string
+): PortalRouteKey => {
+  const normalized = label.toLowerCase();
+
+  if (normalized.includes("dashboard")) return "portal";
+  if (normalized.includes("patient")) return "patients";
+  if (normalized.includes("schedule") || normalized.includes("appointment")) return "appointments";
+  if (normalized.includes("consult")) return "consultations";
+  if (normalized.includes("ward") || normalized.includes("bed") || normalized.includes("handover")) return "wards";
+  if (normalized.includes("task") || normalized.includes("queue") || normalized.includes("check-in") || normalized.includes("arrival")) return "queue";
+  if (normalized.includes("prescription") || normalized.includes("medication") || normalized.includes("dispense")) return "pharmacy";
+  if (normalized.includes("lab") || normalized.includes("test") || normalized.includes("sample") || normalized.includes("result") || normalized.includes("quality")) return "laboratory";
+  if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return "records";
+  if (normalized.includes("stock") || normalized.includes("inventory")) return "inventory";
+  if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return "billing";
+  if (normalized.includes("message")) return "chat";
+  if (normalized.includes("alert")) return "alerts";
+  if (normalized.includes("radiology") || normalized.includes("imaging")) return "radiology";
+  if (normalized.includes("report")) return "reports";
+
+  if (role === "doctor") return "consultations";
+  if (role === "nurse") return "wards";
+  if (role === "reception") return "queue";
+  if (role === "pharmacist") return "pharmacy";
+  return "laboratory";
+};
+
+const portalPathForRouteKey = (
+  key: PortalRouteKey,
+  facilitySlug: string,
+  branchSlug?: string
+) =>
+  key === "portal"
+    ? branchSlug
+      ? `/${facilitySlug}/branches/${branchSlug}/portal`
+      : `/portal/${facilitySlug}`
+    : getWorkspaceRoutePath(facilitySlug, key, branchSlug);
+
+export const canUsePortalRoute = ({
+  key,
+  modules,
+  role,
+}: {
+  key: PortalRouteKey;
+  modules: string[] | undefined | null;
+  role: Exclude<StaffRole, "admin">;
+}) => {
+  const allowedRoles = routeRoleMap[key];
+  if (allowedRoles && !roleAllows(role, allowedRoles)) {
+    return false;
+  }
+
+  const moduleId = routeModules[key];
+  if (!moduleId) {
+    return true;
+  }
+
+  return canAccessModule({ modules, moduleId, role });
+};
+
+export const resolvePortalTaskPath = ({
+  actionPath,
+  facilitySlug,
+  branchSlug,
+  modules,
+  role,
+}: {
+  actionPath: string;
+  facilitySlug: string;
+  branchSlug?: string;
+  modules: string[] | undefined | null;
+  role: Exclude<StaffRole, "admin">;
+}) => {
+  const cleaned = actionPath.trim().replace(/^\/+/, "");
+  if (
+    !cleaned ||
+    cleaned.includes("..") ||
+    cleaned.startsWith("//") ||
+    /^[a-z][a-z0-9+.-]*:/i.test(cleaned)
+  ) {
+    return null;
+  }
+
+  const routeKey = cleaned.split("/").filter(Boolean)[0] as PortalRouteKey | undefined;
+  if (!routeKey || !Object.prototype.hasOwnProperty.call(routeModules, routeKey)) {
+    return null;
+  }
+
+  if (!canUsePortalRoute({ key: routeKey, modules, role })) {
+    return null;
+  }
+
+  return getWorkspaceRoutePath(facilitySlug, cleaned, branchSlug);
 };
 
 const container = {
@@ -889,28 +1038,7 @@ export const routeForPortalLabel = (
   facilitySlug: string,
   branchSlug?: string
 ) => {
-  const normalized = label.toLowerCase();
-  const route = (path = "") => getWorkspaceRoutePath(facilitySlug, path, branchSlug);
-
-  if (normalized.includes("dashboard")) return branchSlug ? `/${facilitySlug}/branches/${branchSlug}/portal` : `/portal/${facilitySlug}`;
-  if (normalized.includes("patient")) return route("patients");
-  if (normalized.includes("schedule") || normalized.includes("appointment")) return route("appointments");
-  if (normalized.includes("consult")) return route("consultations");
-  if (normalized.includes("ward") || normalized.includes("bed") || normalized.includes("handover")) return route("wards");
-  if (normalized.includes("task") || normalized.includes("queue") || normalized.includes("check-in") || normalized.includes("arrival")) return route("queue");
-  if (normalized.includes("prescription") || normalized.includes("medication") || normalized.includes("dispense")) return route("pharmacy");
-  if (normalized.includes("lab") || normalized.includes("test") || normalized.includes("sample") || normalized.includes("result") || normalized.includes("quality")) return route("laboratory");
-  if (normalized.includes("record") || normalized.includes("note") || normalized.includes("vital")) return route("records");
-  if (normalized.includes("stock") || normalized.includes("inventory")) return route("inventory");
-  if (normalized.includes("billing") || normalized.includes("claim") || normalized.includes("payment") || normalized.includes("coverage")) return route("billing");
-  if (normalized.includes("message")) return route("chat");
-  if (normalized.includes("alert")) return route("alerts");
-
-  if (role === "doctor") return route("consultations");
-  if (role === "nurse") return route("wards");
-  if (role === "reception") return route("queue");
-  if (role === "pharmacist") return route("pharmacy");
-  return route("laboratory");
+  return portalPathForRouteKey(routeKeyForPortalLabel(role, label), facilitySlug, branchSlug);
 };
 
 const StaffPortal = () => {
@@ -985,16 +1113,12 @@ const StaffPortal = () => {
     ...user,
   } as StaffPortalUser;
   const config = roleConfigs[staff.role];
-  const canUseLabel = (label: string) => {
-    const moduleId = getRouteModuleId(label);
-    return moduleId
-      ? canAccessModule({
-          modules: workspace.selectedModules,
-          moduleId,
-          role: staff.role,
-        })
-      : true;
-  };
+  const canUseLabel = (label: string) =>
+    canUsePortalRoute({
+      key: routeKeyForPortalLabel(staff.role, label),
+      modules: workspace.selectedModules,
+      role: staff.role,
+    });
   const sidebarMain = config.sidebarMain.filter((entry) => canUseLabel(entry.label));
   const sidebarTools = config.sidebarTools.filter((entry) => canUseLabel(entry.label));
   const quickActions = config.quickActions.filter((action) => canUseLabel(action.label));
@@ -1007,15 +1131,31 @@ const StaffPortal = () => {
       })
     )
     .map((module) => module.label);
-  const liveQueueItems = tasks.map((task) => ({
-    primary: task.patient_name || task.title,
-    secondary: task.patient_name ? task.title : task.description,
-    time: formatTaskTime(task),
-    status: task.priority === "urgent" ? "Urgent" : task.status,
-    tone: taskTone(task.priority),
-    action: "Open",
-    to: getWorkspaceRoutePath(facilitySlug, task.action_path, branchSlug || undefined),
-  }));
+  const liveQueueItems: QueueItem[] = tasks
+    .map<QueueItem | null>((task) => {
+      const to = resolvePortalTaskPath({
+        actionPath: task.action_path,
+        facilitySlug,
+        branchSlug: branchSlug || undefined,
+        modules: workspace.selectedModules,
+        role: staff.role,
+      });
+
+      if (!to) {
+        return null;
+      }
+
+      return {
+        primary: task.patient_name || task.title,
+        secondary: task.patient_name ? task.title : task.description,
+        time: formatTaskTime(task),
+        status: task.priority === "urgent" ? "Urgent" : task.status,
+        tone: taskTone(task.priority),
+        action: "Open",
+        to,
+      };
+    })
+    .filter((task): task is QueueItem => Boolean(task));
   const queueItems = liveQueueItems;
   const openTaskCount = tasks.filter((task) => task.status !== "completed").length;
   const completedTaskCount = tasks.filter((task) => task.status === "completed").length;
@@ -1064,6 +1204,12 @@ const StaffPortal = () => {
   const primaryActionPath = routeForPortalLabel(
     staff.role,
     config.primaryAction.label,
+    facilitySlug,
+    branchSlug || undefined
+  );
+  const queuePath = routeForPortalLabel(
+    staff.role,
+    config.queueTitle,
     facilitySlug,
     branchSlug || undefined
   );
@@ -1169,11 +1315,12 @@ const StaffPortal = () => {
                         {config.queueTitle}
                       </CardTitle>
                       <Button
+                        asChild
                         variant="ghost"
                         size="sm"
                         className="gap-1 text-xs text-primary"
                       >
-                        View All
+                        <Link to={queuePath}>View All</Link>
                       </Button>
                     </div>
                   </CardHeader>
@@ -1225,7 +1372,7 @@ const StaffPortal = () => {
                             size="sm"
                             className="h-7 text-xs opacity-0 transition-opacity group-hover:opacity-100"
                           >
-                            <Link to={entry.to}>{entry.action}</Link>
+                            <Link to={entry.to || queuePath}>{entry.action}</Link>
                           </Button>
                         </motion.div>
                       ))

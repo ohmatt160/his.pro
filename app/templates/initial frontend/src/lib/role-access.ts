@@ -14,15 +14,15 @@ export const roleAllows = (
 
 export const routeRoles = {
   admin: ["admin", "branch_admin"],
-  patients: ["admin", "branch_admin", "reception"],
+  patients: ["admin", "branch_admin", "reception", "doctor", "nurse"],
   appointments: ["admin", "branch_admin", "reception", "doctor"],
   queue: ["admin", "branch_admin", "reception", "doctor", "nurse"],
   consultations: ["admin", "branch_admin", "doctor"],
   wards: ["admin", "branch_admin", "doctor", "nurse"],
   records: ["admin", "branch_admin", "doctor", "nurse"],
   billing: ["admin", "branch_admin", "reception"],
-  laboratory: ["admin", "branch_admin", "lab"],
-  pharmacy: ["admin", "branch_admin", "pharmacist"],
+  laboratory: ["admin", "branch_admin", "doctor", "lab"],
+  pharmacy: ["admin", "branch_admin", "doctor", "pharmacist"],
   radiology: ["admin", "branch_admin", "doctor"],
   inventory: ["admin", "pharmacist"],
   reports: ["admin", "branch_admin"],

@@ -10,10 +10,12 @@ from app.models.billing import Invoice
 from app.models.inventory import Inventory
 from app.models.lab import LabOrder
 from app.models.medical_record import MedicalRecord
+from app.models.patient import Patient
 from app.models.patient_queue import PatientQueue
 from app.models.pharmacy import Prescription
 from app.models.radiology import Radiology
 from app.models.ward import WardAdmission
+from app.utils.branch_scope import apply_branch_filter
 
 
 ROLE_ALIASES = {
@@ -78,18 +80,34 @@ def _task(
     }
 
 
+def _scope_task_query(query, model, branch_id: str | None, *, patient_scoped: bool = False):
+    if not branch_id:
+        return query
+
+    if hasattr(model, "branch_id") or hasattr(model, "department_id"):
+        return apply_branch_filter(query, model, branch_id)
+
+    if patient_scoped and hasattr(model, "patient_id"):
+        return query.join(Patient, model.patient_id == Patient.id).filter(
+            or_(Patient.branch_id == branch_id, Patient.department_id == branch_id)
+        )
+
+    return query
+
+
 class TaskService:
     @staticmethod
     def get_tasks_for_role(
         facility_slug: str,
         role: str,
         limit: int = 50,
+        branch_id: str | None = None,
     ) -> list[dict[str, Any]]:
         role = normalize_task_role(role)
         if role == "ADMIN":
             tasks: list[dict[str, Any]] = []
             for staff_role in ["DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST"]:
-                tasks.extend(TaskService.get_tasks_for_role(facility_slug, staff_role, limit=20))
+                tasks.extend(TaskService.get_tasks_for_role(facility_slug, staff_role, limit=20, branch_id=branch_id))
             return TaskService._sort_tasks(tasks)[:limit]
 
         builders = {
@@ -102,7 +120,7 @@ class TaskService:
         builder = builders.get(role)
         if not builder:
             return []
-        return TaskService._sort_tasks(builder(facility_slug))[:limit]
+        return TaskService._sort_tasks(builder(facility_slug, branch_id))[:limit]
 
     @staticmethod
     def _sort_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -116,13 +134,13 @@ class TaskService:
         )
 
     @staticmethod
-    def _doctor_tasks(facility_slug: str) -> list[dict[str, Any]]:
+    def _doctor_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
         tasks = []
         now = datetime.utcnow()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
 
-        appointments = (
+        appointments_query = (
             db_session.query(Appointment)
             .options(joinedload(Appointment.patient))
             .filter(
@@ -131,9 +149,8 @@ class TaskService:
                 Appointment.appointment_date < today_end,
                 Appointment.status.in_(["SCHEDULED", "CONFIRMED", "IN_PROGRESS"]),
             )
-            .limit(25)
-            .all()
         )
+        appointments = _scope_task_query(appointments_query, Appointment, branch_id, patient_scoped=True).limit(25).all()
         for appointment in appointments:
             tasks.append(
                 _task(
@@ -153,16 +170,15 @@ class TaskService:
                 )
             )
 
-        incomplete_records = (
+        incomplete_records_query = (
             db_session.query(MedicalRecord)
             .options(joinedload(MedicalRecord.patient))
             .filter(
                 MedicalRecord.facility_slug == facility_slug,
                 or_(MedicalRecord.diagnosis == None, MedicalRecord.treatment_plan == None),
             )
-            .limit(25)
-            .all()
         )
+        incomplete_records = _scope_task_query(incomplete_records_query, MedicalRecord, branch_id, patient_scoped=True).limit(25).all()
         for record in incomplete_records:
             tasks.append(
                 _task(
@@ -181,16 +197,15 @@ class TaskService:
                 )
             )
 
-        completed_lab_orders = (
+        completed_lab_orders_query = (
             db_session.query(LabOrder)
             .options(joinedload(LabOrder.test))
             .filter(
                 LabOrder.facility_slug == facility_slug,
                 LabOrder.status == "COMPLETED",
             )
-            .limit(25)
-            .all()
         )
+        completed_lab_orders = _scope_task_query(completed_lab_orders_query, LabOrder, branch_id, patient_scoped=True).limit(25).all()
         for order in completed_lab_orders:
             tasks.append(
                 _task(
@@ -209,13 +224,12 @@ class TaskService:
                 )
             )
 
-        completed_radiology = (
+        completed_radiology_query = (
             db_session.query(Radiology)
             .options(joinedload(Radiology.patient))
             .filter_by(facility_slug=facility_slug, status="completed")
-            .limit(25)
-            .all()
         )
+        completed_radiology = _scope_task_query(completed_radiology_query, Radiology, branch_id, patient_scoped=True).limit(25).all()
         for order in completed_radiology:
             tasks.append(
                 _task(
@@ -236,15 +250,14 @@ class TaskService:
         return tasks
 
     @staticmethod
-    def _nurse_tasks(facility_slug: str) -> list[dict[str, Any]]:
+    def _nurse_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
         tasks = []
-        admissions = (
+        admissions_query = (
             db_session.query(WardAdmission)
             .options(joinedload(WardAdmission.patient))
             .filter_by(facility_slug=facility_slug, status="ACTIVE")
-            .limit(50)
-            .all()
         )
+        admissions = _scope_task_query(admissions_query, WardAdmission, branch_id, patient_scoped=True).limit(50).all()
         for admission in admissions:
             tasks.append(
                 _task(
@@ -266,18 +279,17 @@ class TaskService:
         return tasks
 
     @staticmethod
-    def _lab_tasks(facility_slug: str) -> list[dict[str, Any]]:
+    def _lab_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
         tasks = []
-        orders = (
+        orders_query = (
             db_session.query(LabOrder)
             .options(joinedload(LabOrder.test))
             .filter(
                 LabOrder.facility_slug == facility_slug,
                 LabOrder.status.in_(["PENDING", "COLLECTED", "IN_PROGRESS"]),
             )
-            .limit(50)
-            .all()
         )
+        orders = _scope_task_query(orders_query, LabOrder, branch_id, patient_scoped=True).limit(50).all()
         for order in orders:
             status_action = {
                 "PENDING": "Collect sample",
@@ -304,15 +316,14 @@ class TaskService:
         return tasks
 
     @staticmethod
-    def _pharmacy_tasks(facility_slug: str) -> list[dict[str, Any]]:
+    def _pharmacy_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
         tasks = []
-        prescriptions = (
+        prescriptions_query = (
             db_session.query(Prescription)
             .options(selectinload(Prescription.items))
             .filter_by(facility_slug=facility_slug, status="PENDING")
-            .limit(50)
-            .all()
         )
+        prescriptions = _scope_task_query(prescriptions_query, Prescription, branch_id, patient_scoped=True).limit(50).all()
         for prescription in prescriptions:
             tasks.append(
                 _task(
@@ -331,16 +342,15 @@ class TaskService:
                 )
             )
 
-        low_stock = (
+        low_stock_query = (
             db_session.query(Inventory)
             .filter(
                 Inventory.facility_slug == facility_slug,
                 Inventory.is_active == True,
                 Inventory.current_stock <= Inventory.reorder_level,
             )
-            .limit(50)
-            .all()
         )
+        low_stock = _scope_task_query(low_stock_query, Inventory, branch_id).limit(50).all()
         for item in low_stock:
             tasks.append(
                 _task(
@@ -360,18 +370,17 @@ class TaskService:
         return tasks
 
     @staticmethod
-    def _reception_tasks(facility_slug: str) -> list[dict[str, Any]]:
+    def _reception_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
         tasks = []
-        queue_entries = (
+        queue_entries_query = (
             db_session.query(PatientQueue)
             .options(joinedload(PatientQueue.patient))
             .filter(
                 PatientQueue.facility_slug == facility_slug,
                 PatientQueue.status.in_(["waiting", "in_progress"]),
             )
-            .limit(50)
-            .all()
         )
+        queue_entries = _scope_task_query(queue_entries_query, PatientQueue, branch_id, patient_scoped=True).limit(50).all()
         for entry in queue_entries:
             tasks.append(
                 _task(
@@ -391,15 +400,14 @@ class TaskService:
                 )
             )
 
-        invoices = (
+        invoices_query = (
             db_session.query(Invoice)
             .filter(
                 Invoice.facility_slug == facility_slug,
                 Invoice.status.in_(["PENDING", "PARTIAL"]),
             )
-            .limit(50)
-            .all()
         )
+        invoices = _scope_task_query(invoices_query, Invoice, branch_id, patient_scoped=True).limit(50).all()
         for invoice in invoices:
             tasks.append(
                 _task(

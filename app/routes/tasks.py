@@ -8,6 +8,7 @@ from app.extensions import get_db
 from app.models.user import User
 from app.schemas.tasks import TaskListResponse
 from app.services.task_service import TaskService, normalize_task_role
+from app.utils.branch_scope import user_branch_id
 from app.utils.dependencies import role_required
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -33,6 +34,7 @@ async def get_tasks(
         facility_slug=current_user.facility_slug,
         role=requested_role,
         limit=limit,
+        branch_id=None if current_user.role == "ADMIN" else user_branch_id(current_user),
     )
 
     return TaskListResponse(
