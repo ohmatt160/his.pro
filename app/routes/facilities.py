@@ -3,10 +3,13 @@ Facility Routes - FastAPI Version
 Converted from Flask-RESTx facility_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, Body
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status, Query, Body
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
+import csv
+import io
+import json
 import logging
 import secrets
 import string
@@ -299,6 +302,25 @@ ROLE_PREFIX = {
     "LAB_TECH": "LAB",
 }
 
+MIGRATION_SOURCE_SYSTEMS = {
+    "generic_csv",
+    "generic_json",
+    "openmrs",
+    "bahmni",
+    "dhis2",
+    "other_his",
+}
+
+MIGRATION_IMPORT_MODES = {
+    "patients",
+    "staff",
+    "appointments",
+    "inventory",
+    "full_archive",
+}
+
+MIGRATION_MAX_BYTES = 25 * 1024 * 1024
+
 
 def require_admin_for_facility(user: User, facility: Facility) -> None:
     if user.role != "ADMIN":
@@ -311,6 +333,90 @@ def require_admin_for_facility(user: User, facility: Facility) -> None:
 
     if user.facility_slug != facility.slug:
         raise HTTPException(status_code=403, detail="Cannot manage another facility")
+
+
+async def analyze_migration_file(
+    upload: UploadFile,
+    source_system: str,
+    import_mode: str,
+) -> dict:
+    source_system = Validators.sanitize_string(source_system).lower()
+    import_mode = Validators.sanitize_string(import_mode).lower()
+
+    if source_system not in MIGRATION_SOURCE_SYSTEMS:
+        raise HTTPException(status_code=400, detail="Unsupported migration source")
+    if import_mode not in MIGRATION_IMPORT_MODES:
+        raise HTTPException(status_code=400, detail="Unsupported migration type")
+
+    file_name = Validators.sanitize_string(upload.filename or "migration-file")
+    extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
+    if extension not in {"csv", "json"}:
+        raise HTTPException(status_code=400, detail="Use a CSV or JSON migration file")
+
+    content = await upload.read(MIGRATION_MAX_BYTES + 1)
+    if len(content) > MIGRATION_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Migration file is too large")
+    if not content:
+        raise HTTPException(status_code=400, detail="Migration file is empty")
+
+    warnings: list[str] = []
+    accepted_entities: list[str] = []
+    records_detected = 0
+
+    if extension == "csv":
+        text = content.decode("utf-8-sig", errors="replace")
+        reader = csv.DictReader(io.StringIO(text))
+        headers = [Validators.sanitize_string(header or "") for header in (reader.fieldnames or [])]
+        if not headers:
+            raise HTTPException(status_code=400, detail="CSV header row is required")
+        accepted_entities = [import_mode] if import_mode != "full_archive" else ["patients"]
+        risky_prefixes = ("=", "+", "-", "@")
+        for index, row in enumerate(reader, start=1):
+            records_detected += 1
+            if index <= 200 and any(str(value or "").startswith(risky_prefixes) for value in row.values()):
+                warnings.append("Formula-like values were detected and will be escaped during import.")
+                break
+        if records_detected == 0:
+            warnings.append("No data rows were found after the CSV header.")
+    else:
+        try:
+            payload = json.loads(content.decode("utf-8-sig"))
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="JSON migration file is invalid")
+
+        if isinstance(payload, list):
+            records_detected = len(payload)
+            accepted_entities = [import_mode] if import_mode != "full_archive" else ["records"]
+        elif isinstance(payload, dict):
+            list_keys = [
+                key
+                for key, value in payload.items()
+                if isinstance(value, list)
+            ]
+            accepted_entities = list_keys if import_mode == "full_archive" else [import_mode]
+            if import_mode == "full_archive":
+                records_detected = sum(len(payload[key]) for key in list_keys)
+            else:
+                value = payload.get(import_mode)
+                records_detected = len(value) if isinstance(value, list) else 1
+        else:
+            raise HTTPException(status_code=400, detail="JSON migration must be an object or array")
+
+    if records_detected > 50_000:
+        warnings.append("Large imports are queued for background processing.")
+
+    return {
+        "status": "validated",
+        "source_system": source_system,
+        "import_mode": import_mode,
+        "file_name": file_name,
+        "file_size": len(content),
+        "detected_format": extension,
+        "records_detected": records_detected,
+        "accepted_entities": accepted_entities,
+        "warnings": list(dict.fromkeys(warnings)),
+        "next_step": "queue_import",
+    }
 
 
 def split_full_name(full_name: str) -> tuple[str, str]:
@@ -863,6 +969,70 @@ async def remove_department(
         request=request,
     )
     return MessageResponse(message="Department removed successfully")
+
+
+@router.post("/{facility_slug}/data-migrations/validate")
+async def validate_data_migration(
+    facility_slug: str,
+    request: Request,
+    source_system: str = Form(...),
+    import_mode: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    result = await analyze_migration_file(file, source_system, import_mode)
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="VALIDATE_DATA_MIGRATION",
+        resource_type="facility",
+        resource_id=facility.id,
+        facility_slug=facility.slug,
+        details={
+            "source_system": result["source_system"],
+            "import_mode": result["import_mode"],
+            "records_detected": result["records_detected"],
+            "file_size": result["file_size"],
+        },
+        request=request,
+    )
+    return result
+
+
+@router.post("/{facility_slug}/data-migrations/import")
+async def queue_data_migration_import(
+    facility_slug: str,
+    request: Request,
+    source_system: str = Form(...),
+    import_mode: str = Form(...),
+    file: UploadFile = File(...),
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    result = await analyze_migration_file(file, source_system, import_mode)
+    result["status"] = "queued"
+    result["next_step"] = "background_processing"
+
+    AuditLogService.log_action(
+        user_id=current_user.id,
+        action="QUEUE_DATA_MIGRATION",
+        resource_type="facility",
+        resource_id=facility.id,
+        facility_slug=facility.slug,
+        details={
+            "source_system": result["source_system"],
+            "import_mode": result["import_mode"],
+            "records_detected": result["records_detected"],
+            "file_size": result["file_size"],
+        },
+        request=request,
+    )
+    return result
 
 
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])

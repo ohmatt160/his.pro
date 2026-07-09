@@ -71,7 +71,11 @@ const departmentOptions = [
   "Revenue & Billing",
 ];
 
-const assignableRoles = staffRoles.filter((role) => role !== "admin");
+type AssignableStaffRole = Exclude<StaffRole, "admin">;
+
+const assignableRoles = staffRoles.filter(
+  (role): role is AssignableStaffRole => role !== "admin"
+);
 
 const emptyEditStaff = {
   fullName: "",
@@ -171,10 +175,62 @@ const StaffAccess = () => {
       return assignedBranch === currentBranch.id;
     });
   }, [currentBranch, isBranchAdmin, staffList]);
+  const branchOptions = isBranchAdmin && currentBranch ? [currentBranch] : facilityDepartments;
+  const hasMultiBranchAssignment = !isBranchAdmin && branchOptions.length > 0;
   const assignableStaffRoles = useMemo(
-    () => isBranchAdmin ? assignableRoles.filter((role) => role !== "branch_admin") : assignableRoles,
-    [isBranchAdmin]
+    () =>
+      assignableRoles.filter((role) => {
+        if (role === "branch_admin") {
+          return hasMultiBranchAssignment;
+        }
+
+        return true;
+      }),
+    [hasMultiBranchAssignment]
   );
+  const visibleDepartmentOptions = useMemo(
+    () =>
+      departmentOptions.filter((department) => {
+        if (department === "Administration") {
+          return hasMultiBranchAssignment;
+        }
+
+        return true;
+      }),
+    [hasMultiBranchAssignment]
+  );
+  const editingAssignableRole =
+    editingStaff?.role && editingStaff.role !== "admin" ? editingStaff.role : null;
+  const editRoleOptions = useMemo(
+    () =>
+      editingAssignableRole && !assignableStaffRoles.includes(editingAssignableRole)
+        ? [editingAssignableRole, ...assignableStaffRoles]
+        : assignableStaffRoles,
+    [assignableStaffRoles, editingAssignableRole]
+  );
+  const editDepartmentOptions = useMemo(
+    () =>
+      editStaff.department && !visibleDepartmentOptions.includes(editStaff.department)
+        ? [editStaff.department, ...visibleDepartmentOptions]
+        : visibleDepartmentOptions,
+    [editStaff.department, visibleDepartmentOptions]
+  );
+
+  useEffect(() => {
+    if (!assignableStaffRoles.includes(newStaff.role as AssignableStaffRole)) {
+      setNewStaff((previous) => ({
+        ...previous,
+        role: "doctor",
+        department: getDefaultDepartmentForRole("doctor"),
+        departmentId: "",
+      }));
+    } else if (!visibleDepartmentOptions.includes(newStaff.department)) {
+      setNewStaff((previous) => ({
+        ...previous,
+        department: getDefaultDepartmentForRole(previous.role),
+      }));
+    }
+  }, [assignableStaffRoles, newStaff.department, newStaff.role, visibleDepartmentOptions]);
 
   const rolesProvisioned = useMemo(
     () => new Set(branchScopedStaff.map((staff) => staff.role)).size,
@@ -202,7 +258,6 @@ const StaffAccess = () => {
     });
   }, [branchScopedStaff, searchQuery]);
 
-  const branchOptions = isBranchAdmin && currentBranch ? [currentBranch] : facilityDepartments;
   const branchById = useMemo(
     () => new Map(branchOptions.map((branch) => [branch.id, branch])),
     [branchOptions]
@@ -274,7 +329,7 @@ const StaffAccess = () => {
       setStaffError("Your branch could not be found. Please sign in through your branch portal again.");
       return;
     }
-    if (newStaff.role === "branch_admin" && !assignedBranchId) {
+    if (newStaff.role === "branch_admin" && (!hasMultiBranchAssignment || !assignedBranchId)) {
       setStaffError("Select the branch this branch admin will manage.");
       return;
     }
@@ -722,7 +777,7 @@ const StaffAccess = () => {
         </main>
 
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <UserPlus className="h-5 w-5 text-primary" /> Add Staff Member
@@ -795,7 +850,7 @@ const StaffAccess = () => {
                     <SelectValue placeholder="Select department" />
                   </SelectTrigger>
                   <SelectContent>
-                    {departmentOptions.map((department) => (
+                    {visibleDepartmentOptions.map((department) => (
                       <SelectItem key={department} value={department}>
                         {department}
                       </SelectItem>
@@ -896,7 +951,7 @@ const StaffAccess = () => {
       </Dialog>
 
       <Dialog open={Boolean(editingStaff)} onOpenChange={(open) => !open && setEditingStaff(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg">
               <Settings className="h-5 w-5 text-primary" /> Edit Staff Account
@@ -944,7 +999,7 @@ const StaffAccess = () => {
                     {editingStaff?.role === "admin" && (
                       <SelectItem value="admin">Facility Admin</SelectItem>
                     )}
-                    {assignableStaffRoles.map((role) => (
+                    {editRoleOptions.map((role) => (
                       <SelectItem key={role} value={role}>
                         {getStaffRoleLabel(role)}
                       </SelectItem>
@@ -991,7 +1046,7 @@ const StaffAccess = () => {
                   <SelectValue placeholder="Select department" />
                 </SelectTrigger>
                 <SelectContent>
-                  {departmentOptions.map((department) => (
+                  {editDepartmentOptions.map((department) => (
                     <SelectItem key={department} value={department}>
                       {department}
                     </SelectItem>

@@ -162,7 +162,7 @@ const Dashboard = () => {
     );
   }
 
-  const data = workspace ?? {};
+  const data: Partial<SavedFacilityWorkspace> = workspace ?? {};
   const resolvedFacilitySlug =
     facilitySlug || workspace?.facilitySlug || "";
   const staffAccessPath = resolvedFacilitySlug
@@ -535,11 +535,13 @@ const Dashboard = () => {
                       </Link>
                     </Button>
                   )}
-                  <Button asChild variant="outline" className="gap-2">
-                    <Link to={settingsPath} className="inline-flex items-center gap-2">
-                      <Settings className="h-4 w-4" /> System Settings
-                    </Link>
-                  </Button>
+                  {settingsPath && (
+                    <Button asChild variant="outline" className="gap-2">
+                      <Link to={settingsPath} className="inline-flex items-center gap-2">
+                        <Settings className="h-4 w-4" /> System Settings
+                      </Link>
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>

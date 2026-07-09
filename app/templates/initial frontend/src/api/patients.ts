@@ -10,7 +10,7 @@ export type PatientOption = {
 
 type PatientOptionEnvelope<T extends PatientOption> = {
   patients: T[];
-  total: number;
+  total?: number;
 };
 
 let cached:

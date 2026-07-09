@@ -41,6 +41,7 @@ import {
   getFacilityDashboardPath,
   getWorkspaceRoutePath,
   getFacilityWorkspace,
+  type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
 import { canAccessModule, getRouteModuleId, moduleCatalog } from "@/lib/modules";
 import { formatTaskTime, getTasks, taskTone, type WorkTask } from "@/lib/tasks";
@@ -124,6 +125,55 @@ const item = {
 };
 
 const roleConfigs: Record<Exclude<StaffRole, "admin">, RoleConfig> = {
+  branch_admin: {
+    subtitle:
+      "Coordinate branch operations, monitor service queues, and keep local teams moving.",
+    searchPlaceholder: "Search branch patients, staff...",
+    queueTitle: "Branch Queue",
+    queueCountLabel: "active cases",
+    primaryAction: {
+      label: "Review Queue",
+      icon: ClipboardList,
+    },
+    quickActions: [
+      {
+        label: "Patient Lookup",
+        icon: Users,
+        color: "bg-primary/10 text-primary",
+      },
+      {
+        label: "Reception Queue",
+        icon: ClipboardList,
+        color: "bg-amber-500/10 text-amber-600",
+      },
+      {
+        label: "Branch Messages",
+        icon: MessageSquare,
+        color: "bg-blue-500/10 text-blue-600",
+      },
+      {
+        label: "Branch Alerts",
+        icon: Bell,
+        color: "bg-red-500/10 text-red-600",
+      },
+    ],
+    queueItems: [],
+    stats: [],
+    recentActivity: [],
+    alerts: [],
+    accessModules: ["reception", "records", "billing", "reports"],
+    sidebarMain: [
+      { label: "Dashboard", icon: LayoutDashboard },
+      { label: "Patients", icon: Users },
+      { label: "Queue", icon: ClipboardList },
+      { label: "Billing", icon: Receipt },
+    ],
+    sidebarTools: [
+      { label: "Messages", icon: MessageSquare },
+      { label: "Alerts", icon: Bell },
+      { label: "Settings", icon: Settings },
+    ],
+  },
   doctor: {
     subtitle:
       "Review consultations, update clinical notes, and make treatment decisions from one connected clinical workspace.",

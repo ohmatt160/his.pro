@@ -4,7 +4,9 @@ import {
   ArrowLeft,
   Building2,
   ClipboardList,
+  Database,
   Edit3,
+  FileUp,
   KeyRound,
   Layers,
   LogOut,
@@ -89,6 +91,19 @@ type UserProfile = {
   facility_slug?: string | null;
 };
 
+type MigrationResult = {
+  status: string;
+  source_system: string;
+  import_mode: string;
+  file_name: string;
+  file_size: number;
+  detected_format: string;
+  records_detected: number;
+  accepted_entities: string[];
+  warnings: string[];
+  next_step?: string;
+};
+
 const emptyFacilityForm = {
   name: "",
   type: "hospital",
@@ -118,6 +133,23 @@ const emptyDepartmentForm = {
   services: "",
 };
 
+const migrationSourceOptions = [
+  { value: "generic_csv", label: "Generic CSV" },
+  { value: "generic_json", label: "Generic JSON" },
+  { value: "openmrs", label: "OpenMRS" },
+  { value: "bahmni", label: "Bahmni" },
+  { value: "dhis2", label: "DHIS2" },
+  { value: "other_his", label: "Other HIS" },
+];
+
+const migrationImportModes = [
+  { value: "patients", label: "Patients" },
+  { value: "staff", label: "Staff" },
+  { value: "appointments", label: "Appointments" },
+  { value: "inventory", label: "Inventory" },
+  { value: "full_archive", label: "Full Archive" },
+];
+
 type SettingsResource = "facility" | "profile";
 
 const Settings = () => {
@@ -142,6 +174,12 @@ const Settings = () => {
   const [profileStatus, setProfileStatus] = useState("");
   const [passwordStatus, setPasswordStatus] = useState("");
   const [sessionStatus, setSessionStatus] = useState("");
+  const [migrationSource, setMigrationSource] = useState("generic_csv");
+  const [migrationMode, setMigrationMode] = useState("patients");
+  const [migrationFile, setMigrationFile] = useState<File | null>(null);
+  const [migrationStatus, setMigrationStatus] = useState("");
+  const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
+  const [migrationBusy, setMigrationBusy] = useState(false);
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<SettingsResource>>({});
 
@@ -475,6 +513,82 @@ const Settings = () => {
     }
   };
 
+  const validateMigrationFile = () => {
+    if (!migrationFile) {
+      setError("Choose a migration file first.");
+      return false;
+    }
+
+    const extension = migrationFile.name.split(".").pop()?.toLowerCase();
+    if (!extension || !["csv", "json"].includes(extension)) {
+      setError("Use a CSV or JSON migration file.");
+      return false;
+    }
+
+    if (migrationFile.size > 25 * 1024 * 1024) {
+      setError("Migration files must be 25 MB or smaller.");
+      return false;
+    }
+
+    return true;
+  };
+
+  const buildMigrationFormData = () => {
+    const formData = new FormData();
+    if (migrationFile) {
+      formData.append("file", migrationFile);
+    }
+    formData.append("source_system", migrationSource);
+    formData.append("import_mode", migrationMode);
+    return formData;
+  };
+
+  const validateMigration = async () => {
+    if (!facility || !validateMigrationFile()) {
+      return;
+    }
+
+    setError("");
+    setMigrationStatus("Validating migration file...");
+    setMigrationBusy(true);
+    try {
+      const result = await apiClient.post<MigrationResult>(
+        `/facilities/${facility.slug}/data-migrations/validate`,
+        buildMigrationFormData()
+      );
+      setMigrationResult(result);
+      setMigrationStatus("Migration file validated.");
+    } catch (migrationError) {
+      setMigrationStatus("");
+      setError(migrationError instanceof Error ? migrationError.message : "Migration validation failed.");
+    } finally {
+      setMigrationBusy(false);
+    }
+  };
+
+  const importMigration = async () => {
+    if (!facility || !validateMigrationFile()) {
+      return;
+    }
+
+    setError("");
+    setMigrationStatus("Starting migration import...");
+    setMigrationBusy(true);
+    try {
+      const result = await apiClient.post<MigrationResult>(
+        `/facilities/${facility.slug}/data-migrations/import`,
+        buildMigrationFormData()
+      );
+      setMigrationResult(result);
+      setMigrationStatus("Migration import queued.");
+    } catch (migrationError) {
+      setMigrationStatus("");
+      setError(migrationError instanceof Error ? migrationError.message : "Migration import failed.");
+    } finally {
+      setMigrationBusy(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -741,6 +855,107 @@ const Settings = () => {
         </div>
 
         <div className="space-y-6">
+          {!isBranchAdmin && (
+            <Card className="h-fit border-border/60">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Database className="h-4 w-4 text-primary" /> Data Migration
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                  <div>
+                    <Label>Source System</Label>
+                    <Select value={migrationSource} onValueChange={setMigrationSource}>
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {migrationSourceOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Import Type</Label>
+                    <Select value={migrationMode} onValueChange={setMigrationMode}>
+                      <SelectTrigger className="mt-1.5">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {migrationImportModes.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Migration File</Label>
+                  <label className="mt-1.5 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-border/70 bg-muted/30 px-4 py-5 text-center transition-colors hover:border-primary/50 hover:bg-primary/5">
+                    <FileUp className="mb-2 h-5 w-5 text-primary" />
+                    <span className="text-sm font-medium text-foreground">
+                      {migrationFile ? migrationFile.name : "Choose CSV or JSON file"}
+                    </span>
+                    {migrationFile && (
+                      <span className="mt-1 text-xs text-muted-foreground">
+                        {(migrationFile.size / 1024 / 1024).toFixed(2)} MB
+                      </span>
+                    )}
+                    <input
+                      type="file"
+                      accept=".csv,.json,text/csv,application/json"
+                      className="sr-only"
+                      onChange={(event) => {
+                        setMigrationFile(event.target.files?.[0] || null);
+                        setMigrationResult(null);
+                        setMigrationStatus("");
+                        setError("");
+                      }}
+                    />
+                  </label>
+                </div>
+
+                {migrationResult && (
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="font-semibold text-foreground">{migrationResult.records_detected} records</span>
+                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                        {migrationResult.detected_format.toUpperCase()}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {migrationResult.accepted_entities.join(", ") || "No importable entities detected"}
+                    </p>
+                    {migrationResult.warnings.length > 0 && (
+                      <ul className="mt-2 space-y-1 text-xs text-amber-700">
+                        {migrationResult.warnings.map((warning) => (
+                          <li key={warning}>{warning}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {migrationStatus && <p className="text-sm text-emerald-700">{migrationStatus}</p>}
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  <Button type="button" variant="outline" className="gap-2" onClick={validateMigration} disabled={migrationBusy}>
+                    <ClipboardList className="h-4 w-4" /> Validate
+                  </Button>
+                  <Button type="button" className="gradient-cta gap-2 border-0 text-primary-foreground" onClick={importMigration} disabled={migrationBusy || !migrationResult}>
+                    <Database className="h-4 w-4" /> Queue Import
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="h-fit border-border/60">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">

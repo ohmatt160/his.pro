@@ -11,6 +11,8 @@ export type FacilityBranch = {
   slug?: string;
   location?: string;
   modules?: string[];
+  login_url_path?: string;
+  dashboard_url_path?: string;
 };
 
 export type FacilityDetails = {
