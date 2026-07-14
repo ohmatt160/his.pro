@@ -488,4 +488,4 @@ Add one line for each completed item or important decision. Link the pull reques
 | Date | Item | Evidence | Owner |
 | --- | --- | --- | --- |
 | 2026-07-13 | Roadmap created from HIS Pro and OhmattOS code/document audit | `docs/HIS_PRO_COMPLETE_APP_ROADMAP.md` | Engineering |
-
+| 2026-07-14 | HIS Pro email/SMS payloads aligned with the OhmattOS worker contract; idempotency and channel contract tests added. Production activation remains blocked by the outbox and signed status callback items. | `app/services/ohmattos_client.py`, `tests/test_ohmattos_integration.py` | HIS/Shared |

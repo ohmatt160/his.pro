@@ -33,4 +33,4 @@ class PatientNotification(BaseModel):
     patient = relationship("Patient", backref="notifications", lazy=True)
 
     STATUSES = ["QUEUED", "SENT", "SUPPRESSED", "FAILED", "READ"]
-    CHANNELS = ["PORTAL", "SMS"]
+    CHANNELS = ["PORTAL", "SMS", "EMAIL"]

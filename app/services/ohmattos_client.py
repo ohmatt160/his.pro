@@ -41,18 +41,49 @@ class OhmattOSClient:
         *,
         user_id: str,
         channel_type: str,
-        content: dict[str, Any],
+        recipient: str,
+        subject: str,
+        body: str,
         template_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> dict[str, Any]:
         if not self.app_id:
             return {"ok": False, "error": "OHMATTOS_APP_ID is not configured"}
-        return self._post("/api/v1/notifications/send", {
+
+        channel = channel_type.strip().lower()
+        if channel not in {"email", "sms"}:
+            return {"ok": False, "error": "Unsupported OhmattOS notification channel"}
+
+        recipient = recipient.strip()
+        body = body.strip()
+        if not recipient:
+            return {"ok": False, "error": "Notification recipient is required"}
+        if not body:
+            return {"ok": False, "error": "Notification body is required"}
+        if idempotency_key and len(idempotency_key) > 200:
+            return {"ok": False, "error": "Notification idempotency key is too long"}
+
+        if channel == "email":
+            content = {
+                "to": recipient,
+                "subject": subject.strip() or "HIS Pro notification",
+                "body": body,
+            }
+        else:
+            content = {
+                "to_number": recipient,
+                "body": body,
+            }
+
+        payload = {
             "app_id": self.app_id,
             "user_id": str(user_id),
-            "channel_type": channel_type.lower(),
+            "channel_type": channel,
             "template_id": template_id,
             "content": content,
-        })
+            "idempotency_key": idempotency_key,
+        }
+        return self._post("/api/v1/notifications/send", payload)
 
     def track_event(self, event_name: str, properties: dict[str, Any] | None = None, user_id: str | None = None) -> dict[str, Any]:
         if not self.app_id:
