@@ -36,6 +36,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getBranchStaffAccessPath, getStaffAccessPath } from "@/lib/facility-staff";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 
@@ -136,6 +137,11 @@ const Patients = () => {
       .then(setDepartments)
       .catch(() => setDepartments([]));
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["patient.*", "queue.*", "appointment.*", "staff.*"],
+    onRefresh: () => loadPatients(search).catch(() => undefined),
+  });
 
   const filteredSummary = useMemo(() => {
     const female = patients.filter((patient) => patient.gender === "FEMALE").length;

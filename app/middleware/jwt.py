@@ -9,7 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import jwt
 import os
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from jwt.exceptions import ExpiredSignatureError, InvalidTokenError
 
 # JWT Configuration
@@ -25,6 +25,10 @@ JWT_REFRESH_TOKEN_EXPIRES = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES", str(7 * 2
 security = HTTPBearer()
 
 
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
 def create_access_token(
     identity: int | str,
     expires_delta: timedelta = None,
@@ -36,13 +40,13 @@ def create_access_token(
     Create a JWT access token
     """
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = utc_now() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(seconds=JWT_ACCESS_TOKEN_EXPIRES)
+        expire = utc_now() + timedelta(seconds=JWT_ACCESS_TOKEN_EXPIRES)
     
     to_encode = {
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utc_now(),
         "sub": str(identity),
         "jti": jti or str(uuid.uuid4()),
         "type": "access"
@@ -64,10 +68,10 @@ def create_refresh_token(
     """
     Create a JWT refresh token
     """
-    expire = datetime.utcnow() + timedelta(seconds=JWT_REFRESH_TOKEN_EXPIRES)
+    expire = utc_now() + timedelta(seconds=JWT_REFRESH_TOKEN_EXPIRES)
     to_encode = {
         "exp": expire,
-        "iat": datetime.utcnow(),
+        "iat": utc_now(),
         "sub": str(identity),
         "jti": jti or str(uuid.uuid4()),
         "type": "refresh"

@@ -1,7 +1,11 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from sqlalchemy import Column, String, DateTime, Text
 from app.extensions import Base, db_session
+
+
+def utc_now():
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class BaseModel(Base):
@@ -9,8 +13,8 @@ class BaseModel(Base):
     __abstract__ = True
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now, index=True)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     def save(self):
         """Save instance to database with error handling"""

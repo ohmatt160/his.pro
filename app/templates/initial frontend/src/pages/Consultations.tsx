@@ -35,6 +35,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Appointment = {
   id: string;
@@ -124,6 +125,11 @@ const Consultations = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["consultation.*", "appointment.*", "patient.*", "lab_order.*", "prescription.*", "radiology.*"],
+    onRefresh: () => loadData().catch(() => undefined),
+  });
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),

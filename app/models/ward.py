@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text, Index
 from sqlalchemy.orm import relationship
 
 from app.models.base_model import BaseModel
@@ -10,6 +10,10 @@ class WardBed(BaseModel):
     """Physical ward bed inventory for a facility."""
 
     __tablename__ = "ward_beds"
+    __table_args__ = (
+        Index("idx_ward_beds_facility_status", "facility_slug", "status"),
+        Index("idx_ward_beds_facility_ward_bed", "facility_slug", "ward_name", "bed_number"),
+    )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)
@@ -27,6 +31,11 @@ class WardAdmission(BaseModel):
     """Inpatient admission and nursing handover state."""
 
     __tablename__ = "ward_admissions"
+    __table_args__ = (
+        Index("idx_ward_admissions_facility_status", "facility_slug", "status"),
+        Index("idx_ward_admissions_facility_patient_status", "facility_slug", "patient_id", "status"),
+        Index("idx_ward_admissions_facility_admitted", "facility_slug", "admitted_at"),
+    )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)

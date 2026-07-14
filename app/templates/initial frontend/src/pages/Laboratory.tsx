@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
@@ -219,6 +220,11 @@ const Laboratory = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["lab_order.*", "lab_result.*", "patient.*"],
+    onRefresh: () => loadLaboratory().catch(() => undefined),
+  });
 
   const createTest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

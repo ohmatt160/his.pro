@@ -100,8 +100,15 @@ type MigrationResult = {
   detected_format: string;
   records_detected: number;
   accepted_entities: string[];
+  entity_summaries?: Record<string, {
+    records_detected: number;
+    valid: number;
+    duplicates: number;
+    errors: unknown[];
+  }>;
   warnings: string[];
   next_step?: string;
+  job_id?: string;
 };
 
 const emptyFacilityForm = {
@@ -933,6 +940,21 @@ const Settings = () => {
                     <p className="mt-2 text-xs text-muted-foreground">
                       {migrationResult.accepted_entities.join(", ") || "No importable entities detected"}
                     </p>
+                    {migrationResult.entity_summaries && (
+                      <div className="mt-3 grid gap-2">
+                        {Object.entries(migrationResult.entity_summaries).map(([entity, summary]) => (
+                          <div key={entity} className="grid grid-cols-4 gap-2 rounded-md border border-border/60 bg-background/70 px-2 py-1.5 text-xs">
+                            <span className="font-medium capitalize text-foreground">{entity.replaceAll("_", " ")}</span>
+                            <span>{summary.valid} valid</span>
+                            <span>{summary.duplicates} duplicate</span>
+                            <span>{summary.errors.length} error</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {migrationResult.job_id && (
+                      <p className="mt-2 text-xs text-muted-foreground">Job {migrationResult.job_id}</p>
+                    )}
                     {migrationResult.warnings.length > 0 && (
                       <ul className="mt-2 space-y-1 text-xs text-amber-700">
                         {migrationResult.warnings.map((warning) => (

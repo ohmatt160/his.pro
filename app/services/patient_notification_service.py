@@ -3,6 +3,7 @@ from datetime import datetime
 from app.extensions import db_session
 from app.models.patient import Patient
 from app.models.patient_notification import PatientNotification
+from app.services.ohmattos_client import ohmattos_client
 from app.utils.validators import Validators
 
 
@@ -46,8 +47,48 @@ class PatientNotificationService:
             )
             db_session.add(notification)
             created.append(notification)
+            PatientNotificationService._send_via_ohmattos(notification, patient, title, message)
         db_session.flush()
         return created
+
+    @staticmethod
+    def _send_via_ohmattos(
+        notification: PatientNotification,
+        patient: Patient,
+        title: str,
+        message: str,
+    ) -> None:
+        if not ohmattos_client.feature_enabled("notifications") or notification.status != "QUEUED":
+            return
+        channel = (notification.channel or "").upper()
+        if channel not in {"SMS", "EMAIL"}:
+            return
+        if channel == "SMS" and not patient.phone:
+            return
+        if channel == "EMAIL" and not patient.email:
+            return
+
+        result = ohmattos_client.send_notification(
+            user_id=str(patient.id),
+            channel_type=channel.lower(),
+            content={
+                "title": Validators.sanitize_string(title),
+                "message": Validators.sanitize_string(message),
+                "facility_slug": notification.facility_slug,
+                "patient_id": str(patient.id),
+                "recipient_phone": patient.phone if channel == "SMS" else None,
+                "recipient_email": patient.email if channel == "EMAIL" else None,
+                "source_type": notification.source_type,
+                "source_id": notification.source_id,
+            },
+        )
+        metadata = dict(notification.metadata_json or {})
+        metadata["ohmattos_delivery"] = {
+            "queued": bool(result.get("ok")),
+            "message_id": (result.get("data") or {}).get("message_id") if result.get("ok") else None,
+            "error": result.get("error") if not result.get("ok") else None,
+        }
+        notification.metadata_json = metadata
 
     @staticmethod
     def mark_sent(notification: PatientNotification, provider_message_id: str | None = None) -> PatientNotification:
@@ -68,4 +109,3 @@ class PatientNotificationService:
         db_session.add(notification)
         db_session.flush()
         return notification
-

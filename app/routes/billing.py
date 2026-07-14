@@ -14,6 +14,7 @@ from app.schemas.billing import InvoiceResponse, PaymentCreate, PaymentResponse,
 from app.services.billing_service import BillingService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.receipt_service import ReceiptService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import (
     effective_branch_id,
@@ -83,6 +84,18 @@ def _get_payment_for_user(payment_id: str, current_user: User) -> Payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     require_tenant_row(payment.invoice, current_user, "Payment not found")
     return payment
+
+
+def _publish_billing_event(event_type: str, invoice: Invoice, resource_id: str | None = None) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=invoice.facility_slug,
+        branch_id=invoice.branch_id or invoice.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST", "NURSE"],
+        modules=["billing"],
+        resource_id=resource_id or invoice.id,
+        payload={"patient_id": invoice.patient_id, "invoice_id": invoice.id, "status": invoice.status},
+    )
 
 
 @router.get("/invoices", response_model=List[InvoiceResponse])
@@ -163,6 +176,7 @@ async def create_invoice(
         source_id=invoice.id,
         metadata={"invoice_number": invoice.invoice_number, "amount": float(invoice.total or 0)},
     )
+    _publish_billing_event("billing.invoice_created", invoice)
 
     return _invoice_response(invoice)
 
@@ -219,6 +233,7 @@ async def add_payment(
                 "payment_method": payment.payment_method,
             },
         )
+    _publish_billing_event("billing.payment_created", invoice, payment.id)
 
     return _payment_response(payment)
 
@@ -244,6 +259,7 @@ async def upload_payment_receipt(
 ):
     payment = _get_payment_for_user(payment_id, current_user)
     updated = await ReceiptService.attach_receipt(payment, file)
+    _publish_billing_event("billing.receipt_uploaded", updated.invoice, updated.id)
     return _payment_response(updated)
 
 
@@ -273,5 +289,6 @@ async def update_invoice(
     require_tenant_row(invoice, current_user, "Invoice not found")
 
     updated_invoice = BillingService.update_invoice(invoice, data.model_dump(exclude_unset=True))
+    _publish_billing_event("billing.invoice_updated", updated_invoice)
 
     return _invoice_response(updated_invoice)

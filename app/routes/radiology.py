@@ -16,6 +16,7 @@ from app.schemas.radiology import RadiologyResponse, RadiologyCreate, RadiologyU
 from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import ensure_patient_branch_access, require_facility_slug, require_tenant_row, tenant_query
 from app.utils.validators import Validators
@@ -54,6 +55,18 @@ def _radiology_response(order: Radiology) -> RadiologyResponse:
         patient_name=_full_name(order.patient),
         requested_by_name=_full_name(order.requester),
         radiologist_name=_full_name(order.radiologist)
+    )
+
+
+def _publish_radiology_event(event_type: str, order: Radiology) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=order.facility_slug,
+        branch_id=order.branch_id or order.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RADIOLOGIST"],
+        modules=["radiology", "consultations", "records"],
+        resource_id=order.id,
+        payload={"patient_id": order.patient_id, "status": order.status},
     )
 
 
@@ -150,6 +163,7 @@ async def create_radiology_order(
     )
     db_session.commit()
     db_session.refresh(radiology)
+    _publish_radiology_event("radiology.order_created", radiology)
 
     radiology.patient = patient
     radiology.requester = current_user
@@ -210,6 +224,7 @@ async def update_radiology_order(
 
     order.save()
     db_session.commit()
+    _publish_radiology_event("radiology.order_updated", order)
 
     if order.status == "completed" and previous_status != "completed":
         OrderWorkflowService.record(
@@ -321,5 +336,6 @@ async def add_radiology_report(
         metadata={"requested_by": order.requested_by},
     )
     db_session.commit()
+    _publish_radiology_event("radiology.report_updated", order)
 
     return _radiology_response(order)

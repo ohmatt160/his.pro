@@ -20,6 +20,7 @@ from app.schemas.patients import (
 )
 from app.schemas.users import MessageResponse
 from app.services.patient_service import PatientService
+from app.services.realtime_service import publish_tenant_event
 from app.services.patient_timeline_service import PatientTimelineService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
@@ -189,6 +190,14 @@ async def create_patient(
         )
 
         logger.info(f"[Patient] Patient created successfully: {patient.id}")
+        publish_tenant_event(
+            event_type="patient.created",
+            facility_slug=current_user.facility_slug,
+            branch_id=patient.branch_id or patient.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+            modules=["reception", "records"],
+            resource_id=patient.id,
+        )
 
         # Return patient data
         return build_patient_response(patient)
@@ -301,6 +310,14 @@ async def update_patient(
 
         # Update patient
         updated_patient = PatientService.update_patient(patient, data)
+        publish_tenant_event(
+            event_type="patient.updated",
+            facility_slug=facility_slug,
+            branch_id=updated_patient.branch_id or updated_patient.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+            modules=["reception", "records"],
+            resource_id=updated_patient.id,
+        )
 
         return build_patient_response(updated_patient)
 
@@ -337,6 +354,14 @@ async def delete_patient(
             raise HTTPException(status_code=403, detail="You are not authorized to access this patient")
 
         PatientService.delete_patient(patient)
+        publish_tenant_event(
+            event_type="patient.deleted",
+            facility_slug=facility_slug,
+            branch_id=patient.branch_id or patient.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+            modules=["reception", "records"],
+            resource_id=patient.id,
+        )
 
         return MessageResponse(message="Patient deleted successfully")
 

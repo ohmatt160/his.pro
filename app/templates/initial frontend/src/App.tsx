@@ -8,6 +8,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import AppShell from "@/components/AppShell";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import ModuleRoute from "@/components/ModuleRoute";
+import RealtimeBridge from "@/components/RealtimeBridge";
 import { routeRoles } from "@/lib/role-access";
 
 const Alerts = lazy(() => import("./pages/Alerts.tsx"));
@@ -46,8 +47,8 @@ const WorkspaceReady = lazy(() => import("./pages/WorkspaceReady.tsx"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 60_000,
-      gcTime: 10 * 60_000,
+      staleTime: 2 * 60_000,
+      gcTime: 20 * 60_000,
       retry: 1,
       refetchOnWindowFocus: false,
       refetchOnReconnect: true,
@@ -116,6 +117,7 @@ const App = () => (
         future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
       >
         <AuthProvider>
+          <RealtimeBridge />
           <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/" element={<Index />} />

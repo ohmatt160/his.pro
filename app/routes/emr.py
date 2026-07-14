@@ -13,6 +13,7 @@ from app.extensions import get_db
 from app.schemas.emr import MedicalRecordResponse, MedicalRecordCreate, MedicalRecordUpdate
 from app.schemas.users import MessageResponse
 from app.services.medical_record_service import MedicalRecordService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.models.user import User
@@ -57,6 +58,18 @@ def _record_accessible(record, current_user: User, db: Session) -> bool:
         return True
     patient = db.query(Patient).filter_by(id=record.patient_id, facility_slug=current_user.facility_slug).first()
     return _patient_accessible(patient, current_user)
+
+
+def _publish_record_event(event_type: str, record, patient: Patient | None = None) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=record.facility_slug,
+        branch_id=(patient.branch_id or patient.department_id) if patient else None,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"],
+        modules=["records", "consultations"],
+        resource_id=record.id,
+        payload={"patient_id": record.patient_id},
+    )
 
 
 
@@ -107,6 +120,7 @@ async def create_record(
         current_user.id,
         facility_slug,
     )
+    _publish_record_event("record.created", record, patient)
 
     return _record_response(record)
 
@@ -140,6 +154,8 @@ async def update_record(
         raise HTTPException(status_code=404, detail="Medical record not found")
 
     updated_record = MedicalRecordService.update_medical_record(record, data.model_dump(exclude_unset=True))
+    patient = db.query(Patient).filter_by(id=updated_record.patient_id, facility_slug=facility_slug).first()
+    _publish_record_event("record.updated", updated_record, patient)
 
     return _record_response(updated_record)
 
@@ -156,6 +172,8 @@ async def delete_record(
     if not _record_accessible(record, current_user, db):
         raise HTTPException(status_code=404, detail="Medical record not found")
 
+    patient = db.query(Patient).filter_by(id=record.patient_id, facility_slug=facility_slug).first()
+    _publish_record_event("record.deleted", record, patient)
     MedicalRecordService.delete_medical_record(record)
 
     return MessageResponse(message="Medical record deleted successfully")

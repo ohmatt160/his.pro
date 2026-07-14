@@ -54,7 +54,7 @@ export const useWorkspaceQuery = (facilitySlug: string) =>
     queryKey: workspaceQueryKeys.workspace(facilitySlug),
     queryFn: () => getFacilityWorkspace(facilitySlug),
     enabled: Boolean(facilitySlug),
-    staleTime: 5 * 60_000,
+    staleTime: 15 * 60_000,
   });
 
 export const useBranchesQuery = (facilitySlug: string, enabled = true) =>
@@ -62,7 +62,7 @@ export const useBranchesQuery = (facilitySlug: string, enabled = true) =>
     queryKey: workspaceQueryKeys.branches(facilitySlug),
     queryFn: () => apiClient.get<FacilityBranch[]>(`/facilities/${facilitySlug}/branches`),
     enabled: Boolean(facilitySlug) && enabled,
-    staleTime: 5 * 60_000,
+    staleTime: 15 * 60_000,
   });
 
 export const useFacilityQuery = (facilitySlug: string, enabled = true) =>
@@ -70,7 +70,7 @@ export const useFacilityQuery = (facilitySlug: string, enabled = true) =>
     queryKey: workspaceQueryKeys.facility(facilitySlug),
     queryFn: () => apiClient.get<FacilityDetails>(`/facilities/${facilitySlug}`),
     enabled: Boolean(facilitySlug) && enabled,
-    staleTime: 5 * 60_000,
+    staleTime: 15 * 60_000,
   });
 
 export const useDashboardStatsQuery = (
@@ -87,7 +87,7 @@ export const useDashboardStatsQuery = (
       );
     },
     enabled: Boolean(facilitySlug) && enabled,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
   });
 
 export const useUnreadMessagesQuery = (userId: string, enabled = true) =>
@@ -95,7 +95,5 @@ export const useUnreadMessagesQuery = (userId: string, enabled = true) =>
     queryKey: workspaceQueryKeys.unreadMessages(userId),
     queryFn: () => apiClient.get<{ unread_count: number }>("/chat/unread-count"),
     enabled: Boolean(userId) && enabled,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchIntervalInBackground: false,
+    staleTime: 5 * 60_000,
   });

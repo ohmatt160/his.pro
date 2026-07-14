@@ -40,6 +40,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Patient = {
   id: string;
@@ -197,6 +198,11 @@ const Billing = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["billing.*", "patient.*"],
+    onRefresh: () => loadBilling().catch(() => undefined),
+  });
 
   const createInvoice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

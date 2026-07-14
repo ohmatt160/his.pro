@@ -46,16 +46,22 @@ from app.routes.tasks import router as tasks_router
 from app.routes.staff_chat import router as staff_chat_router
 from app.routes.referrals import router as referrals_router
 from app.routes.public_profile import router as public_profile_router
+from app.routes.realtime import router as realtime_router
 
 # Import middleware and utilities
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.cors_force import ForceCORSHeadersMiddleware
 from app.middleware.jwt import JWTMiddleware
 from app.middleware.module_access import ModuleAccessMiddleware
-from app.middleware.security import InputValidationMiddleware, SecurityHeadersMiddleware
+from app.middleware.security import CSRFMiddleware, InputValidationMiddleware, SecurityHeadersMiddleware
+from app.middleware.audit import AuditMiddleware
+from app.middleware.metrics import MetricsMiddleware
 from app.utils.error_handlers import register_error_handlers
 from app.utils.schema import ensure_database_schema_current
 from app.services.email_service import EmailService
+from app.services.realtime_service import realtime_broker
+from app.services.metrics_service import metrics_service
+from app.services.ohmattos_client import ohmattos_client
 from app.services.tenant_service import backfill_facility_ids, register_tenant_hooks
 from app.extensions import db_session
 from app.models import UserSession
@@ -105,8 +111,12 @@ async def lifespan(app: FastAPI):
             redis_client.ping()
             print("[OK] Redis connection established")
         except Exception as e:
+            if os.getenv("REALTIME_REDIS_REQUIRED", "").lower() == "true" and app_env == "production":
+                raise RuntimeError("Redis is required for production realtime fanout") from e
             print(f"[WARNING] Redis connection failed: {e}")
             redis_client = None
+    elif os.getenv("REALTIME_REDIS_REQUIRED", "").lower() == "true" and app_env == "production":
+        raise RuntimeError("REDIS_URL must be set when REALTIME_REDIS_REQUIRED=true")
 
     # Email
     try:
@@ -118,6 +128,10 @@ async def lifespan(app: FastAPI):
     yield
 
     print("[INFO] Shutting down...")
+    try:
+        await realtime_broker.close()
+    except Exception:
+        logger.warning("Realtime broker shutdown failed", exc_info=True)
     if redis_client:
         redis_client.close()
 
@@ -182,8 +196,22 @@ def create_app() -> FastAPI:
             response = await call_next(request)
             db_session.commit()
             return response
-        except Exception:
+        except Exception as exc:
             db_session.rollback()
+            if ohmattos_client.feature_enabled("logs"):
+                ohmattos_client.report_error(
+                    message=str(exc),
+                    severity="error",
+                    context={
+                        "path": request.url.path,
+                        "method": request.method,
+                        "facility_slug": getattr(request.state, "facility_slug", None),
+                        "branch_id": getattr(request.state, "branch_id", None),
+                    },
+                    user_id=getattr(request.state, "user_id", None),
+                    ip_address=request.client.host if request.client else None,
+                    user_agent=request.headers.get("user-agent"),
+                )
             raise
         finally:
             db_session.remove()
@@ -243,13 +271,16 @@ def create_app() -> FastAPI:
         allow_origin_regex=allowed_origin_regex,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "Accept"],
+        allow_headers=["Content-Type", "Authorization", "Accept", "X-CSRF-Token", "X-HISPro-Authorization"],
         expose_headers=["Authorization"],
     )
 
+    app.add_middleware(MetricsMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(CSRFMiddleware)
+    app.add_middleware(AuditMiddleware)
     app.add_middleware(ModuleAccessMiddleware)
     app.add_middleware(JWTMiddleware)
     register_error_handlers(app)
@@ -274,6 +305,17 @@ def create_app() -> FastAPI:
         else:
             health_status["redis"] = "not configured"
         return health_status
+
+    @app.get("/metrics", include_in_schema=False)
+    async def metrics(request: Request):
+        public = os.getenv("METRICS_PUBLIC", "").lower() == "true"
+        token = os.getenv("METRICS_TOKEN", "")
+        provided = request.headers.get("x-metrics-token") or request.query_params.get("token")
+        if not public and (not token or provided != token):
+            raise HTTPException(status_code=404, detail="Not found")
+        snapshot = metrics_service.snapshot()
+        snapshot["realtime"] = realtime_broker.stats()
+        return snapshot
 
     # API routers
     app.include_router(auth_router, prefix="/api/v1")
@@ -303,6 +345,7 @@ def create_app() -> FastAPI:
     app.include_router(staff_chat_router, prefix="/api/v1")
     app.include_router(referrals_router, prefix="/api/v1")
     app.include_router(public_profile_router, prefix="/api/v1")
+    app.include_router(realtime_router, prefix="/api/v1")
 
     # Static mounts (assets first, then root SPA fallback)
     if os.path.isdir(ASSETS_DIR):

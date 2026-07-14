@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 import { getFacilityStaff, type FacilityStaffAccount } from "@/lib/facility-staff";
 import {
@@ -131,6 +132,11 @@ const Alerts = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["alert.*", "staff.*"],
+    onRefresh: () => loadAlerts().catch(() => undefined),
+  });
 
   const createAlert = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

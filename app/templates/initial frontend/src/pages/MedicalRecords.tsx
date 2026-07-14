@@ -40,6 +40,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Patient = {
   id: string;
@@ -163,6 +164,11 @@ const MedicalRecords = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["record.*", "consultation.*", "lab_result.*", "prescription.*", "radiology.*", "patient.*"],
+    onRefresh: () => loadRecords().catch(() => undefined),
+  });
 
   const updateForm = (key: keyof typeof emptyRecordForm, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));

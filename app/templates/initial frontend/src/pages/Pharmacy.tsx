@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import {
   addSettledError,
@@ -228,6 +229,11 @@ const Pharmacy = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["prescription.*", "patient.*"],
+    onRefresh: () => loadPharmacy().catch(() => undefined),
+  });
 
   const createMedication = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

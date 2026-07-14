@@ -26,6 +26,18 @@ const getApiBaseUrl = () => {
   return "/api/v1";
 };
 
+const getCookie = (name: string) => {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${name}=`))
+    ?.substring(name.length + 1) ?? null;
+};
+
 type ApiRequestOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
   authToken?: string | null;
@@ -92,6 +104,19 @@ const toHeaders = (headers?: HeadersInit, authToken?: string | null) => {
   }
 
   return normalized;
+};
+
+const withCsrfHeader = (headers: Headers, method?: string) => {
+  const normalizedMethod = (method || "GET").toUpperCase();
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(normalizedMethod)) {
+    return headers;
+  }
+
+  const csrfToken = getCookie("hispro_csrf_token");
+  if (csrfToken && !headers.has("X-CSRF-Token")) {
+    headers.set("X-CSRF-Token", decodeURIComponent(csrfToken));
+  }
+  return headers;
 };
 
 const buildUrl = (path: string) => {
@@ -239,8 +264,10 @@ const isAuthRefreshable = (path: string, options: ApiRequestOptions) =>
 
 const refreshAccessToken = async () => {
   if (!refreshRequest) {
+    const headers = withCsrfHeader(new Headers(), "POST");
     refreshRequest = fetch(buildUrl("/auth/refresh"), {
       method: "POST",
+      headers,
       credentials: "include",
     })
       .then(async (response) => {
@@ -284,6 +311,7 @@ const isJsonBody = (body: unknown) =>
 
 const prepareRequest = (options: ApiRequestOptions) => {
   const headers = toHeaders(options.headers, options.authToken);
+  withCsrfHeader(headers, options.method);
   const body = options.body;
 
   if (isJsonBody(body)) {

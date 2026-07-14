@@ -3,14 +3,9 @@ File Upload Routes - FastAPI Version
 Converted from Flask-RESTx file_upload_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
-from typing import List
-import os
-import uuid
-from datetime import datetime
 import logging
 
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
 
 from app.schemas.users import MessageResponse
 from app.utils.dependencies import role_required
@@ -33,10 +28,12 @@ def _tenant_folder(current_user: User, folder: str = "uploads") -> str:
 async def upload_file(
     file: UploadFile = File(...),
     folder: str = Form('uploads'),
+    file_type: str = Form('images'),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST'))
 ):
     """Upload a file"""
-    success, result = FileUploadService.upload_file(file, folder=_tenant_folder(current_user, folder))
+    allowed = FileUploadService.DEFAULT_ALLOWED_EXTENSIONS.get(file_type, FileUploadService.DEFAULT_ALLOWED_EXTENSIONS["images"])
+    success, result = FileUploadService.upload_file(file, folder=_tenant_folder(current_user, folder), allowed_extensions=allowed)
 
     if not success:
         raise HTTPException(status_code=400, detail=result)

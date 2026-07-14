@@ -9,6 +9,7 @@ from app.models.user import User
 from app.schemas.suppliers import SupplierCreate, SupplierResponse, SupplierUpdate
 from app.schemas.users import MessageResponse
 from app.services.audit_log_service import AuditLogService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
 
@@ -33,6 +34,16 @@ def _supplier_response(supplier: Supplier) -> SupplierResponse:
         is_active=supplier.is_active,
         created_at=supplier.created_at.isoformat() if supplier.created_at else "",
         updated_at=supplier.updated_at.isoformat() if supplier.updated_at else None,
+    )
+
+
+def _publish_supplier_event(event_type: str, supplier: Supplier) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=supplier.facility_slug,
+        roles=["ADMIN", "PHARMACIST", "STORE_KEEPER"],
+        modules=["inventory"],
+        resource_id=supplier.id,
     )
 
 
@@ -93,6 +104,7 @@ async def create_supplier(
         details={"name": supplier.name},
         request=request,
     )
+    _publish_supplier_event("supplier.created", supplier)
 
     return _supplier_response(supplier)
 
@@ -164,6 +176,7 @@ async def update_supplier(
         details={"fields": sorted(payload.keys())},
         request=request,
     )
+    _publish_supplier_event("supplier.updated", supplier)
 
     return _supplier_response(supplier)
 
@@ -195,5 +208,6 @@ async def deactivate_supplier(
         details={"name": supplier.name},
         request=request,
     )
+    _publish_supplier_event("supplier.deleted", supplier)
 
     return MessageResponse(message="Supplier deactivated successfully")

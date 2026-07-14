@@ -8,7 +8,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from typing import List
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.extensions import get_db, engine
 from app.models.user import User
@@ -17,6 +17,10 @@ from app.models.facility import Facility
 from app import jwt_blocklist
 
 logger = logging.getLogger(__name__)
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 # Security scheme
 security = HTTPBearer(auto_error=False)
@@ -83,12 +87,13 @@ async def get_current_user(
                 db.flush()
 
         # Attach user to request state for middleware
-        user.last_active = datetime.utcnow()
+        user.last_active = utc_now()
         db.add(user)
         db.flush()
         request.state.user_id = user.id
         request.state.user = token_data
         request.state.tenant_id = str(user.facility_id) if user.facility_id else token_data.get("tid")
+        request.state.facility_slug = user.facility_slug
         request.state.branch_id = str(user.branch_id or user.department_id or "") or None
 
         return user

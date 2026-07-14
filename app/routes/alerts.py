@@ -19,6 +19,7 @@ from app.utils.validators import Validators
 from app.models.user import User
 from app.models.alert import Alert
 from app.services.audit_log_service import AuditLogService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,14 @@ async def create_alert(
         },
         request=request,
     )
+    publish_tenant_event(
+        event_type="alert.created",
+        facility_slug=facility_slug,
+        user_id=alert.recipient_id,
+        roles=[] if alert.recipient_id else list(ALERT_VIEW_ROLES),
+        modules=["alerts"],
+        resource_id=alert.id,
+    )
 
     return _alert_response(alert)
 
@@ -204,6 +213,14 @@ async def create_role_alert(
         details={"recipient_role": data.recipient_role, "count": len(alerts), "title": data.title},
         request=request,
     )
+    for alert in alerts:
+        publish_tenant_event(
+            event_type="alert.created",
+            facility_slug=facility_slug,
+            user_id=alert.recipient_id,
+            modules=["alerts"],
+            resource_id=alert.id,
+        )
 
     return [_alert_response(alert) for alert in alerts]
 
@@ -253,6 +270,14 @@ async def update_alert(
 
     alert.save()
     db_session.commit()
+    publish_tenant_event(
+        event_type="alert.updated",
+        facility_slug=facility_slug,
+        user_id=alert.recipient_id,
+        roles=[] if alert.recipient_id else list(ALERT_VIEW_ROLES),
+        modules=["alerts"],
+        resource_id=alert.id,
+    )
 
     return _alert_response(alert)
 
@@ -272,6 +297,14 @@ async def delete_alert(
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
 
+    publish_tenant_event(
+        event_type="alert.deleted",
+        facility_slug=facility_slug,
+        user_id=alert.recipient_id,
+        roles=[] if alert.recipient_id else list(ALERT_VIEW_ROLES),
+        modules=["alerts"],
+        resource_id=alert.id,
+    )
     db_session.delete(alert)
     db_session.commit()
 
@@ -296,6 +329,13 @@ async def mark_as_read(
     alert.mark_as_read()
     alert.save()
     db_session.commit()
+    publish_tenant_event(
+        event_type="alert.read",
+        facility_slug=facility_slug,
+        user_id=alert.recipient_id or current_user.id,
+        modules=["alerts"],
+        resource_id=alert.id,
+    )
 
     return _alert_response(alert)
 
@@ -315,6 +355,12 @@ async def mark_all_as_read(
         alert.mark_as_read()
         db_session.add(alert)
     db_session.commit()
+    publish_tenant_event(
+        event_type="alert.read_all",
+        facility_slug=facility_slug,
+        user_id=current_user.id,
+        modules=["alerts"],
+    )
     return MessageResponse(message=f"Marked {len(alerts)} alert(s) as read")
 
 
@@ -336,5 +382,12 @@ async def mark_as_unread(
     alert.mark_as_unread()
     alert.save()
     db_session.commit()
+    publish_tenant_event(
+        event_type="alert.unread",
+        facility_slug=facility_slug,
+        user_id=alert.recipient_id or current_user.id,
+        modules=["alerts"],
+        resource_id=alert.id,
+    )
 
     return _alert_response(alert)

@@ -37,6 +37,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type InventoryItem = {
   id: string;
@@ -152,6 +153,11 @@ const Inventory = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["inventory.*", "supplier.*"],
+    onRefresh: () => loadInventory().catch(() => undefined),
+  });
 
   const createItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

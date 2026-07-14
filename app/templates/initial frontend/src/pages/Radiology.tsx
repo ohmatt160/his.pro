@@ -39,6 +39,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Patient = {
   id: string;
@@ -154,6 +155,11 @@ const Radiology = () => {
       setLoading(false);
     });
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["radiology.*", "patient.*"],
+    onRefresh: () => loadRadiology().catch(() => undefined),
+  });
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

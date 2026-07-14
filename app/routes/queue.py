@@ -19,10 +19,23 @@ from app.models.user import User
 from app.models.patient_queue import PatientQueue
 from app.models.patient import Patient
 from app.models.appointment import Appointment
+from app.services.realtime_service import publish_tenant_event
 from app.utils.validators import Validators
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/queue", tags=["queue"])
+
+
+def _publish_queue_event(event_type: str, entry: PatientQueue) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=entry.facility_slug,
+        branch_id=entry.branch_id or getattr(entry, "department_id", None),
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+        modules=["reception", "consultations", "nursing"],
+        resource_id=entry.id,
+        payload={"status": entry.status, "patient_id": entry.patient_id},
+    )
 
 
 
@@ -164,6 +177,7 @@ async def add_to_queue(
     db_session.add(queue_entry)
     db_session.commit()
     db_session.refresh(queue_entry)
+    _publish_queue_event("queue.created", queue_entry)
 
     return QueueResponse(
         id=str(queue_entry.id),
@@ -258,6 +272,7 @@ async def update_queue_entry(
 
     entry.save()
     db_session.commit()
+    _publish_queue_event("queue.updated", entry)
 
     return QueueResponse(
         id=str(entry.id),
@@ -301,6 +316,7 @@ async def remove_from_queue(
     if entry.status == 'in_progress':
         raise HTTPException(status_code=400, detail="Cannot remove patient whose visit is in progress")
 
+    _publish_queue_event("queue.deleted", entry)
     db_session.delete(entry)
     db_session.commit()
 
@@ -332,6 +348,7 @@ async def check_in_patient(
     entry.check_in()
     entry.save()
     db_session.commit()
+    _publish_queue_event("queue.checked_in", entry)
 
     return QueueResponse(
         id=str(entry.id),
@@ -378,6 +395,7 @@ async def start_visit(
     entry.start_visit()
     entry.save()
     db_session.commit()
+    _publish_queue_event("queue.started", entry)
 
     return QueueResponse(
         id=str(entry.id),
@@ -427,6 +445,7 @@ async def complete_visit(
     entry.complete_visit()
     entry.save()
     db_session.commit()
+    _publish_queue_event("queue.completed", entry)
 
     return QueueResponse(
         id=str(entry.id),

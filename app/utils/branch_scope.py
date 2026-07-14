@@ -31,6 +31,15 @@ def tenant_query(db, model, user, requested_branch_id: str | None = None, reques
     return apply_branch_filter(query, model, branch_id)
 
 
+def tenant_get(db, model, resource_id: str, user, not_found_detail: str = "Resource not found"):
+    row = (
+        db.query(model)
+        .filter(model.id == resource_id, model.facility_slug == require_facility_slug(user))
+        .first()
+    )
+    return require_tenant_row(row, user, not_found_detail)
+
+
 def require_tenant_row(row, user, not_found_detail: str = "Resource not found"):
     if not row:
         raise HTTPException(status_code=404, detail=not_found_detail)
@@ -45,6 +54,10 @@ def require_tenant_row(row, user, not_found_detail: str = "Resource not found"):
         raise HTTPException(status_code=404, detail=not_found_detail)
 
     return row
+
+
+def branch_scope_for_user(user) -> str | None:
+    return None if (getattr(user, "role", "") or "").upper() == "ADMIN" else user_branch_id(user)
 
 
 def ensure_patient_branch_access(patient, user, requested_branch_id: str | None = None):

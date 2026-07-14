@@ -14,6 +14,7 @@ from app.schemas.appointments import AppointmentResponse, AppointmentCreate, App
 from app.schemas.users import MessageResponse
 from app.services.appointment_service import AppointmentService
 from app.services.patient_notification_service import PatientNotificationService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id, ensure_patient_branch_access, require_tenant_row
@@ -144,6 +145,14 @@ async def create_appointment(
                 "doctor_id": appointment.doctor_id,
             },
         )
+        publish_tenant_event(
+            event_type="appointment.created",
+            facility_slug=facility_slug,
+            branch_id=appointment.branch_id or appointment.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST"],
+            modules=["reception", "consultations"],
+            resource_id=appointment.id,
+        )
 
         return AppointmentResponse(
             id=str(appointment.id),
@@ -239,6 +248,14 @@ async def update_appointment(
             updated_appointment = AppointmentService.update_appointment_status(appointment, payload['status'])
         else:
             updated_appointment = AppointmentService.update_appointment(appointment, payload)
+        publish_tenant_event(
+            event_type="appointment.updated",
+            facility_slug=facility_slug,
+            branch_id=updated_appointment.branch_id or updated_appointment.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST"],
+            modules=["reception", "consultations"],
+            resource_id=updated_appointment.id,
+        )
 
         return AppointmentResponse(
             id=str(updated_appointment.id),
@@ -285,6 +302,14 @@ async def cancel_appointment(
             raise HTTPException(status_code=404, detail="Appointment not found")
 
         cancelled = AppointmentService.cancel_appointment(appointment)
+        publish_tenant_event(
+            event_type="appointment.cancelled",
+            facility_slug=facility_slug,
+            branch_id=cancelled.branch_id or cancelled.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST"],
+            modules=["reception", "consultations"],
+            resource_id=cancelled.id,
+        )
 
         return MessageResponse(message="Appointment cancelled successfully")
 

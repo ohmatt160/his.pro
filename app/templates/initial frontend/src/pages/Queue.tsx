@@ -17,6 +17,7 @@ import { apiClient } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getFacilityDashboardPath } from "@/lib/facility-workspace";
 
 type QueueEntry = {
@@ -72,6 +73,11 @@ const Queue = () => {
   useEffect(() => {
     loadQueue().catch(() => undefined);
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["queue.*", "appointment.*", "patient.*"],
+    onRefresh: () => loadQueue().catch(() => undefined),
+  });
 
   const summary = useMemo(
     () => ({

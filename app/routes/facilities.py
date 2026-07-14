@@ -7,9 +7,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
-import csv
-import io
-import json
 import logging
 import secrets
 import string
@@ -33,9 +30,22 @@ from app.models.user import User
 from app.models.facility import Facility
 from app.models.branch import Branch
 from app.services.audit_log_service import AuditLogService
+from app.services.background_jobs import background_jobs
+from app.services.data_migration_service import DataMigrationService
+from app.services.realtime_service import publish_tenant_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/facilities", tags=["facilities"])
+
+
+def _publish_workspace_event(event_type: str, facility_slug: str, branch_id: str | None = None) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=facility_slug,
+        branch_id=branch_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH"],
+        modules=["workspace"],
+    )
 
 DEFAULT_MODULES_BY_FACILITY_TYPE = {
     "clinic": ["reception", "records", "consultations", "pharmacy", "billing"],
@@ -302,26 +312,6 @@ ROLE_PREFIX = {
     "LAB_TECH": "LAB",
 }
 
-MIGRATION_SOURCE_SYSTEMS = {
-    "generic_csv",
-    "generic_json",
-    "openmrs",
-    "bahmni",
-    "dhis2",
-    "other_his",
-}
-
-MIGRATION_IMPORT_MODES = {
-    "patients",
-    "staff",
-    "appointments",
-    "inventory",
-    "full_archive",
-}
-
-MIGRATION_MAX_BYTES = 25 * 1024 * 1024
-
-
 def require_admin_for_facility(user: User, facility: Facility) -> None:
     if user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Only facility admins can manage staff")
@@ -333,90 +323,6 @@ def require_admin_for_facility(user: User, facility: Facility) -> None:
 
     if user.facility_slug != facility.slug:
         raise HTTPException(status_code=403, detail="Cannot manage another facility")
-
-
-async def analyze_migration_file(
-    upload: UploadFile,
-    source_system: str,
-    import_mode: str,
-) -> dict:
-    source_system = Validators.sanitize_string(source_system).lower()
-    import_mode = Validators.sanitize_string(import_mode).lower()
-
-    if source_system not in MIGRATION_SOURCE_SYSTEMS:
-        raise HTTPException(status_code=400, detail="Unsupported migration source")
-    if import_mode not in MIGRATION_IMPORT_MODES:
-        raise HTTPException(status_code=400, detail="Unsupported migration type")
-
-    file_name = Validators.sanitize_string(upload.filename or "migration-file")
-    extension = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else ""
-    if extension not in {"csv", "json"}:
-        raise HTTPException(status_code=400, detail="Use a CSV or JSON migration file")
-
-    content = await upload.read(MIGRATION_MAX_BYTES + 1)
-    if len(content) > MIGRATION_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="Migration file is too large")
-    if not content:
-        raise HTTPException(status_code=400, detail="Migration file is empty")
-
-    warnings: list[str] = []
-    accepted_entities: list[str] = []
-    records_detected = 0
-
-    if extension == "csv":
-        text = content.decode("utf-8-sig", errors="replace")
-        reader = csv.DictReader(io.StringIO(text))
-        headers = [Validators.sanitize_string(header or "") for header in (reader.fieldnames or [])]
-        if not headers:
-            raise HTTPException(status_code=400, detail="CSV header row is required")
-        accepted_entities = [import_mode] if import_mode != "full_archive" else ["patients"]
-        risky_prefixes = ("=", "+", "-", "@")
-        for index, row in enumerate(reader, start=1):
-            records_detected += 1
-            if index <= 200 and any(str(value or "").startswith(risky_prefixes) for value in row.values()):
-                warnings.append("Formula-like values were detected and will be escaped during import.")
-                break
-        if records_detected == 0:
-            warnings.append("No data rows were found after the CSV header.")
-    else:
-        try:
-            payload = json.loads(content.decode("utf-8-sig"))
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="JSON migration file is invalid")
-
-        if isinstance(payload, list):
-            records_detected = len(payload)
-            accepted_entities = [import_mode] if import_mode != "full_archive" else ["records"]
-        elif isinstance(payload, dict):
-            list_keys = [
-                key
-                for key, value in payload.items()
-                if isinstance(value, list)
-            ]
-            accepted_entities = list_keys if import_mode == "full_archive" else [import_mode]
-            if import_mode == "full_archive":
-                records_detected = sum(len(payload[key]) for key in list_keys)
-            else:
-                value = payload.get(import_mode)
-                records_detected = len(value) if isinstance(value, list) else 1
-        else:
-            raise HTTPException(status_code=400, detail="JSON migration must be an object or array")
-
-    if records_detected > 50_000:
-        warnings.append("Large imports are queued for background processing.")
-
-    return {
-        "status": "validated",
-        "source_system": source_system,
-        "import_mode": import_mode,
-        "file_name": file_name,
-        "file_size": len(content),
-        "detected_format": extension,
-        "records_detected": records_detected,
-        "accepted_entities": accepted_entities,
-        "warnings": list(dict.fromkeys(warnings)),
-        "next_step": "queue_import",
-    }
 
 
 def split_full_name(full_name: str) -> tuple[str, str]:
@@ -664,6 +570,7 @@ async def update_facility_settings(
         facility.departments = []
     facility.save()
     db_session.commit()
+    _publish_workspace_event("facility.settings_updated", facility.slug)
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -730,6 +637,7 @@ async def create_branch(
         db_session.add(facility)
     db_session.commit()
     db_session.refresh(branch)
+    _publish_workspace_event("branch.created", facility.slug, branch.id)
     AuditLogService.log_action(
         user_id=current_user.id,
         action="CREATE_BRANCH",
@@ -777,6 +685,7 @@ async def update_branch(
     db_session.add(branch)
     db_session.commit()
     db_session.refresh(branch)
+    _publish_workspace_event("branch.updated", facility.slug, branch.id)
     AuditLogService.log_action(
         user_id=current_user.id,
         action="UPDATE_BRANCH",
@@ -808,6 +717,7 @@ async def update_branch_modules(
     db_session.add(branch)
     db_session.commit()
     db_session.refresh(branch)
+    _publish_workspace_event("branch.modules_updated", facility.slug, branch.id)
     AuditLogService.log_action(
         user_id=current_user.id,
         action="UPDATE_BRANCH_MODULES",
@@ -845,6 +755,7 @@ async def deactivate_branch(
     branch.is_active = False
     db_session.add(branch)
     db_session.commit()
+    _publish_workspace_event("branch.deleted", facility.slug, branch.id)
     AuditLogService.log_action(
         user_id=current_user.id,
         action="DEACTIVATE_BRANCH",
@@ -983,7 +894,8 @@ async def validate_data_migration(
 ):
     facility = get_facility_or_404(facility_slug)
     require_admin_for_facility(current_user, facility)
-    result = await analyze_migration_file(file, source_system, import_mode)
+    parsed = await DataMigrationService.parse_upload(file, source_system, import_mode)
+    result = DataMigrationService.summarize(parsed, db, facility)
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -1014,9 +926,47 @@ async def queue_data_migration_import(
 ):
     facility = get_facility_or_404(facility_slug)
     require_admin_for_facility(current_user, facility)
-    result = await analyze_migration_file(file, source_system, import_mode)
+    parsed = await DataMigrationService.parse_upload(file, source_system, import_mode)
+    result = DataMigrationService.summarize(parsed, db, facility)
+    facility_id = facility.id
+    facility_slug_for_job = facility.slug
+    actor_id = current_user.id
+
+    async def process_import() -> dict:
+        try:
+            job_facility = db_session.query(Facility).filter_by(id=facility_id, slug=facility_slug_for_job).first()
+            job_actor = db_session.query(User).filter_by(id=actor_id, facility_slug=facility_slug_for_job).first()
+            if not job_facility or not job_actor:
+                raise RuntimeError("Migration facility or actor no longer exists")
+            import_result = DataMigrationService.import_parsed(
+                parsed,
+                db_session,
+                job_facility,
+                job_actor,
+                dry_run=False,
+            )
+            db_session.commit()
+            return import_result
+        except Exception:
+            db_session.rollback()
+            raise
+        finally:
+            db_session.remove()
+
+    job = background_jobs.enqueue(
+        "data_migration_import",
+        process_import,
+        metadata={
+            "facility_slug": facility.slug,
+            "source_system": result["source_system"],
+            "import_mode": result["import_mode"],
+            "records_detected": result["records_detected"],
+            "file_size": result["file_size"],
+        },
+    )
     result["status"] = "queued"
     result["next_step"] = "background_processing"
+    result["job_id"] = job.id
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -1033,6 +983,30 @@ async def queue_data_migration_import(
         request=request,
     )
     return result
+
+
+@router.get("/{facility_slug}/data-migrations/jobs/{job_id}")
+async def get_data_migration_job(
+    facility_slug: str,
+    job_id: str,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    job = background_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Migration job not found")
+    return {
+        "id": job.id,
+        "name": job.name,
+        "status": job.status,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "result": job.result,
+        "error": job.error,
+        "external_job_id": job.external_job_id,
+    }
 
 
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])
@@ -1168,6 +1142,7 @@ async def create_facility_staff(
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
+    _publish_workspace_event("staff.created", facility.slug, user.branch_id or user.department_id)
 
     return build_staff_response(
         user,
@@ -1288,6 +1263,7 @@ async def update_facility_staff_member(
     db_session.add(member)
     db_session.commit()
     db_session.refresh(member)
+    _publish_workspace_event("staff.updated", facility.slug, member.branch_id or member.department_id)
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -1371,6 +1347,7 @@ async def update_facility(
 
     facility.save()
     db_session.commit()
+    _publish_workspace_event("facility.updated", facility.slug)
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -1427,6 +1404,7 @@ async def update_facility_modules(
     facility.modules = normalized_modules
     facility.save()
     db_session.commit()
+    _publish_workspace_event("facility.modules_updated", facility.slug)
 
     AuditLogService.log_action(
         user_id=current_user.id,

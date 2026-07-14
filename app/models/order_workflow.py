@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text
+from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text, Index
 
 from app.models.base_model import BaseModel
 
@@ -7,6 +7,11 @@ class OrderWorkflowEvent(BaseModel):
     """Append-only clinical order workflow status event."""
 
     __tablename__ = "order_workflow_events"
+    __table_args__ = (
+        Index("idx_order_workflow_facility_occurred", "facility_slug", "occurred_at"),
+        Index("idx_order_workflow_facility_order", "facility_slug", "order_type", "order_id"),
+        Index("idx_order_workflow_facility_role_status", "facility_slug", "target_role", "status"),
+    )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
     facility_slug = Column(String(100), ForeignKey("facilities.slug"), nullable=False, index=True)

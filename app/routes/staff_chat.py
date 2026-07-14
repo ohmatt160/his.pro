@@ -29,7 +29,7 @@ from app.utils.validators import Validators
 router = APIRouter(prefix="/chat", tags=["staff-chat"])
 
 CHAT_ROLES = ("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")
-MAX_CHAT_FILE_SIZE = 10 * 1024 * 1024
+MAX_CHAT_FILE_SIZE = int(os.getenv("MAX_CHAT_FILE_BYTES", str(10 * 1024 * 1024)))
 ONLINE_WINDOW = timedelta(minutes=5)
 ALLOWED_UPLOAD_TYPES = {
     "application/pdf": ".pdf",

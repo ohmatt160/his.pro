@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 import uuid
 
 from fastapi import HTTPException, Request, status
@@ -8,6 +8,10 @@ from app.models.user_session import UserSession
 
 SESSION_INACTIVITY_TIMEOUT_SECONDS = 30 * 60
 REFRESH_SESSION_DAYS = 7
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class SessionService:
@@ -21,8 +25,8 @@ class SessionService:
             refresh_jti=refresh_jti,
             user_agent=(request.headers.get("user-agent")[:255] if request else None),
             ip_address=SessionService._client_ip(request) if request else None,
-            expires_at=datetime.utcnow() + timedelta(days=REFRESH_SESSION_DAYS),
-            last_seen_at=datetime.utcnow(),
+            expires_at=utc_now() + timedelta(days=REFRESH_SESSION_DAYS),
+            last_seen_at=utc_now(),
             is_active=True,
         )
         db_session.add(session)
@@ -45,17 +49,17 @@ class SessionService:
             not session
             or not session.is_active
             or session.revoked_at is not None
-            or session.expires_at <= datetime.utcnow()
+            or session.expires_at <= utc_now()
         ):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has expired")
 
         if token_type == "access":
-            inactive_for = datetime.utcnow() - session.last_seen_at
+            inactive_for = utc_now() - session.last_seen_at
             if inactive_for.total_seconds() > SESSION_INACTIVITY_TIMEOUT_SECONDS:
                 SessionService.revoke_session(session)
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Session has expired")
             if touch:
-                session.last_seen_at = datetime.utcnow()
+                session.last_seen_at = utc_now()
                 db_session.add(session)
                 db_session.flush()
 
@@ -73,14 +77,14 @@ class SessionService:
             touch=False,
         )
         session.refresh_jti = refresh_jti
-        session.last_seen_at = datetime.utcnow()
+        session.last_seen_at = utc_now()
         db_session.add(session)
         db_session.flush()
 
     @staticmethod
     def revoke_session(session: UserSession) -> None:
         session.is_active = False
-        session.revoked_at = datetime.utcnow()
+        session.revoked_at = utc_now()
         db_session.add(session)
         db_session.flush()
 

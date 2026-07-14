@@ -10,6 +10,8 @@ class AuditLog(BaseModel):
     __table_args__ = (
         Index('idx_audit_logs_facility_created', 'facility_slug', 'created_at'),
         Index('idx_audit_logs_facility_user_created', 'facility_slug', 'user_id', 'created_at'),
+        Index('idx_audit_logs_facility_action_created', 'facility_slug', 'action', 'created_at'),
+        Index('idx_audit_logs_facility_resource_created', 'facility_slug', 'resource_type', 'resource_id', 'created_at'),
     )
 
     user_id = Column(String(36), ForeignKey('users.id'))

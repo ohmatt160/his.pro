@@ -16,6 +16,7 @@ from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.lab_service import LabService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import ensure_patient_branch_access, require_facility_slug, require_tenant_row, tenant_query
 from app.models.user import User
@@ -216,6 +217,15 @@ async def create_lab_order(
         target_role="LAB_TECH",
         metadata={"test_id": test.id, "test_name": test.name},
     )
+    publish_tenant_event(
+        event_type="lab_order.created",
+        facility_slug=facility_slug,
+        branch_id=order.branch_id or order.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "LAB_TECH"],
+        modules=["lab", "consultations", "records"],
+        resource_id=order.id,
+        payload={"patient_id": order.patient_id, "status": order.status},
+    )
 
     return _lab_order_response(order)
 
@@ -262,6 +272,15 @@ async def update_lab_order_status(
             target_role="LAB_TECH",
             metadata={"test_id": updated_order.test_id},
         )
+    publish_tenant_event(
+        event_type="lab_order.updated",
+        facility_slug=facility_slug,
+        branch_id=updated_order.branch_id or updated_order.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "LAB_TECH"],
+        modules=["lab", "consultations", "records"],
+        resource_id=updated_order.id,
+        payload={"patient_id": updated_order.patient_id, "status": updated_order.status},
+    )
 
     return _lab_order_response(updated_order)
 
@@ -324,6 +343,15 @@ async def create_lab_result(
             source_id=order.id,
             metadata={"result_id": result.id, "is_abnormal": result.is_abnormal},
         )
+    publish_tenant_event(
+        event_type="lab_result.released",
+        facility_slug=facility_slug,
+        branch_id=order.branch_id or order.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "LAB_TECH"],
+        modules=["lab", "consultations", "records"],
+        resource_id=order.id,
+        payload={"patient_id": order.patient_id, "result_id": result.id},
+    )
     ClinicalWorkflowService.notify_user(
         order.ordered_by,
         facility_slug,

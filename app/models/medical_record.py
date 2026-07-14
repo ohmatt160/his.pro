@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, JSON, Text, DateTime, Date, Boolean, ForeignKey
+from sqlalchemy import Column, String, JSON, Text, DateTime, Date, Boolean, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -6,6 +6,11 @@ from app.models.base_model import BaseModel
 class MedicalRecord(BaseModel):
     """Electronic Medical Records for patients"""
     __tablename__ = 'medical_records'
+    __table_args__ = (
+        Index('idx_medical_records_facility_patient_created', 'facility_slug', 'patient_id', 'created_at'),
+        Index('idx_medical_records_facility_appointment', 'facility_slug', 'appointment_id'),
+        Index('idx_medical_records_facility_created', 'facility_slug', 'created_at'),
+    )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
     appointment_id = Column(String(36), ForeignKey('appointments.id'))
@@ -36,6 +41,10 @@ class MedicalRecord(BaseModel):
 class ClinicalNote(BaseModel):
     """Clinical notes for patient visits"""
     __tablename__ = 'clinical_notes'
+    __table_args__ = (
+        Index('idx_clinical_notes_patient_created', 'patient_id', 'created_at'),
+        Index('idx_clinical_notes_record_created', 'record_id', 'created_at'),
+    )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False)
     record_id = Column(String(36), ForeignKey('medical_records.id'))

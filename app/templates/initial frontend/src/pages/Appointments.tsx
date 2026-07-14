@@ -41,6 +41,7 @@ import {
 } from "@/lib/facility-staff";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import { addSettledError, getResourceError, settledValue } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Patient = {
   id: string;
@@ -169,6 +170,11 @@ const Appointments = () => {
   useEffect(() => {
     loadData().catch(() => setLoading(false));
   }, [facilitySlug]);
+
+  useRealtimeRefresh({
+    eventTypes: ["appointment.*", "queue.*", "patient.*", "staff.*"],
+    onRefresh: () => loadData().catch(() => undefined),
+  });
 
   const filteredAppointments = appointments.filter((appointment) => {
     const query = search.trim().toLowerCase();

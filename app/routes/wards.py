@@ -18,8 +18,10 @@ from app.schemas.wards import (
     WardBedUpdate,
 )
 from app.services.patient_notification_service import PatientNotificationService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
+from app.utils.pagination import apply_pagination
 from app.utils.validators import Validators
 
 router = APIRouter(prefix="/wards", tags=["wards"])
@@ -100,10 +102,28 @@ def _admission_response(admission: WardAdmission) -> WardAdmissionResponse:
     )
 
 
+def _publish_ward_event(event_type: str, admission: WardAdmission | None = None, bed: WardBed | None = None) -> None:
+    patient = admission.patient if admission else None
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=(admission.facility_slug if admission else bed.facility_slug),
+        branch_id=(patient.branch_id or patient.department_id) if patient else None,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+        modules=["nursing"],
+        resource_id=(admission.id if admission else bed.id),
+        payload={
+            "patient_id": admission.patient_id if admission else None,
+            "status": admission.status if admission else bed.status,
+        },
+    )
+
+
 @router.get("/beds", response_model=List[WardBedResponse])
 async def list_beds(
     ward_name: Optional[str] = Query(None, max_length=120),
     status_filter: Optional[str] = Query(None, alias="status", pattern="^(AVAILABLE|OCCUPIED|MAINTENANCE)$"),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST")),
     db: Session = Depends(get_db),
 ):
@@ -116,7 +136,7 @@ async def list_beds(
         query = query.filter_by(ward_name=Validators.sanitize_string(ward_name))
     if status_filter:
         query = query.filter_by(status=status_filter)
-    beds = query.order_by(WardBed.ward_name.asc(), WardBed.bed_number.asc()).all()
+    beds = apply_pagination(query.order_by(WardBed.ward_name.asc(), WardBed.bed_number.asc()), page, per_page).all()
     return [_bed_response(bed) for bed in beds]
 
 
@@ -148,6 +168,7 @@ async def create_bed(
     db_session.add(bed)
     db_session.commit()
     db_session.refresh(bed)
+    _publish_ward_event("ward.bed_created", bed=bed)
     return _bed_response(bed)
 
 
@@ -174,6 +195,7 @@ async def update_bed(
     db_session.add(bed)
     db_session.commit()
     db_session.refresh(bed)
+    _publish_ward_event("ward.bed_updated", bed=bed)
     return _bed_response(bed)
 
 
@@ -181,6 +203,8 @@ async def update_bed(
 async def list_admissions(
     status_filter: Optional[str] = Query(None, alias="status", pattern="^(ACTIVE|DISCHARGED|TRANSFERRED)$"),
     patient_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
@@ -198,7 +222,7 @@ async def list_admissions(
     if patient_id:
         _get_patient(patient_id, facility_slug, current_user)
         query = query.filter(WardAdmission.patient_id == patient_id)
-    admissions = query.order_by(WardAdmission.admitted_at.desc()).limit(100).all()
+    admissions = apply_pagination(query.order_by(WardAdmission.admitted_at.desc()), page, per_page).all()
     return [_admission_response(admission) for admission in admissions]
 
 
@@ -243,6 +267,7 @@ async def admit_patient(
     db_session.add(admission)
     db_session.commit()
     db_session.refresh(admission)
+    _publish_ward_event("ward.admission_created", admission)
     return _admission_response(admission)
 
 
@@ -283,6 +308,7 @@ async def update_admission(
     db_session.add(admission)
     db_session.commit()
     db_session.refresh(admission)
+    _publish_ward_event("ward.admission_updated", admission)
     return _admission_response(admission)
 
 
@@ -316,6 +342,7 @@ async def add_observation(
     db_session.add(admission)
     db_session.commit()
     db_session.refresh(admission)
+    _publish_ward_event("ward.observation_added", admission)
     return _admission_response(admission)
 
 
@@ -351,4 +378,5 @@ async def discharge_patient(
     )
     db_session.commit()
     db_session.refresh(admission)
+    _publish_ward_event("ward.admission_discharged", admission)
     return _admission_response(admission)

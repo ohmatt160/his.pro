@@ -21,8 +21,10 @@ from app.schemas.consultations import (
 )
 from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.medical_record_service import MedicalRecordService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
+from app.utils.pagination import apply_pagination
 from app.utils.validators import Validators
 
 router = APIRouter(prefix="/consultations", tags=["consultations"])
@@ -119,10 +121,25 @@ def _consultation_response(record: MedicalRecord) -> ConsultationResponse:
     )
 
 
+def _publish_consultation_event(event_type: str, record: MedicalRecord, patient: Patient | None = None) -> None:
+    patient = patient or record.patient
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=record.facility_slug or "",
+        branch_id=(patient.branch_id or patient.department_id) if patient else None,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"],
+        modules=["consultations", "records"],
+        resource_id=record.id,
+        payload={"patient_id": record.patient_id, "appointment_id": record.appointment_id},
+    )
+
+
 @router.get("", response_model=List[ConsultationResponse])
 async def list_consultations(
     patient_id: Optional[str] = Query(None),
     appointment_id: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
@@ -136,7 +153,7 @@ async def list_consultations(
         _get_appointment(appointment_id, facility_slug)
         query = query.filter(MedicalRecord.appointment_id == appointment_id)
 
-    records = query.order_by(MedicalRecord.created_at.desc()).limit(100).all()
+    records = apply_pagination(query.order_by(MedicalRecord.created_at.desc()), page, per_page).all()
     return [_consultation_response(record) for record in records]
 
 
@@ -185,6 +202,7 @@ async def start_consultation(
         db_session.add(appointment)
         db_session.commit()
         db_session.refresh(record)
+    _publish_consultation_event("consultation.started", record, patient)
 
     return _consultation_response(record)
 
@@ -255,6 +273,8 @@ async def update_consultation(
         ClinicalWorkflowService.sync_consultation_orders(updated, current_user)
         db_session.commit()
         db_session.refresh(updated)
+    patient = _get_patient(str(updated.patient_id), facility_slug, current_user)
+    _publish_consultation_event("consultation.updated", updated, patient)
     return _consultation_response(updated)
 
 
@@ -282,5 +302,7 @@ async def complete_consultation(
         db_session.add(appointment)
         db_session.commit()
         db_session.refresh(record)
+    patient = _get_patient(str(record.patient_id), facility_slug, current_user)
+    _publish_consultation_event("consultation.completed", record, patient)
 
     return _consultation_response(record)

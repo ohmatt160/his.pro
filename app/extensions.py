@@ -4,8 +4,7 @@ SQLAlchemy direct integration (no Flask-SQLAlchemy)
 """
 
 from sqlalchemy import create_engine, MetaData, Column, String, DateTime, Date, ForeignKey, Integer, Boolean, Text, JSON, Numeric, event
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, scoped_session, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session, relationship
 import os
 import logging
 import time

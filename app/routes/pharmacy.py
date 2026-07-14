@@ -23,6 +23,7 @@ from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.pharmacy_service import PharmacyService
+from app.services.realtime_service import publish_tenant_event
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
 from app.models.user import User
@@ -295,6 +296,15 @@ async def create_prescription(
         target_role="PHARMACIST",
         metadata={"items": len(data.items)},
     )
+    publish_tenant_event(
+        event_type="prescription.created",
+        facility_slug=facility_slug,
+        branch_id=prescription.branch_id or prescription.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"],
+        modules=["pharmacy", "consultations", "records"],
+        resource_id=prescription.id,
+        payload={"patient_id": prescription.patient_id, "status": prescription.status},
+    )
 
     return _prescription_response(prescription)
 
@@ -366,6 +376,15 @@ async def dispense_prescription(
             source_id=prescription.id,
             metadata={"dispensed_by": prescription.dispensed_by},
         )
+    publish_tenant_event(
+        event_type="prescription.dispensed",
+        facility_slug=facility_slug,
+        branch_id=prescription.branch_id or prescription.department_id,
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"],
+        modules=["pharmacy", "consultations", "records"],
+        resource_id=prescription.id,
+        payload={"patient_id": prescription.patient_id, "status": prescription.status},
+    )
     ClinicalWorkflowService.notify_user(
         prescription.prescribed_by,
         facility_slug,

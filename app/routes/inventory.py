@@ -20,6 +20,7 @@ from app.utils.validators import Validators
 from app.models.user import User
 from app.models.inventory import Inventory
 from app.models.supplier import Supplier
+from app.services.realtime_service import publish_tenant_event
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -59,6 +60,17 @@ def _inventory_response(item: Inventory) -> InventoryResponse:
         supplier_name=item.supplier.name if item.supplier else None,
         created_at=item.created_at.isoformat() if item.created_at else "",
         updated_at=item.updated_at.isoformat() if item.updated_at else None
+    )
+
+
+def _publish_inventory_event(event_type: str, item: Inventory) -> None:
+    publish_tenant_event(
+        event_type=event_type,
+        facility_slug=item.facility_slug,
+        roles=["ADMIN", "BRANCH_ADMIN", "PHARMACIST", "STORE_KEEPER", "DOCTOR", "NURSE"],
+        modules=["inventory"],
+        resource_id=item.id,
+        payload={"sku": item.sku, "current_stock": item.current_stock},
     )
 
 
@@ -150,6 +162,7 @@ async def create_inventory_item(
         unit_cost=Decimal(str(data.unit_cost or 0))
     )
     inventory.save()
+    _publish_inventory_event("inventory.item_created", inventory)
 
     return _inventory_response(inventory)
 
@@ -278,6 +291,7 @@ async def update_inventory_item(
 
     item.save()
     db_session.commit()
+    _publish_inventory_event("inventory.item_updated", item)
 
     return _inventory_response(item)
 
@@ -300,6 +314,7 @@ async def deactivate_inventory_item(
     item.is_active = False
     item.save()
     db_session.commit()
+    _publish_inventory_event("inventory.item_deleted", item)
 
     return MessageResponse(message="Inventory item deactivated successfully")
 
@@ -332,5 +347,6 @@ async def update_stock(
 
     item.save()
     db_session.commit()
+    _publish_inventory_event("inventory.stock_updated", item)
 
     return _inventory_response(item)

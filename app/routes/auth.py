@@ -23,6 +23,7 @@ from app.services.auth_service import AuthService
 from app.services.session_service import SessionService
 from app.utils.validators import Validators
 from app.middleware.jwt import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES, verify_token
+from app.middleware.security import clear_csrf_cookie, set_csrf_cookie
 from app.models.user import User
 from app.models.branch import Branch
 from app.models.user_session import UserSession
@@ -63,6 +64,7 @@ def _set_auth_cookies(response: Response, token_response: TokenResponse) -> None
         samesite=same_site,
         path="/",
     )
+    set_csrf_cookie(response)
 
 
 def _clear_auth_cookies(response: Response) -> None:
@@ -70,6 +72,7 @@ def _clear_auth_cookies(response: Response) -> None:
     same_site = "none" if secure else "lax"
     for cookie_name in ("hispro_access_token", "hispro_refresh_token"):
         response.delete_cookie(cookie_name, path="/", secure=secure, samesite=same_site)
+    clear_csrf_cookie(response)
 
 
 def _get_token_from_request(

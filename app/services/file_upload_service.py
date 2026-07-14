@@ -5,7 +5,7 @@ Converted from Flask-based service to framework-agnostic
 
 import os
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Use absolute path based on current file location
@@ -15,13 +15,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent  # goes to workspace ro
 class FileUploadService:
     """File upload service class"""
 
-    MAX_FILE_SIZE = 5 * 1024 * 1024
+    MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_BYTES", str(5 * 1024 * 1024)))
     IMAGE_SIGNATURES = {
         "png": (b"\x89PNG\r\n\x1a\n",),
         "jpg": (b"\xff\xd8\xff",),
         "jpeg": (b"\xff\xd8\xff",),
         "gif": (b"GIF87a", b"GIF89a"),
         "webp": (b"RIFF",),
+    }
+    DOCUMENT_SIGNATURES = {
+        "pdf": (b"%PDF-",),
+        "doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        "xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        "docx": (b"PK\x03\x04",),
+        "xlsx": (b"PK\x03\x04",),
+        "txt": tuple(),
     }
 
     # Default allowed extensions
@@ -52,7 +60,7 @@ class FileUploadService:
         """Generate unique filename"""
         ext = filename.rsplit('.', 1)[1].lower()
         unique_id = uuid.uuid4().hex
-        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.now(UTC).strftime('%Y%m%d_%H%M%S')
         return f"{timestamp}_{unique_id}.{ext}"
 
     @staticmethod
@@ -62,7 +70,10 @@ class FileUploadService:
             folder = FileUploadService.sanitize_folder(folder)
         except ValueError as exc:
             return False, str(exc)
-        upload_folder = BASE_DIR / 'app' / 'static' / folder
+        base_upload_root = (BASE_DIR / 'app' / 'static').resolve()
+        upload_folder = (base_upload_root / folder).resolve()
+        if base_upload_root not in upload_folder.parents and upload_folder != base_upload_root:
+            raise ValueError("Invalid upload folder")
         upload_folder.mkdir(parents=True, exist_ok=True)
         return str(upload_folder)
 
@@ -87,6 +98,23 @@ class FileUploadService:
         if ext == "webp":
             return content.startswith(b"RIFF") and content[8:12] == b"WEBP"
         return any(content.startswith(signature) for signature in signatures)
+
+    @staticmethod
+    def _looks_like_document(ext, content):
+        signatures = FileUploadService.DOCUMENT_SIGNATURES.get(ext)
+        if signatures is None:
+            return False
+        if ext == "txt":
+            return b"\x00" not in content[:2048]
+        return any(content.startswith(signature) for signature in signatures)
+
+    @staticmethod
+    def _content_matches_extension(ext, content):
+        if ext in FileUploadService.IMAGE_SIGNATURES:
+            return FileUploadService._looks_like_image(ext, content)
+        if ext in FileUploadService.DOCUMENT_SIGNATURES:
+            return FileUploadService._looks_like_document(ext, content)
+        return False
 
     @staticmethod
     def scan_for_malware(content):
@@ -118,8 +146,8 @@ class FileUploadService:
         if len(content) > FileUploadService.MAX_FILE_SIZE:
             return False, "File is too large"
 
-        if not FileUploadService._looks_like_image(ext, content):
-            return False, "File content is not a valid image"
+        if not FileUploadService._content_matches_extension(ext, content):
+            return False, "File content does not match its file type"
 
         clean, scan_error = FileUploadService.scan_for_malware(content)
         if not clean:
@@ -148,13 +176,21 @@ class FileUploadService:
             'url': file_url,
             'size': file_size,
             'folder': folder,
-            'uploaded_at': datetime.utcnow().isoformat()
+            'uploaded_at': datetime.now(UTC).isoformat().replace("+00:00", "Z")
         }
 
     @staticmethod
     def list_files(folder='uploads', page=1, per_page=20):
         """List uploaded files"""
         upload_folder = FileUploadService.get_upload_folder(folder)
+        if isinstance(upload_folder, tuple):
+            return {
+                'files': [],
+                'total': 0,
+                'page': page,
+                'per_page': per_page,
+                'pages': 0
+            }
 
         if not os.path.exists(upload_folder):
             return {
@@ -197,7 +233,11 @@ class FileUploadService:
     @staticmethod
     def get_file_info(filename, folder='uploads'):
         """Get file information"""
+        if not filename or Path(filename).name != filename:
+            return None
         upload_folder = FileUploadService.get_upload_folder(folder)
+        if isinstance(upload_folder, tuple):
+            return None
         filepath = os.path.join(upload_folder, filename)
 
         if not os.path.exists(filepath):
@@ -215,7 +255,11 @@ class FileUploadService:
     @staticmethod
     def delete_file(filename, folder='uploads'):
         """Delete a file"""
+        if not filename or Path(filename).name != filename:
+            return False, "Invalid file name"
         upload_folder = FileUploadService.get_upload_folder(folder)
+        if isinstance(upload_folder, tuple):
+            return False, "Invalid upload folder"
         filepath = os.path.join(upload_folder, filename)
 
         if not os.path.exists(filepath):

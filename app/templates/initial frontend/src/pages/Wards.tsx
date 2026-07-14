@@ -46,6 +46,7 @@ import {
   settledValue,
   type ResourceErrors,
 } from "@/lib/resource-loading";
+import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
 type Patient = {
   id: string;
@@ -134,6 +135,11 @@ const Wards = () => {
   useEffect(() => {
     loadData().catch(() => setLoading(false));
   }, []);
+
+  useRealtimeRefresh({
+    eventTypes: ["ward.*", "patient.*"],
+    onRefresh: () => loadData().catch(() => undefined),
+  });
 
   const patientById = useMemo(
     () => new Map(patients.map((patient) => [patient.id, patient])),
