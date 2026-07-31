@@ -27,6 +27,11 @@ MODULE_ROUTE_PREFIXES = {
     "/api/v1/order-workflow": "consultations",
 }
 
+MODULE_ACCESS_EXEMPT_PATHS = {
+    # Minimal patient identity options are shared by billing and clinical modules.
+    "/api/v1/patients/options",
+}
+
 MODULE_ROLE_ACCESS = {
     "reception": {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "DOCTOR", "NURSE"},
     "records": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"},
@@ -34,7 +39,7 @@ MODULE_ROLE_ACCESS = {
     "nursing": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE"},
     "lab": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "LAB_TECH"},
     "pharmacy": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"},
-    "billing": {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST"},
+    "billing": {"ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "BILLING"},
     "radiology": {"ADMIN", "BRANCH_ADMIN", "DOCTOR"},
     "inventory": {"ADMIN", "BRANCH_ADMIN", "PHARMACIST"},
     "reports": {"ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH"},
@@ -54,6 +59,8 @@ class ModuleAccessMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         if request.method == "OPTIONS":
+            return await call_next(request)
+        if request.url.path in MODULE_ACCESS_EXEMPT_PATHS:
             return await call_next(request)
 
         required_module = next(

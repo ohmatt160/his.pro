@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy import inspect
@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.extensions import db_session, get_db
 from app.models.staff_chat import ChatConversation, ChatMessage
 from app.models.user import User
+from app.services.file_upload_service import FileUploadService
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.schemas.staff_chat import (
     ChatConversationResponse,
     ChatMessageCreate,
@@ -25,10 +27,11 @@ from app.schemas.staff_chat import (
 )
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
+from app.utils.idempotency import IdempotencyConflictError
 
 router = APIRouter(prefix="/chat", tags=["staff-chat"])
 
-CHAT_ROLES = ("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH")
+CHAT_ROLES = ("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH", "BILLING")
 MAX_CHAT_FILE_SIZE = int(os.getenv("MAX_CHAT_FILE_BYTES", str(10 * 1024 * 1024)))
 ONLINE_WINDOW = timedelta(minutes=5)
 ALLOWED_UPLOAD_TYPES = {
@@ -228,11 +231,16 @@ def _validate_upload(file: UploadFile, data: bytes) -> tuple[str, str]:
 
     if not (is_image or is_pdf or is_office):
         raise HTTPException(status_code=400, detail="Attachment content does not match its file type")
+    clean, scan_error = FileUploadService.scan_for_malware(data)
+    if not clean:
+        raise HTTPException(status_code=400, detail=scan_error)
     return content_type, extension
 
 
 @router.get("/staff", response_model=list[ChatStaffResponse])
 async def list_chat_staff(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
@@ -244,6 +252,9 @@ async def list_chat_staff(
             User.id != current_user.id,
             User.is_active == True,
         )
+        .order_by(User.last_active.desc(), User.first_name.asc(), User.username.asc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
     staff.sort(key=lambda user: (not _is_online(user), _full_name(user).lower()))
@@ -323,6 +334,8 @@ async def create_or_get_conversation(
 
 @router.get("/conversations", response_model=list[ChatConversationResponse])
 async def list_conversations(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
@@ -339,6 +352,8 @@ async def list_conversations(
             or_(keyed_filter, ChatConversation.participant_key == None),
         )
         .order_by(ChatConversation.last_message_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
     conversations = [item for item in candidates if _is_participant(item, user_id)]
@@ -465,6 +480,8 @@ async def list_messages(
 async def send_message(
     conversation_id: str,
     data: ChatMessageCreate,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required(*CHAT_ROLES)),
     db: Session = Depends(get_db),
 ):
@@ -474,6 +491,44 @@ async def send_message(
         raise HTTPException(status_code=400, detail="Message content or file is required")
     if data.message_type == "text" and not content:
         raise HTTPException(status_code=400, detail="Text messages require content")
+    if data.file_url:
+        expected_prefix = "/chat/files/"
+        if not data.file_url.startswith(expected_prefix):
+            raise HTTPException(status_code=400, detail="Invalid chat attachment reference")
+        stored_name = data.file_url.removeprefix(expected_prefix)
+        if not stored_name or Path(stored_name).name != stored_name:
+            raise HTTPException(status_code=400, detail="Invalid chat attachment reference")
+        attachment_path = _chat_file_path(current_user.facility_slug, stored_name)
+        if not attachment_path.exists() or not attachment_path.is_file():
+            raise HTTPException(status_code=404, detail="Chat attachment not found")
+
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=current_user.facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="chat.message.send",
+            idempotency_key=idempotency_key,
+            payload={"conversation_id": conversation_id, **data.model_dump()},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        message = (
+            db_session.query(ChatMessage)
+            .options(joinedload(ChatMessage.sender))
+            .filter_by(
+                id=claim.record.resource_id,
+                conversation_id=conversation.id,
+                facility_slug=current_user.facility_slug,
+            )
+            .first()
+        )
+        if not message:
+            raise HTTPException(status_code=409, detail="Idempotency replay target missing")
+        response.status_code = status.HTTP_200_OK
+        return _message_response(message)
 
     message = ChatMessage(
         conversation_id=conversation.id,
@@ -490,6 +545,13 @@ async def send_message(
     conversation.last_message_at = datetime.utcnow()
     db_session.add(message)
     db_session.add(conversation)
+    db_session.flush()
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="chat_message",
+        resource_id=message.id,
+        response_status=status.HTTP_201_CREATED,
+    )
     db_session.commit()
     db_session.refresh(message)
     return _message_response(message)
@@ -501,7 +563,7 @@ async def upload_chat_file(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
 ):
     facility_slug = _require_facility(current_user)
-    data = await file.read()
+    data = await file.read(MAX_CHAT_FILE_SIZE + 1)
     content_type, extension = _validate_upload(file, data)
     filename = f"{secrets.token_urlsafe(24)}{extension}"
     _chat_file_path(facility_slug, filename).write_bytes(data)
@@ -519,10 +581,27 @@ async def download_chat_file(
     current_user: User = Depends(role_required(*CHAT_ROLES)),
 ):
     facility_slug = _require_facility(current_user)
+    file_url = f"/chat/files/{filename}"
+    message = (
+        db_session.query(ChatMessage)
+        .filter(
+            ChatMessage.facility_slug == facility_slug,
+            ChatMessage.file_url == file_url,
+        )
+        .first()
+    )
+    if not message:
+        raise HTTPException(status_code=404, detail="File not found")
+    _get_conversation_for_user(str(message.conversation_id), current_user)
     path = _chat_file_path(facility_slug, filename)
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path)
+    return FileResponse(
+        path,
+        media_type=message.file_type or "application/octet-stream",
+        filename=message.file_name or filename,
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @router.put("/conversations/{conversation_id}/read", response_model=ChatUnreadCountResponse)

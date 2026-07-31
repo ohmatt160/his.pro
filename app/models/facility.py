@@ -1,6 +1,9 @@
-from sqlalchemy import Column, String, Text, Boolean, JSON, ForeignKey
+import uuid
+
+from sqlalchemy import Column, String, Text, Boolean, JSON, event
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
+from app.utils.tenant_urls import generate_canonical_subdomain
 
 
 class Facility(BaseModel):
@@ -10,6 +13,7 @@ class Facility(BaseModel):
     name = Column(String(200), nullable=False)
     type = Column(String(50), nullable=False)  # hospital/clinic/lab/pharmacy
     slug = Column(String(100), unique=True, nullable=False, index=True)
+    canonical_subdomain = Column(String(63), unique=True, nullable=False, index=True)
     country = Column(String(100))
     address = Column(Text)
     phone = Column(String(20))
@@ -63,3 +67,14 @@ class Facility(BaseModel):
         """Convert to dictionary"""
         data = super().to_dict()
         return data
+
+
+@event.listens_for(Facility, "before_insert")
+def _assign_canonical_subdomain(_mapper, _connection, facility: Facility) -> None:
+    if not facility.id:
+        facility.id = str(uuid.uuid4())
+    if not facility.canonical_subdomain:
+        facility.canonical_subdomain = generate_canonical_subdomain(
+            facility.slug,
+            facility.id,
+        )

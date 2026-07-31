@@ -1,8 +1,18 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from app.models.billing import Invoice, InvoiceItem, Payment, InsuranceProvider, InsuranceClaim
-from app.extensions import db
+from app.extensions import db, db_session
+
+
+class BillingIdempotencyConflictError(Exception):
+    pass
+
+
+class BillingValidationError(Exception):
+    pass
 
 class BillingService:
     """Billing service class"""
@@ -40,8 +50,27 @@ class BillingService:
     # ==================== Invoices ====================
     
     @staticmethod
-    def create_invoice(data, facility_slug=None, branch_id=None, department_id=None):
+    def create_invoice(
+        data,
+        facility_slug=None,
+        facility_id=None,
+        branch_id=None,
+        department_id=None,
+        idempotency_key=None,
+        payload_hash=None,
+    ):
         """Create a new invoice with optional line items."""
+        existing = None
+        if idempotency_key:
+            existing = Invoice.query.filter_by(
+                facility_slug=facility_slug,
+                idempotency_key=idempotency_key,
+            ).first()
+        if existing:
+            if existing.idempotency_payload_hash != payload_hash:
+                raise BillingIdempotencyConflictError
+            return existing, False
+
         amount = Decimal(str(data.get('amount', 0)))
         invoice = Invoice(
             patient_id=data['patient_id'],
@@ -51,36 +80,56 @@ class BillingService:
             notes=data.get('notes'),
             due_date=BillingService._parse_date(data.get('due_date')),
             invoice_date=BillingService._parse_datetime(data.get('invoice_date')),
+            facility_id=facility_id,
             facility_slug=facility_slug,
             branch_id=branch_id or department_id,
             department_id=department_id or branch_id,
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
         )
-        invoice.save()
-        
-        # Add invoice items
-        items = data.get('items') or []
-        if not items and amount > 0:
-            items = [{
-                'description': data.get('description') or 'Clinical services',
-                'quantity': 1,
-                'unit_price': amount,
-            }]
+        try:
+            db_session.add(invoice)
+            db_session.flush()
 
-        for item_data in items:
-            item = InvoiceItem(
-                invoice_id=invoice.id,
-                description=item_data['description'],
-                quantity=item_data.get('quantity', 1),
-                unit_price=item_data.get('unit_price', 0)
-            )
-            item.calculate_total()
-            item.save()
-        
-        # Calculate totals
-        invoice.calculate_total()
-        invoice.save()
-        
-        return invoice
+            items = data.get('items') or []
+            if not items and amount > 0:
+                items = [{
+                    'description': data.get('description') or 'Clinical services',
+                    'quantity': 1,
+                    'unit_price': amount,
+                }]
+
+            for item_data in items:
+                item = InvoiceItem(
+                    invoice_id=invoice.id,
+                    description=item_data['description'],
+                    quantity=item_data.get('quantity', 1),
+                    unit_price=item_data.get('unit_price', 0)
+                )
+                item.calculate_total()
+                db_session.add(item)
+
+            db_session.flush()
+            invoice.calculate_total()
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            if idempotency_key:
+                existing = Invoice.query.filter_by(
+                    facility_slug=facility_slug,
+                    idempotency_key=idempotency_key,
+                ).first()
+                if existing:
+                    if existing.idempotency_payload_hash != payload_hash:
+                        raise BillingIdempotencyConflictError
+                    return existing, False
+            raise
+        except Exception:
+            db_session.rollback()
+            raise
+
+        db_session.refresh(invoice)
+        return invoice, True
     
     @staticmethod
     def get_invoice_by_id(invoice_id):
@@ -127,36 +176,94 @@ class BillingService:
     # ==================== Payments ====================
     
     @staticmethod
-    def create_payment(invoice_id, data, facility_slug=None):
+    def create_payment(
+        invoice_id,
+        data,
+        facility_slug=None,
+        idempotency_key=None,
+        payload_hash=None,
+    ):
         """Create a payment for an invoice"""
-        invoice = Invoice.query.get(invoice_id)
+        existing = None
+        if idempotency_key:
+            existing = Payment.query.filter_by(
+                invoice_id=invoice_id,
+                idempotency_key=idempotency_key,
+            ).first()
+        if existing:
+            if existing.idempotency_payload_hash != payload_hash:
+                raise BillingIdempotencyConflictError
+            return existing, False
+
+        invoice = (
+            db_session.query(Invoice)
+            .filter(Invoice.id == invoice_id)
+            .with_for_update()
+            .first()
+        )
         if not invoice:
-            return None, "Invoice not found"
+            db_session.rollback()
+            raise BillingValidationError("Invoice not found")
         if facility_slug and invoice.facility_slug != facility_slug:
-            return None, "Invoice not found"
+            db_session.rollback()
+            raise BillingValidationError("Invoice not found")
+        if invoice.status == "CANCELLED":
+            db_session.rollback()
+            raise BillingValidationError("Cancelled invoices cannot receive payments")
+
+        amount = Decimal(str(data['amount']))
+        total_paid = (
+            db_session.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(Payment.invoice_id == invoice_id)
+            .scalar()
+        )
+        balance = max(Decimal(str(invoice.total or 0)) - Decimal(str(total_paid or 0)), Decimal("0"))
+        if amount > balance:
+            db_session.rollback()
+            raise BillingValidationError("Payment cannot be greater than the invoice balance")
         
         payment = Payment(
             invoice_id=invoice_id,
-            amount=data['amount'],
+            amount=amount,
             payment_method=data['payment_method'],
             reference_number=data.get('reference_number') or data.get('reference'),
             notes=data.get('notes'),
-            payment_date=BillingService._parse_datetime(data.get('payment_date'))
+            payment_date=BillingService._parse_datetime(data.get('payment_date')),
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
         )
-        payment.save()
-        
-        # Update invoice status
-        total_paid = sum((p.amount for p in invoice.payments), Decimal("0"))
-        
-        if total_paid >= invoice.total:
-            invoice.status = 'PAID'
-            invoice.paid_date = datetime.utcnow()
-        else:
-            invoice.status = 'PARTIAL'
-        
-        invoice.save()
-        
-        return payment, None
+        try:
+            db_session.add(payment)
+            db_session.flush()
+
+            total_paid += amount
+
+            if total_paid >= invoice.total:
+                invoice.status = 'PAID'
+                invoice.paid_date = datetime.utcnow()
+            else:
+                invoice.status = 'PARTIAL'
+
+            db_session.add(invoice)
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            if idempotency_key:
+                existing = Payment.query.filter_by(
+                    invoice_id=invoice_id,
+                    idempotency_key=idempotency_key,
+                ).first()
+                if existing:
+                    if existing.idempotency_payload_hash != payload_hash:
+                        raise BillingIdempotencyConflictError
+                    return existing, False
+            raise
+        except Exception:
+            db_session.rollback()
+            raise
+
+        db_session.refresh(payment)
+        return payment, True
     
     @staticmethod
     def get_payments_by_invoice(invoice_id):

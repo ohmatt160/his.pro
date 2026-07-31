@@ -1,4 +1,5 @@
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 from app.models.appointment import Appointment
 from app.models.medical_record import MedicalRecord
@@ -7,12 +8,34 @@ from app.extensions import db
 from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id, user_branch_id
 from datetime import date
 
+
+class PatientIdempotencyConflictError(ValueError):
+    pass
+
 class PatientService:
     """Patient service class with business logic"""
     
     @staticmethod
-    def create_patient(data, user_id, facility_slug=None):
+    def create_patient(
+        data,
+        user_id,
+        facility_slug=None,
+        facility_id=None,
+        idempotency_key=None,
+        payload_hash=None,
+    ):
         """Create a new patient"""
+        existing = PatientService.get_patient_by_idempotency_key(
+            facility_slug,
+            idempotency_key,
+        )
+        if existing:
+            if existing.registration_payload_hash != payload_hash:
+                raise PatientIdempotencyConflictError(
+                    "Idempotency key was already used for another patient payload"
+                )
+            return existing, False
+
         date_of_birth = data['date_of_birth']
         if isinstance(date_of_birth, str):
             date_of_birth = date.fromisoformat(date_of_birth)
@@ -30,12 +53,38 @@ class PatientService:
             emergency_contact_name=data.get('emergency_contact_name'),
             emergency_contact_phone=data.get('emergency_contact_phone'),
             created_by=user_id,
+            facility_id=facility_id,
             facility_slug=facility_slug,
             department_id=data.get('department_id'),
             branch_id=data.get('branch_id') or data.get('department_id'),
+            registration_idempotency_key=idempotency_key,
+            registration_payload_hash=payload_hash,
         )
-        patient.save()
-        return patient
+        try:
+            patient.save()
+            return patient, True
+        except IntegrityError:
+            db.session.rollback()
+            existing = PatientService.get_patient_by_idempotency_key(
+                facility_slug,
+                idempotency_key,
+            )
+            if not existing:
+                raise
+            if existing.registration_payload_hash != payload_hash:
+                raise PatientIdempotencyConflictError(
+                    "Idempotency key was already used for another patient payload"
+                )
+            return existing, False
+
+    @staticmethod
+    def get_patient_by_idempotency_key(facility_slug, idempotency_key):
+        if not facility_slug or not idempotency_key:
+            return None
+        return Patient.query.filter_by(
+            facility_slug=facility_slug,
+            registration_idempotency_key=idempotency_key,
+        ).first()
     
     @staticmethod
     def get_patient_by_id(patient_id, facility_slug=None):

@@ -137,7 +137,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "gender": "FEMALE",
                         "phone": "+234800000100",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:east-patient",
+                    },
                 )
                 self.assertEqual(patient.status_code, 201, patient.text)
                 patient_body = patient.json()
@@ -163,7 +166,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "gender": "MALE",
                         "phone": "+234800000200",
                     },
-                    headers=west_admin,
+                    headers={
+                        **west_admin,
+                        "Idempotency-Key": "test:branch:west-patient",
+                    },
                 )
                 self.assertEqual(west_patient.status_code, 201, west_patient.text)
 
@@ -179,7 +185,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "appointment_date": "2026-07-01T09:00:00",
                         "reason": "Should be blocked",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:cross-appointment",
+                    },
                 )
                 self.assertEqual(cross_branch_appointment.status_code, 404, cross_branch_appointment.text)
 
@@ -191,7 +200,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "appointment_date": "2026-07-01T10:00:00",
                         "reason": "Branch-safe appointment",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:east-appointment",
+                    },
                 )
                 self.assertEqual(appointment.status_code, 201, appointment.text)
 
@@ -209,7 +221,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "due_date": "2026-07-02",
                         "notes": "Should be blocked",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:cross-invoice",
+                    },
                 )
                 self.assertEqual(cross_branch_invoice.status_code, 404, cross_branch_invoice.text)
 
@@ -221,7 +236,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "due_date": "2026-07-02",
                         "notes": "Branch-safe invoice",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "branch-invoice-create-0001",
+                    },
                 )
                 self.assertEqual(invoice.status_code, 201, invoice.text)
                 self.assertEqual(invoice.json()["branch_id"], east_id)
@@ -251,7 +269,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "priority": "ROUTINE",
                         "notes": "Branch-safe lab order",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:east-lab-order",
+                    },
                 )
                 self.assertEqual(lab_order.status_code, 201, lab_order.text)
                 self.assertEqual(lab_order.json()["branch_id"], east_id)
@@ -274,7 +295,10 @@ class BranchIsolationTest(unittest.TestCase):
                         "body_part": "Chest",
                         "clinical_notes": "Branch-safe radiology order",
                     },
-                    headers=east_admin,
+                    headers={
+                        **east_admin,
+                        "Idempotency-Key": "test:branch:east-radiology-order",
+                    },
                 )
                 self.assertEqual(radiology_order.status_code, 201, radiology_order.text)
                 self.assertEqual(radiology_order.json()["branch_id"], east_id)

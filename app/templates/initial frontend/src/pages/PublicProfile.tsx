@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { ExternalLink, Globe, Plus, Save, Trash2 } from "lucide-react";
 import { apiClient } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -50,7 +51,7 @@ const emptyProfile: PublicProfileData = {
 };
 
 const PublicProfile = () => {
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const [profile, setProfile] = useState<PublicProfileData>(emptyProfile);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

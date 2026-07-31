@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Check,
@@ -46,7 +47,15 @@ import {
   type FacilityStaffAccount,
   type StaffRole,
 } from "@/lib/facility-staff";
-import { useBranchesQuery, useWorkspaceQuery } from "@/hooks/useWorkspaceQueries";
+import {
+  useBranchesQuery,
+  useFacilityQuery,
+  useWorkspaceQuery,
+} from "@/hooks/useWorkspaceQueries";
+import {
+  isModuleEnabled,
+  type FacilityModuleId,
+} from "@/lib/modules";
 
 const roleBadgeColors: Record<StaffRole, string> = {
   admin: "bg-slate-100 text-slate-700 border-slate-200",
@@ -56,6 +65,7 @@ const roleBadgeColors: Record<StaffRole, string> = {
   reception: "bg-amber-100 text-amber-700 border-amber-200",
   pharmacist: "bg-purple-100 text-purple-700 border-purple-200",
   lab: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  billing: "bg-emerald-100 text-emerald-700 border-emerald-200",
 };
 
 const departmentOptions = [
@@ -77,6 +87,27 @@ const assignableRoles = staffRoles.filter(
   (role): role is AssignableStaffRole => role !== "admin"
 );
 
+const roleRequiredModules: Partial<
+  Record<AssignableStaffRole, FacilityModuleId>
+> = {
+  doctor: "consultations",
+  nurse: "nursing",
+  reception: "reception",
+  pharmacist: "pharmacy",
+  lab: "lab",
+  billing: "billing",
+};
+
+const departmentRequiredModules: Partial<Record<string, FacilityModuleId>> = {
+  Consultations: "consultations",
+  "Front Desk": "reception",
+  Laboratory: "lab",
+  Nursing: "nursing",
+  Pharmacy: "pharmacy",
+  Radiology: "radiology",
+  "Revenue & Billing": "billing",
+};
+
 const emptyEditStaff = {
   fullName: "",
   role: "doctor" as StaffRole,
@@ -89,6 +120,7 @@ const emptyEditStaff = {
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMPTY_MODULES: string[] = [];
 
 const isValidOptionalEmail = (value: string) => {
   const trimmed = value.trim();
@@ -106,7 +138,7 @@ const item = {
 };
 
 const StaffAccess = () => {
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const { user } = useAuth();
   const [staffList, setStaffList] = useState<FacilityStaffAccount[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -115,6 +147,8 @@ const StaffAccess = () => {
   const [staffError, setStaffError] = useState("");
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [updatingStaff, setUpdatingStaff] = useState(false);
+  const creatingStaffRef = useRef(false);
+  const updatingStaffRef = useRef(false);
   const [editingStaff, setEditingStaff] = useState<FacilityStaffAccount | null>(null);
   const [editStaff, setEditStaff] = useState(emptyEditStaff);
   const [editStaffDepartmentId, setEditStaffDepartmentId] = useState("");
@@ -131,6 +165,7 @@ const StaffAccess = () => {
   });
   const { data: workspace } = useWorkspaceQuery(facilitySlug);
   const { data: facilityDepartments = [] } = useBranchesQuery(facilitySlug);
+  const { data: facilityDetails } = useFacilityQuery(facilitySlug);
 
   useEffect(() => {
     if (!facilitySlug) {
@@ -176,7 +211,20 @@ const StaffAccess = () => {
     });
   }, [currentBranch, isBranchAdmin, staffList]);
   const branchOptions = isBranchAdmin && currentBranch ? [currentBranch] : facilityDepartments;
-  const hasMultiBranchAssignment = !isBranchAdmin && branchOptions.length > 0;
+  const multiBranchEnabled = facilityDetails?.hospital_type === "multi_clinic";
+  const hasMultiBranchAssignment =
+    !isBranchAdmin && multiBranchEnabled && branchOptions.length > 0;
+  const workspaceModules = workspace?.selectedModules || EMPTY_MODULES;
+  const newStaffBranch = branchOptions.find(
+    (branch) => branch.id === newStaff.departmentId
+  );
+  const newStaffModules =
+    newStaffBranch?.modules?.length ? newStaffBranch.modules : workspaceModules;
+  const editStaffBranch = branchOptions.find(
+    (branch) => branch.id === editStaffDepartmentId
+  );
+  const editStaffModules =
+    editStaffBranch?.modules?.length ? editStaffBranch.modules : workspaceModules;
   const assignableStaffRoles = useMemo(
     () =>
       assignableRoles.filter((role) => {
@@ -184,9 +232,22 @@ const StaffAccess = () => {
           return hasMultiBranchAssignment;
         }
 
-        return true;
+        const requiredModule = roleRequiredModules[role];
+        return !requiredModule || isModuleEnabled(newStaffModules, requiredModule);
       }),
-    [hasMultiBranchAssignment]
+    [hasMultiBranchAssignment, newStaffModules]
+  );
+  const editableStaffRoles = useMemo(
+    () =>
+      assignableRoles.filter((role) => {
+        if (role === "branch_admin") {
+          return hasMultiBranchAssignment;
+        }
+
+        const requiredModule = roleRequiredModules[role];
+        return !requiredModule || isModuleEnabled(editStaffModules, requiredModule);
+      }),
+    [editStaffModules, hasMultiBranchAssignment]
   );
   const visibleDepartmentOptions = useMemo(
     () =>
@@ -195,25 +256,38 @@ const StaffAccess = () => {
           return hasMultiBranchAssignment;
         }
 
-        return true;
+        const requiredModule = departmentRequiredModules[department];
+        return !requiredModule || isModuleEnabled(newStaffModules, requiredModule);
       }),
-    [hasMultiBranchAssignment]
+    [hasMultiBranchAssignment, newStaffModules]
+  );
+  const editableDepartmentOptions = useMemo(
+    () =>
+      departmentOptions.filter((department) => {
+        if (department === "Administration") {
+          return hasMultiBranchAssignment;
+        }
+
+        const requiredModule = departmentRequiredModules[department];
+        return !requiredModule || isModuleEnabled(editStaffModules, requiredModule);
+      }),
+    [editStaffModules, hasMultiBranchAssignment]
   );
   const editingAssignableRole =
     editingStaff?.role && editingStaff.role !== "admin" ? editingStaff.role : null;
   const editRoleOptions = useMemo(
     () =>
-      editingAssignableRole && !assignableStaffRoles.includes(editingAssignableRole)
-        ? [editingAssignableRole, ...assignableStaffRoles]
-        : assignableStaffRoles,
-    [assignableStaffRoles, editingAssignableRole]
+      editingAssignableRole && !editableStaffRoles.includes(editingAssignableRole)
+        ? [editingAssignableRole, ...editableStaffRoles]
+        : editableStaffRoles,
+    [editableStaffRoles, editingAssignableRole]
   );
   const editDepartmentOptions = useMemo(
     () =>
-      editStaff.department && !visibleDepartmentOptions.includes(editStaff.department)
-        ? [editStaff.department, ...visibleDepartmentOptions]
-        : visibleDepartmentOptions,
-    [editStaff.department, visibleDepartmentOptions]
+      editStaff.department && !editableDepartmentOptions.includes(editStaff.department)
+        ? [editStaff.department, ...editableDepartmentOptions]
+        : editableDepartmentOptions,
+    [editStaff.department, editableDepartmentOptions]
   );
 
   useEffect(() => {
@@ -270,12 +344,6 @@ const StaffAccess = () => {
       return loginLink;
     }
 
-    if (branch.login_url_path) {
-      const origin =
-        typeof window !== "undefined" ? window.location.origin : "https://his.pro";
-      return `${origin}${branch.login_url_path}`;
-    }
-
     return branch.slug ? getBranchLoginLink(facilitySlug, branch.slug) : loginLink;
   };
 
@@ -317,6 +385,9 @@ const StaffAccess = () => {
   };
 
   const handleAddStaff = async () => {
+    if (creatingStaffRef.current) {
+      return;
+    }
     if (!newStaff.fullName.trim() || !newStaff.department.trim()) {
       return;
     }
@@ -334,6 +405,7 @@ const StaffAccess = () => {
       return;
     }
 
+    creatingStaffRef.current = true;
     setCreatingStaff(true);
     setStaffError("");
     try {
@@ -368,6 +440,7 @@ const StaffAccess = () => {
           : "Staff account could not be created."
       );
     } finally {
+      creatingStaffRef.current = false;
       setCreatingStaff(false);
     }
   };
@@ -389,6 +462,9 @@ const StaffAccess = () => {
   };
 
   const handleUpdateStaff = async () => {
+    if (updatingStaffRef.current) {
+      return;
+    }
     if (!editingStaff || !editStaff.fullName.trim() || !editStaff.department.trim()) {
       return;
     }
@@ -397,6 +473,7 @@ const StaffAccess = () => {
       return;
     }
 
+    updatingStaffRef.current = true;
     setUpdatingStaff(true);
     setStaffError("");
     try {
@@ -436,6 +513,7 @@ const StaffAccess = () => {
           : "Staff account could not be updated."
       );
     } finally {
+      updatingStaffRef.current = false;
       setUpdatingStaff(false);
     }
   };

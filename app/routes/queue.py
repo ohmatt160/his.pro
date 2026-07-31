@@ -3,7 +3,8 @@ Queue Management Routes - FastAPI Version
 Converted from Flask-RESTx queue_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import case
 from pydantic import BaseModel, Field
@@ -21,6 +22,12 @@ from app.models.patient import Patient
 from app.models.appointment import Appointment
 from app.services.realtime_service import publish_tenant_event
 from app.utils.validators import Validators
+from app.utils.idempotency import (
+    IdempotencyConflictError,
+    idempotency_payload_hash,
+    require_idempotency_key,
+    verify_idempotent_replay,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/queue", tags=["queue"])
@@ -35,6 +42,37 @@ def _publish_queue_event(event_type: str, entry: PatientQueue) -> None:
         modules=["reception", "consultations", "nursing"],
         resource_id=entry.id,
         payload={"status": entry.status, "patient_id": entry.patient_id},
+    )
+
+
+def _queue_response(entry: PatientQueue, patient: Patient | None = None) -> QueueResponse:
+    patient = patient or entry.patient
+    return QueueResponse(
+        id=str(entry.id),
+        patient_id=str(entry.patient_id),
+        patient_name=patient.full_name if patient else None,
+        patient_phone=patient.phone if patient else None,
+        patient_date_of_birth=(
+            patient.date_of_birth.isoformat()
+            if patient and patient.date_of_birth
+            else None
+        ),
+        appointment_id=str(entry.appointment_id) if entry.appointment_id else None,
+        appointment_time=(
+            entry.appointment.appointment_date.isoformat()
+            if entry.appointment and entry.appointment.appointment_date
+            else None
+        ),
+        facility_slug=entry.facility_slug,
+        department=entry.department,
+        branch_id=entry.branch_id,
+        status=entry.status,
+        queue_number=entry.queue_number,
+        priority=entry.priority,
+        checked_in_at=entry.checked_in_at.isoformat() if entry.checked_in_at else None,
+        started_at=entry.started_at.isoformat() if entry.started_at else None,
+        completed_at=entry.completed_at.isoformat() if entry.completed_at else None,
+        created_at=entry.created_at.isoformat() if entry.created_at else "",
     )
 
 
@@ -113,6 +151,8 @@ async def get_queue(
 @router.post("", response_model=QueueResponse, status_code=status.HTTP_201_CREATED)
 async def add_to_queue(
     data: QueueCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -120,6 +160,22 @@ async def add_to_queue(
     facility_slug = current_user.facility_slug
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    idempotency_key = require_idempotency_key(idempotency_key)
+    payload_hash = idempotency_payload_hash({
+        "facility_slug": facility_slug,
+        "queue": data.model_dump(),
+    })
+    existing_idempotent = db_session.query(PatientQueue).filter_by(
+        facility_slug=facility_slug,
+        idempotency_key=idempotency_key,
+    ).first()
+    if existing_idempotent:
+        try:
+            verify_idempotent_replay(existing_idempotent, payload_hash)
+        except IdempotencyConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        response.status_code = status.HTTP_200_OK
+        return _queue_response(existing_idempotent)
 
     # Verify patient exists and belongs to facility
     patient = db_session.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
@@ -165,6 +221,7 @@ async def add_to_queue(
 
     # Create queue entry
     queue_entry = PatientQueue(
+        facility_id=current_user.facility_id,
         facility_slug=facility_slug,
         patient_id=data.patient_id,
         appointment_id=data.appointment_id,
@@ -172,32 +229,38 @@ async def add_to_queue(
         department=department,
         priority=data.priority,
         queue_number=next_number,
-        status='waiting'
+        status='waiting',
+        idempotency_key=idempotency_key,
+        idempotency_payload_hash=payload_hash,
     )
-    db_session.add(queue_entry)
-    db_session.commit()
-    db_session.refresh(queue_entry)
+    try:
+        db_session.add(queue_entry)
+        db_session.commit()
+        db_session.refresh(queue_entry)
+    except IntegrityError:
+        db_session.rollback()
+        replay = db_session.query(PatientQueue).filter_by(
+            facility_slug=facility_slug,
+            idempotency_key=idempotency_key,
+        ).first()
+        if replay:
+            try:
+                verify_idempotent_replay(replay, payload_hash)
+            except IdempotencyConflictError as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+            response.status_code = status.HTTP_200_OK
+            return _queue_response(replay)
+        active = db_session.query(PatientQueue).filter(
+            PatientQueue.facility_slug == facility_slug,
+            PatientQueue.patient_id == data.patient_id,
+            PatientQueue.status.in_(['waiting', 'in_progress']),
+        ).first()
+        if active:
+            raise HTTPException(status_code=409, detail="Patient is already in queue")
+        raise
     _publish_queue_event("queue.created", queue_entry)
 
-    return QueueResponse(
-        id=str(queue_entry.id),
-        patient_id=str(queue_entry.patient_id),
-        patient_name=patient.full_name if patient else None,
-        patient_phone=patient.phone if patient else None,
-        patient_date_of_birth=patient.date_of_birth.isoformat() if patient and patient.date_of_birth else None,
-        appointment_id=str(queue_entry.appointment_id) if queue_entry.appointment_id else None,
-        appointment_time=queue_entry.appointment.appointment_date.isoformat() if queue_entry.appointment and queue_entry.appointment.appointment_date else None,
-        facility_slug=queue_entry.facility_slug,
-        department=queue_entry.department,
-        branch_id=queue_entry.branch_id,
-        status=queue_entry.status,
-        queue_number=queue_entry.queue_number,
-        priority=queue_entry.priority,
-        checked_in_at=queue_entry.checked_in_at.isoformat() if queue_entry.checked_in_at else None,
-        started_at=queue_entry.started_at.isoformat() if queue_entry.started_at else None,
-        completed_at=queue_entry.completed_at.isoformat() if queue_entry.completed_at else None,
-        created_at=queue_entry.created_at.isoformat() if queue_entry.created_at else ""
-    )
+    return _queue_response(queue_entry, patient)
 
 
 @router.get("/{queue_id}", response_model=QueueResponse)

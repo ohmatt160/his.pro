@@ -3,7 +3,7 @@ Laboratory Routes - FastAPI Version
 Converted from Flask-RESTx lab_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -23,6 +23,11 @@ from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
 from app.models.lab import LabOrder, LabResult
+from app.utils.idempotency import (
+    IdempotencyConflictError,
+    idempotency_payload_hash,
+    require_idempotency_key,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/laboratory", tags=["laboratory"])
@@ -81,10 +86,18 @@ def _lab_result_response(result) -> LabResultResponse:
 @router.get("/tests", response_model=List[LabTestResponse])
 async def get_lab_tests(
     active_only: bool = Query(True),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
-    tests = LabService.get_all_lab_tests(active_only=active_only)
+    facility_slug = require_facility_slug(current_user)
+    tests = LabService.get_all_lab_tests(
+        facility_slug,
+        active_only=active_only,
+        page=page,
+        per_page=per_page,
+    )
     return [_lab_test_response(t) for t in tests]
 
 
@@ -94,7 +107,12 @@ async def create_lab_test(
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
-    test, error = LabService.create_lab_test(data.model_dump())
+    facility_slug = require_facility_slug(current_user)
+    test, error = LabService.create_lab_test(
+        data.model_dump(),
+        facility_slug,
+        current_user.facility_id,
+    )
     if error:
         raise HTTPException(status_code=400, detail=error)
 
@@ -107,7 +125,7 @@ async def get_lab_test(
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
-    test = LabService.get_lab_test_by_id(test_id)
+    test = LabService.get_lab_test_by_id(test_id, require_facility_slug(current_user))
     if not test:
         raise HTTPException(status_code=404, detail="Lab test not found")
 
@@ -121,7 +139,7 @@ async def update_lab_test(
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
-    test = LabService.get_lab_test_by_id(test_id)
+    test = LabService.get_lab_test_by_id(test_id, require_facility_slug(current_user))
     if not test:
         raise HTTPException(status_code=404, detail="Lab test not found")
 
@@ -184,48 +202,66 @@ async def get_lab_orders(
 @router.post("/orders", response_model=LabOrderResponse, status_code=status.HTTP_201_CREATED)
 async def create_lab_order(
     data: LabOrderCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE')),
     db: Session = Depends(get_db)
 ):
     facility_slug = require_facility_slug(current_user)
+    idempotency_key = require_idempotency_key(idempotency_key)
 
     patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     branch_id = ensure_patient_branch_access(patient, current_user, data.branch_id or data.department_id)
 
-    test = LabService.get_lab_test_by_id(data.test_id)
+    test = LabService.get_lab_test_by_id(data.test_id, facility_slug)
     if not test:
         raise HTTPException(status_code=404, detail="Lab test not found")
 
     payload = data.model_dump()
+    payload['facility_id'] = current_user.facility_id
     payload['facility_slug'] = facility_slug
     payload['branch_id'] = branch_id or patient.branch_id or patient.department_id
     payload['department_id'] = branch_id or patient.department_id
 
-    order = LabService.create_lab_order(payload, current_user.id)
-    OrderWorkflowService.record(
-        facility_slug=facility_slug,
-        patient_id=order.patient_id,
-        order_type="lab",
-        order_id=order.id,
-        event_type="consultation_order_created",
-        status=order.status,
-        title="Lab order created",
-        message=f"Lab order created for test {test.name}.",
-        actor_id=current_user.id,
-        target_role="LAB_TECH",
-        metadata={"test_id": test.id, "test_name": test.name},
-    )
-    publish_tenant_event(
-        event_type="lab_order.created",
-        facility_slug=facility_slug,
-        branch_id=order.branch_id or order.department_id,
-        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "LAB_TECH"],
-        modules=["lab", "consultations", "records"],
-        resource_id=order.id,
-        payload={"patient_id": order.patient_id, "status": order.status},
-    )
+    try:
+        order, created = LabService.create_lab_order(
+            payload,
+            current_user.id,
+            idempotency_key=idempotency_key,
+            payload_hash=idempotency_payload_hash({
+                "facility_slug": facility_slug,
+                "order": payload,
+            }),
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if created:
+        OrderWorkflowService.record(
+            facility_slug=facility_slug,
+            patient_id=order.patient_id,
+            order_type="lab",
+            order_id=order.id,
+            event_type="consultation_order_created",
+            status=order.status,
+            title="Lab order created",
+            message=f"Lab order created for test {test.name}.",
+            actor_id=current_user.id,
+            target_role="LAB_TECH",
+            metadata={"test_id": test.id, "test_name": test.name},
+        )
+        publish_tenant_event(
+            event_type="lab_order.created",
+            facility_slug=facility_slug,
+            branch_id=order.branch_id or order.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "LAB_TECH"],
+            modules=["lab", "consultations", "records"],
+            resource_id=order.id,
+            payload={"patient_id": order.patient_id, "status": order.status},
+        )
+    else:
+        response.status_code = status.HTTP_200_OK
 
     return _lab_order_response(order)
 
@@ -307,6 +343,7 @@ async def get_lab_result(
 async def create_lab_result(
     order_id: str,
     data: LabResultCreate,
+    response: Response,
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'LAB_TECH')),
     db: Session = Depends(get_db)
 ):
@@ -315,9 +352,16 @@ async def create_lab_result(
     require_tenant_row(order, current_user, "Lab order not found")
 
     if order.status == 'COMPLETED':
-        raise HTTPException(status_code=400, detail="Lab order already completed")
+        existing_result = LabService.get_result_by_order(order_id)
+        if existing_result:
+            response.status_code = status.HTTP_200_OK
+            return _lab_result_response(existing_result)
+        raise HTTPException(status_code=409, detail="Lab order already completed")
 
-    result = LabService.create_lab_result(order_id, data.model_dump())
+    result, created = LabService.create_lab_result(order_id, data.model_dump())
+    if not created:
+        response.status_code = status.HTTP_200_OK
+        return _lab_result_response(result)
     patient = db.query(Patient).filter_by(id=order.patient_id, facility_slug=facility_slug).first()
     OrderWorkflowService.record(
         facility_slug=facility_slug,

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -105,6 +106,9 @@ const emptyPaymentForm = {
 
 const paymentMethods: PaymentMethod[] = ["CASH", "CARD", "TRANSFER", "INSURANCE"];
 
+const createIdempotencyKey = (scope: "invoice" | "payment") =>
+  `billing-${scope}:${crypto.randomUUID()}`;
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -114,7 +118,7 @@ const formatCurrency = (value: number) =>
 
 const Billing = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, Payment[]>>({});
@@ -125,6 +129,12 @@ const Billing = () => {
   const [invoiceForm, setInvoiceForm] = useState(emptyInvoiceForm);
   const [paymentForm, setPaymentForm] = useState(emptyPaymentForm);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const invoiceSubmitRef = useRef(false);
+  const paymentSubmitRef = useRef(false);
+  const invoiceIdempotencyKeyRef = useRef("");
+  const paymentIdempotencyKeyRef = useRef("");
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<BillingResource>>({});
 
@@ -206,6 +216,9 @@ const Billing = () => {
 
   const createInvoice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (invoiceSubmitRef.current) {
+      return;
+    }
     setError("");
 
     const amount = Number(invoiceForm.amount);
@@ -214,14 +227,25 @@ const Billing = () => {
       return;
     }
 
+    invoiceSubmitRef.current = true;
+    setCreatingInvoice(true);
+    const idempotencyKey =
+      invoiceIdempotencyKeyRef.current ||
+      createIdempotencyKey("invoice");
+    invoiceIdempotencyKeyRef.current = idempotencyKey;
     try {
-      await apiClient.post<Invoice>("/billing/invoices", {
-        patient_id: invoiceForm.patient_id,
-        amount,
-        due_date: invoiceForm.due_date,
-        notes: invoiceForm.notes.trim() || undefined,
+      await apiClient.request<Invoice>("/billing/invoices", {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: {
+          patient_id: invoiceForm.patient_id,
+          amount,
+          due_date: invoiceForm.due_date,
+          notes: invoiceForm.notes.trim() || undefined,
+        },
       });
       setInvoiceForm(emptyInvoiceForm);
+      invoiceIdempotencyKeyRef.current = "";
       setShowInvoiceDialog(false);
       await loadBilling();
     } catch (invoiceError) {
@@ -230,12 +254,15 @@ const Billing = () => {
           ? invoiceError.message
           : "Invoice creation failed."
       );
+    } finally {
+      invoiceSubmitRef.current = false;
+      setCreatingInvoice(false);
     }
   };
 
   const recordPayment = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!payingInvoice) {
+    if (!payingInvoice || paymentSubmitRef.current) {
       return;
     }
 
@@ -250,21 +277,45 @@ const Billing = () => {
       return;
     }
 
+    paymentSubmitRef.current = true;
+    setRecordingPayment(true);
+    const idempotencyKey =
+      paymentIdempotencyKeyRef.current ||
+      createIdempotencyKey("payment");
+    paymentIdempotencyKeyRef.current = idempotencyKey;
     try {
-      const payment = await apiClient.post<Payment>(`/billing/invoices/${payingInvoice.id}/payments`, {
-        amount,
-        payment_method: paymentForm.payment_method,
-        reference: paymentForm.reference.trim() || undefined,
-        notes: paymentForm.notes.trim() || undefined,
-      });
-      if (receiptFile) {
-        const formData = new FormData();
-        formData.append("file", receiptFile);
-        await apiClient.request(`/billing/payments/${payment.id}/receipt`, {
+      const payment = await apiClient.request<Payment>(
+        `/billing/invoices/${payingInvoice.id}/payments`,
+        {
           method: "POST",
-          body: formData,
-        });
+          headers: { "Idempotency-Key": idempotencyKey },
+          body: {
+            amount,
+            payment_method: paymentForm.payment_method,
+            reference: paymentForm.reference.trim() || undefined,
+            notes: paymentForm.notes.trim() || undefined,
+          },
+        }
+      );
+      if (receiptFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", receiptFile);
+          await apiClient.request(`/billing/payments/${payment.id}/receipt`, {
+            method: "POST",
+            body: formData,
+          });
+        } catch (receiptError) {
+          setError(
+            receiptError instanceof Error
+              ? `Payment was recorded, but the receipt upload failed: ${receiptError.message}`
+              : "Payment was recorded, but the receipt upload failed. Submit again to retry it."
+          );
+          await loadBilling();
+          return;
+        }
       }
+      paymentIdempotencyKeyRef.current = "";
       setPaymentForm(emptyPaymentForm);
       setReceiptFile(null);
       setPayingInvoice(null);
@@ -273,6 +324,9 @@ const Billing = () => {
       setError(
         paymentError instanceof Error ? paymentError.message : "Payment failed."
       );
+    } finally {
+      paymentSubmitRef.current = false;
+      setRecordingPayment(false);
     }
   };
 
@@ -316,6 +370,7 @@ const Billing = () => {
           <Button
             onClick={() => {
               setError("");
+              invoiceIdempotencyKeyRef.current = createIdempotencyKey("invoice");
               setShowInvoiceDialog(true);
             }}
             className="gradient-cta gap-2 border-0 text-primary-foreground"
@@ -393,6 +448,7 @@ const Billing = () => {
                         onClick={() => {
                           setError("");
                           setReceiptFile(null);
+                          paymentIdempotencyKeyRef.current = createIdempotencyKey("payment");
                           setPaymentForm({ ...emptyPaymentForm, amount: String(invoice.balance) });
                           setPayingInvoice(invoice);
                         }}
@@ -439,7 +495,18 @@ const Billing = () => {
         </div>
       </main>
 
-      <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
+      <Dialog
+        open={showInvoiceDialog}
+        onOpenChange={(open) => {
+          if (creatingInvoice) {
+            return;
+          }
+          setShowInvoiceDialog(open);
+          if (!open) {
+            invoiceIdempotencyKeyRef.current = "";
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Invoice</DialogTitle>
@@ -493,34 +560,31 @@ const Billing = () => {
                 setInvoiceForm((current) => ({ ...current, notes: value }))
               }
             />
-            <div>
-              <Label>Receipt Image</Label>
-              <Input
-                className="mt-1.5"
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(event) => setReceiptFile(event.target.files?.[0] || null)}
-              />
-              {receiptFile && (
-                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                  <FileImage className="h-3.5 w-3.5" /> {receiptFile.name}
-                </p>
-              )}
-            </div>
             {error && <FormError message={error} />}
             <div className="flex gap-3">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowInvoiceDialog(false)}>
+              <Button type="button" variant="outline" className="flex-1" disabled={creatingInvoice} onClick={() => setShowInvoiceDialog(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
-                Create Invoice
+              <Button type="submit" disabled={creatingInvoice} className="gradient-cta flex-1 border-0 text-primary-foreground">
+                {creatingInvoice ? "Creating..." : "Create Invoice"}
               </Button>
             </div>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(payingInvoice)} onOpenChange={(open) => !open && setPayingInvoice(null)}>
+      <Dialog
+        open={Boolean(payingInvoice)}
+        onOpenChange={(open) => {
+          if (recordingPayment || open) {
+            return;
+          }
+          paymentIdempotencyKeyRef.current = "";
+          setReceiptFile(null);
+          setPayingInvoice(null);
+          loadBilling().catch(() => undefined);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Record Payment</DialogTitle>
@@ -577,13 +641,32 @@ const Billing = () => {
                 setPaymentForm((current) => ({ ...current, notes: value }))
               }
             />
+            <div>
+              <Label>Receipt Image</Label>
+              <Input
+                className="mt-1.5"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(event) => setReceiptFile(event.target.files?.[0] || null)}
+              />
+              {receiptFile && (
+                <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                  <FileImage className="h-3.5 w-3.5" /> {receiptFile.name}
+                </p>
+              )}
+            </div>
             {error && <FormError message={error} />}
             <div className="flex gap-3">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setPayingInvoice(null)}>
+              <Button type="button" variant="outline" className="flex-1" disabled={recordingPayment} onClick={() => {
+                paymentIdempotencyKeyRef.current = "";
+                setReceiptFile(null);
+                setPayingInvoice(null);
+                loadBilling().catch(() => undefined);
+              }}>
                 Cancel
               </Button>
-              <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
-                Save Payment
+              <Button type="submit" disabled={recordingPayment} className="gradient-cta flex-1 border-0 text-primary-foreground">
+                {recordingPayment ? "Saving..." : "Save Payment"}
               </Button>
             </div>
           </form>

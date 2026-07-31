@@ -15,18 +15,17 @@ const features = [
   { icon: FileText, title: "Electronic Health Records", desc: "Comprehensive digital patient records accessible across departments instantly." },
   { icon: Pill, title: "Pharmacy Management", desc: "Track inventory, manage prescriptions, and automate dispensing workflows." },
   { icon: FlaskConical, title: "Lab & Diagnostics", desc: "Order tests, track samples, and deliver results digitally to clinicians." },
-  { icon: BarChart3, title: "Analytics & Reports", desc: "Real-time dashboards and exportable reports for data-driven decisions." },
-  { icon: ShieldCheck, title: "Role-Based Security", desc: "Granular access controls ensuring data privacy and regulatory compliance." },
-  { icon: CreditCard, title: "Billing & Insurance", desc: "Automated invoicing, insurance claims processing, and payment tracking." },
-  { icon: CalendarDays, title: "Appointments & Scheduling", desc: "Online booking, automated reminders, and calendar management." },
+  { icon: BarChart3, title: "Analytics & Reports", desc: "Operational dashboards and exportable reports for daily decisions." },
+  { icon: ShieldCheck, title: "Role-Based Security", desc: "Tenant, branch, module, and role boundaries backed by audit trails." },
+  { icon: CreditCard, title: "Billing & Payments", desc: "Create invoices, record payments, preserve receipts, and monitor balances." },
+  { icon: CalendarDays, title: "Appointments & Queue", desc: "Coordinate bookings, arrival queues, consultation flow, and follow-up." },
 ];
 
 const FeaturesSection = () => (
-  <section id="features" className="py-24 relative">
-    <div className="absolute inset-0 hero-pattern opacity-50" />
-    <div className="container mx-auto px-4 relative z-10">
+  <section id="features" className="scroll-mt-16 py-24">
+    <div className="container mx-auto px-4">
       <div className="text-center max-w-2xl mx-auto mb-16">
-        <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+        <h2 className="text-3xl font-extrabold sm:text-4xl">
           Everything You Need to Run a{" "}
           <span className="text-gradient">Modern Health Facility</span>
         </h2>
@@ -42,9 +41,9 @@ const FeaturesSection = () => (
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.05, duration: 0.4 }}
-            className="glass-card rounded-xl p-6 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-default"
+            className="group rounded-lg border border-slate-200 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
           >
-            <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-teal-50 transition-colors group-hover:bg-teal-100">
               <f.icon className="h-6 w-6 text-primary" />
             </div>
             <h3 className="font-bold text-foreground mb-2">{f.title}</h3>

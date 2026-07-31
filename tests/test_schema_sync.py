@@ -34,6 +34,29 @@ class SchemaSyncTest(unittest.TestCase):
             connection.execute(
                 text(
                     """
+                    INSERT INTO facilities (id, name, type, slug)
+                    VALUES ('facility-1', 'API Clinic', 'clinic', 'api')
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
+                    CREATE TABLE patients (
+                        id VARCHAR(36) PRIMARY KEY,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        first_name VARCHAR(100) NOT NULL,
+                        last_name VARCHAR(100) NOT NULL,
+                        date_of_birth DATE NOT NULL,
+                        facility_slug VARCHAR(100)
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
                     CREATE TABLE users (
                         id VARCHAR(36) PRIMARY KEY,
                         created_at DATETIME,
@@ -112,6 +135,21 @@ class SchemaSyncTest(unittest.TestCase):
             connection.execute(
                 text(
                     """
+                    CREATE TABLE payments (
+                        id VARCHAR(36) PRIMARY KEY,
+                        created_at DATETIME,
+                        updated_at DATETIME,
+                        invoice_id VARCHAR(36) NOT NULL,
+                        amount NUMERIC(10, 2) NOT NULL,
+                        payment_method VARCHAR(50),
+                        payment_date DATETIME NOT NULL
+                    )
+                    """
+                )
+            )
+            connection.execute(
+                text(
+                    """
                     CREATE TABLE radiology_orders (
                         id VARCHAR(36) PRIMARY KEY,
                         created_at DATETIME,
@@ -135,12 +173,35 @@ class SchemaSyncTest(unittest.TestCase):
         ensure_database_schema_current(engine)
 
         inspector = inspect(engine)
+        facility_columns = {column["name"] for column in inspector.get_columns("facilities")}
+        patient_columns = {column["name"] for column in inspector.get_columns("patients")}
         user_columns = {column["name"] for column in inspector.get_columns("users")}
         audit_columns = {column["name"] for column in inspector.get_columns("audit_logs")}
         invoice_columns = {column["name"] for column in inspector.get_columns("invoices")}
+        payment_columns = {column["name"] for column in inspector.get_columns("payments")}
         lab_order_columns = {column["name"] for column in inspector.get_columns("lab_orders")}
         radiology_order_columns = {column["name"] for column in inspector.get_columns("radiology_orders")}
 
+        self.assertIn("canonical_subdomain", facility_columns)
+        with engine.connect() as connection:
+            canonical_subdomain = connection.execute(
+                text(
+                    "SELECT canonical_subdomain FROM facilities "
+                    "WHERE id = 'facility-1'"
+                )
+            ).scalar_one()
+        self.assertNotEqual(canonical_subdomain, "api")
+        self.assertLessEqual(len(canonical_subdomain), 63)
+        self.assertIn(
+            "ix_facilities_canonical_subdomain",
+            {index["name"] for index in inspector.get_indexes("facilities")},
+        )
+        self.assertIn("registration_idempotency_key", patient_columns)
+        self.assertIn("registration_payload_hash", patient_columns)
+        self.assertIn(
+            "uq_patients_facility_registration_idempotency",
+            {index["name"] for index in inspector.get_indexes("patients")},
+        )
         self.assertIn("facility_id", user_columns)
         self.assertIn("must_change_password", user_columns)
         self.assertIn("last_password_change", user_columns)
@@ -149,6 +210,18 @@ class SchemaSyncTest(unittest.TestCase):
         self.assertIn("user_agent", audit_columns)
         self.assertIn("branch_id", invoice_columns)
         self.assertIn("department_id", invoice_columns)
+        self.assertIn("idempotency_key", invoice_columns)
+        self.assertIn("idempotency_payload_hash", invoice_columns)
+        self.assertIn(
+            "uq_invoices_facility_idempotency",
+            {index["name"] for index in inspector.get_indexes("invoices")},
+        )
+        self.assertIn("idempotency_key", payment_columns)
+        self.assertIn("idempotency_payload_hash", payment_columns)
+        self.assertIn(
+            "uq_payments_invoice_idempotency",
+            {index["name"] for index in inspector.get_indexes("payments")},
+        )
         self.assertIn("branch_id", lab_order_columns)
         self.assertIn("department_id", lab_order_columns)
         self.assertIn("branch_id", radiology_order_columns)

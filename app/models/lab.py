@@ -6,9 +6,20 @@ from app.models.base_model import BaseModel
 class LabTest(BaseModel):
     """Lab test definitions"""
     __tablename__ = 'lab_tests'
+    __table_args__ = (
+        Index(
+            "uq_lab_tests_facility_code",
+            "facility_slug",
+            "code",
+            unique=True,
+        ),
+        Index("idx_lab_tests_facility_active", "facility_slug", "is_active"),
+    )
 
     name = Column(String(200), nullable=False)
-    code = Column(String(50), unique=True, nullable=False)
+    code = Column(String(50), nullable=False)
+    facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
+    facility_slug = Column(String(100), ForeignKey('facilities.slug'), nullable=True, index=True)
     description = Column(Text)
     category = Column(String(100))  # e.g., Blood, Urine, Radiology
     unit = Column(String(50))  # Unit of measurement
@@ -35,6 +46,12 @@ class LabOrder(BaseModel):
         Index('idx_lab_orders_status_facility', 'status', 'facility_slug'),
         Index('idx_lab_orders_facility_date', 'facility_slug', 'order_date'),
         Index('idx_lab_orders_facility_patient', 'facility_slug', 'patient_id'),
+        Index(
+            'uq_lab_orders_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
@@ -48,6 +65,8 @@ class LabOrder(BaseModel):
     status = Column(String(50), default='PENDING', index=True)  # PENDING, COLLECTED, IN_PROGRESS, COMPLETED, CANCELLED
     priority = Column(String(20), default='ROUTINE')  # ROUTINE, URGENT, EMERGENCY
     notes = Column(Text)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
     order_date = Column(DateTime, nullable=False, index=True)
     collection_date = Column(DateTime)
     completed_date = Column(DateTime)
@@ -72,6 +91,9 @@ class LabOrder(BaseModel):
 class LabResult(BaseModel):
     """Lab results for orders"""
     __tablename__ = 'lab_results'
+    __table_args__ = (
+        Index('uq_lab_results_order', 'order_id', unique=True),
+    )
 
     order_id = Column(String(36), ForeignKey('lab_orders.id'), nullable=False, index=True)
     value = Column(String(100))

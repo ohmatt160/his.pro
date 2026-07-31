@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import {
   Activity,
   ArrowLeft,
@@ -58,7 +59,7 @@ const emptyReports: ReportBundle = {
 
 const Reports = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [range, setRange] = useState(() => defaultReportRange());
   const [reports, setReports] = useState<ReportBundle>(emptyReports);
   const [activeTab, setActiveTab] = useState<ReportTab>("summary");

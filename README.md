@@ -1,73 +1,93 @@
----
-title: His.pro
-emoji: 😻
-colorFrom: yellow
-colorTo: red
-sdk: docker
-pinned: false
----
+# HIS.Pro
 
-# HIS.Pro - Health Information System
+HIS.Pro is a multi-tenant hospital information system built with FastAPI,
+SQLAlchemy, PostgreSQL/Redis, and React/TypeScript. It covers patient registration,
+appointments, queue, consultations, records, laboratory, radiology, pharmacy,
+wards, billing, inventory, staffing, alerts/chat, reports, audit, and legacy-data
+migration.
 
-A comprehensive healthcare information system built with Flask (Python) backend and React frontend.
+The product priorities are tenant/branch isolation, security, duplicate-write and
+concurrency safety, responsive workflows, and horizontal scalability.
 
-## Features
+## Status
 
-- Multi-workspace/tenant architecture for healthcare facilities
-- Patient management
-- Appointments scheduling
-- Electronic Medical Records
-- Laboratory orders
-- Pharmacy management
-- Billing & Invoicing
-- Inventory management
-- Dashboard with analytics
+The repository is in pre-launch hardening. Core workflows are implemented, but
+general availability remains **NO-GO** until the evidence in
+[Launch Readiness](docs/12_LAUNCH_READINESS.md) is complete. Invitation-only
+controlled pilots require explicit security and hospital approval.
 
-## Deployment
+## Stack
 
-This project is deployed on Hugging Face Spaces using Docker.
+- FastAPI 0.104.1 and Pydantic 2
+- SQLAlchemy 2 and Alembic
+- PostgreSQL 16 production database; SQLite for tests/development only
+- Redis for realtime fanout and shared coordination
+- Durable database background jobs and OhmattOS integration outbox
+- React 18, TypeScript, Vite, TanStack Query, Tailwind, and Radix UI
+- ClamAV-gated private uploads in production
+- Non-root Docker/Gunicorn/Uvicorn deployment
 
-### Running Locally
+## Local Backend
 
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run the application
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python scripts\migrate.py
 python run.py
 ```
 
-The app will be available at http://localhost:5000
+The FastAPI development server normally listens on `http://127.0.0.1:8000`.
 
-### Building Frontend
+## Current Frontend
 
-The frontend is pre-built and static files are in `app/static`. To rebuild:
-
-```bash
-cd app/templates/healthsuite-pro copy
-npm install
-npm run build
-# Copy build output to app/static
+```powershell
+Set-Location 'app\templates\initial frontend'
+npm ci
+npm run dev
 ```
 
-## Tech Stack
+The independent future UI is in `app/templates/frontend-v2` and uses the same
+commands. Do not overwrite the current frontend when developing V2.
 
-- **Backend**: Flask, SQLAlchemy, JWT authentication
-- **Frontend**: React, TypeScript, Tailwind CSS, shadcn/ui
-- **Database**: SQLite (default) or PostgreSQL (production)
-- **Deployment**: Docker, Hugging Face Spaces
+## Verification
 
-## API Endpoints
+```powershell
+python -m compileall -q app scripts migrations tests
+python -m unittest discover -s tests
+```
 
-- `/api/v1/auth` - Authentication
-- `/api/v1/patients` - Patient management
-- `/api/v1/appointments` - Appointment scheduling
-- `/api/v1/dashboard` - Dashboard statistics
-- `/api/v1/facilities` - Facility management
-- And more...
+Run `npm test` and `npm run build` in each selected frontend. Production release
+also requires PostgreSQL/Redis/ClamAV/object-storage integration, migration/restore,
+browser role, dependency, isolation, concurrency, load, and security evidence.
 
-## License
+## Documentation
 
-MIT
+Start at [docs/index.md](docs/index.md). The database and API references are
+generated from the live SQLAlchemy/FastAPI registry:
 
-Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
+```powershell
+python scripts\generate_code_reference_docs.py
+```
+
+Key documents:
+
+- [System Architecture](docs/02_SYSTEM_ARCHITECTURE.md)
+- [Database Reference](docs/04_DATABASE_REFERENCE.md)
+- [API Reference](docs/05_API_REFERENCE.md)
+- [Backend and Security](docs/08_BACKEND_AND_SECURITY.md)
+- [Configuration and Deployment](docs/09_CONFIGURATION_INSTALLATION_DEPLOYMENT.md)
+- [Hospital Operations Manual](docs/13_HOSPITAL_OPERATIONS_MANUAL.md)
+- [Hospital Operations Manual (Word)](docs/HIS_PRO_HOSPITAL_OPERATIONS_MANUAL.docx)
+- [Hospital Operations Manual (PDF)](output/pdf/HIS_PRO_HOSPITAL_OPERATIONS_MANUAL.pdf)
+- [Launch Readiness](docs/12_LAUNCH_READINESS.md)
+
+## Production Rules
+
+- Use PostgreSQL, Redis, private encrypted object storage/shared volume, and ClamAV.
+- Store independent secrets/private keys in a secret manager; never commit `.env`.
+- Keep public signup and every OhmattOS feature flag off until its launch gate closes.
+- Run `python scripts/migrate.py` as a one-shot deployment step before API/workers.
+- Use canonical tenant hosts such as `https://<hospital>.app.his.pro` and preserve
+  legacy redirects during migration.
+- Do not claim compliance certification based on this application alone.

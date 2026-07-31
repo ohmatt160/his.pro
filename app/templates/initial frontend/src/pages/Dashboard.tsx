@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { useLocation, Link, useNavigate, useParams } from "react-router-dom";
+import { useLocation, Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   Building2,
@@ -40,6 +41,7 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import {
+  getBranchStaffAccessPath,
   getFacilityLoginPath,
   getStaffAccessPath,
 } from "@/lib/facility-staff";
@@ -79,7 +81,7 @@ const item = {
 
 const Dashboard = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const { user, logout } = useAuth();
   const location = useLocation();
   const routedData = (location.state as SavedFacilityWorkspace | null) || null;
@@ -166,7 +168,7 @@ const Dashboard = () => {
   const resolvedFacilitySlug =
     facilitySlug || workspace?.facilitySlug || "";
   const staffAccessPath = resolvedFacilitySlug
-    ? (branchSlug ? `/${resolvedFacilitySlug}/branches/${branchSlug}/dashboard/staff` : getStaffAccessPath(resolvedFacilitySlug))
+    ? (branchSlug ? getBranchStaffAccessPath(resolvedFacilitySlug, branchSlug) : getStaffAccessPath(resolvedFacilitySlug))
     : "";
   const rawSelectedModules =
     Array.isArray(data.selectedModules) ? data.selectedModules as string[] : [

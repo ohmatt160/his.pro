@@ -6,6 +6,7 @@ from datetime import datetime
 from app.extensions import db_session
 from app.models.patient import Patient
 from app.models.patient_notification import PatientNotification
+from app.services.integration_outbox_service import IntegrationOutboxService
 from app.services.ohmattos_client import ohmattos_client
 from app.utils.validators import Validators
 
@@ -57,6 +58,7 @@ class PatientNotificationService:
 
             notification = PatientNotification(
                 id=str(uuid.uuid4()),
+                facility_id=patient.facility_id,
                 facility_slug=facility_slug,
                 patient_id=patient.id,
                 notification_type=notification_type,
@@ -72,16 +74,14 @@ class PatientNotificationService:
             )
             db_session.add(notification)
             created.append(notification)
-            PatientNotificationService._send_via_ohmattos(notification, patient, title, message)
+            PatientNotificationService._queue_ohmattos_delivery(notification, patient)
         db_session.flush()
         return created
 
     @staticmethod
-    def _send_via_ohmattos(
+    def _queue_ohmattos_delivery(
         notification: PatientNotification,
         patient: Patient,
-        title: str,
-        message: str,
     ) -> None:
         if not ohmattos_client.feature_enabled("notifications") or notification.status != "QUEUED":
             return
@@ -92,29 +92,35 @@ class PatientNotificationService:
             return
         if channel == "EMAIL" and not patient.email:
             return
+        if not patient.facility_id:
+            logger.warning("Skipping OhmattOS notification without an immutable facility ID")
+            return
 
-        result = ohmattos_client.send_notification(
-            user_id=f"patient:{patient.id}",
-            channel_type=channel.lower(),
-            recipient=patient.phone if channel == "SMS" else patient.email,
-            subject=Validators.sanitize_string(title),
-            body=Validators.sanitize_string(message),
-            idempotency_key=f"hispro:patient-notification:{notification.id}",
+        idempotency_key = f"hispro:patient-notification:{notification.id}"
+        IntegrationOutboxService.enqueue(
+            facility_id=str(patient.facility_id),
+            event_type="notification.send",
+            aggregate_type="patient_notification",
+            aggregate_id=str(notification.id),
+            idempotency_key=idempotency_key,
+            payload={
+                "user_id": f"patient:{patient.id}",
+                "channel_type": channel.lower(),
+                "recipient": patient.phone if channel == "SMS" else patient.email,
+                "subject": notification.title,
+                "body": notification.message,
+                "template_id": None,
+                "idempotency_key": idempotency_key,
+            },
+            session=db_session,
         )
-        external_data = result.get("data") or {}
-        external_status = external_data.get("status")
         metadata = dict(notification.metadata_json or {})
         metadata["ohmattos_delivery"] = {
-            "accepted": bool(result.get("ok")),
-            "queued": bool(result.get("ok") and external_status == "queued"),
-            "status": external_status,
-            "message_id": external_data.get("message_id") if result.get("ok") else None,
-            "deduplicated": bool(external_data.get("deduplicated")),
-            "error": result.get("error") if not result.get("ok") else None,
+            "queued_locally": True,
+            "status": "pending_dispatch",
+            "idempotency_key": idempotency_key,
         }
         notification.metadata_json = metadata
-        if result.get("ok") and external_status == "skipped":
-            notification.status = "SUPPRESSED"
 
     @staticmethod
     def mark_sent(notification: PatientNotification, provider_message_id: str | None = None) -> PatientNotification:

@@ -1,35 +1,21 @@
-const logos = [
-  "City Clinic",
-  "MedCare Kenya",
-  "HealthFirst Ghana",
-  "Sunrise Hospital",
-  "MediCore Solutions",
-  "CarePoint Rwanda",
-  "VitalHealth Tanzania",
-  "PrimeCare Uganda",
+import { Building2, Radio, ShieldCheck, Workflow } from "lucide-react";
+
+const operatingPrinciples = [
+  { icon: ShieldCheck, label: "Tenant and branch permission boundaries" },
+  { icon: Radio, label: "Realtime workflow notifications" },
+  { icon: Building2, label: "Single-site and multi-branch operation" },
+  { icon: Workflow, label: "Connected clinical and revenue workflows" },
 ];
 
 const TrustedBy = () => (
-  <section className="py-12 border-y border-border/50 bg-muted/30">
-    <div className="container mx-auto px-4 text-center mb-6">
-      <p className="text-sm font-medium text-muted-foreground">
-        Trusted by <span className="text-foreground font-semibold">50+</span> healthcare providers worldwide
-      </p>
-    </div>
-    <div className="overflow-hidden">
-      <div className="flex animate-marquee gap-12 w-max">
-        {[...logos, ...logos].map((name, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-2 px-6 py-3 rounded-lg bg-background/80 border border-border/50 whitespace-nowrap"
-          >
-            <div className="w-8 h-8 rounded-lg gradient-hero flex items-center justify-center text-primary-foreground text-xs font-bold">
-              {name.charAt(0)}
-            </div>
-            <span className="text-sm font-medium text-muted-foreground">{name}</span>
+  <section className="border-y border-slate-200 bg-white py-8">
+    <div className="container mx-auto grid gap-5 px-4 sm:grid-cols-2 lg:grid-cols-4">
+        {operatingPrinciples.map(({ icon: Icon, label }) => (
+          <div key={label} className="flex items-center gap-3">
+            <Icon className="h-5 w-5 shrink-0 text-teal-700" />
+            <span className="text-sm font-semibold leading-snug text-slate-700">{label}</span>
           </div>
         ))}
-      </div>
     </div>
   </section>
 );

@@ -1,0 +1,31 @@
+import type { StaffRole } from "@/lib/facility-staff";
+
+export type WorkspaceRole = StaffRole;
+
+export const roleAllows = (
+  role: string | undefined | null,
+  allowedRoles?: WorkspaceRole[]
+) => {
+  if (!allowedRoles?.length) {
+    return true;
+  }
+  return Boolean(role && allowedRoles.includes(role as WorkspaceRole));
+};
+
+export const routeRoles = {
+  admin: ["admin", "branch_admin"],
+  patients: ["admin", "branch_admin", "reception", "doctor", "nurse"],
+  appointments: ["admin", "branch_admin", "reception", "doctor"],
+  queue: ["admin", "branch_admin", "reception", "doctor", "nurse"],
+  consultations: ["admin", "branch_admin", "doctor"],
+  wards: ["admin", "branch_admin", "doctor", "nurse"],
+  records: ["admin", "branch_admin", "doctor", "nurse"],
+  billing: ["admin", "branch_admin", "reception", "billing"],
+  laboratory: ["admin", "branch_admin", "doctor", "lab"],
+  pharmacy: ["admin", "branch_admin", "doctor", "pharmacist"],
+  radiology: ["admin", "branch_admin", "doctor"],
+  inventory: ["admin", "pharmacist"],
+  reports: ["admin", "branch_admin"],
+  alerts: ["admin", "branch_admin", "doctor", "nurse", "reception", "pharmacist", "lab", "billing"],
+  chat: ["admin", "branch_admin", "doctor", "nurse", "reception", "pharmacist", "lab", "billing"],
+} satisfies Record<string, WorkspaceRole[]>;

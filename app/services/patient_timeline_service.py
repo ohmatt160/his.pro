@@ -99,11 +99,13 @@ class PatientTimelineService:
                     title=record.chief_complaint or "Clinical record created",
                     description=", ".join(diagnoses) if diagnoses else record.treatment_plan or record.notes or "",
                     occurred_at=record.created_at,
-                    status="RECORDED",
+                    status=record.status or "ACTIVE",
                     metadata={
                         "record_id": record.id,
                         "appointment_id": record.appointment_id,
                         "follow_up_date": record.follow_up_date.isoformat() if record.follow_up_date else None,
+                        "void_reason": record.void_reason,
+                        "voided_at": record.voided_at.isoformat() if record.voided_at else None,
                     },
                 )
             )

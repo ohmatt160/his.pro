@@ -467,6 +467,9 @@ class DataMigrationService:
                 "errors": {key: len(value) for key, value in errors.items()},
             },
             request=request,
+            commit=False,
+            raise_on_error=True,
+            session=db,
         )
         result["status"] = "completed"
         result["records_imported"] = sum(imported.values())
@@ -725,6 +728,9 @@ class DataMigrationService:
             "DOCTOR": "DOCTOR",
             "NURSE": "NURSE",
             "PHARMACIST": "PHARMACIST",
+            "BILLING": "BILLING",
+            "BILLING_OFFICER": "BILLING",
+            "CASHIER": "BILLING",
             "ADMIN": "ADMIN",
             "BRANCH_ADMIN": "BRANCH_ADMIN",
         }

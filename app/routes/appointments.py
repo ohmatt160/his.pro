@@ -3,7 +3,7 @@ Appointments Routes - FastAPI Version
 Converted from Flask-RESTx appointment_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Request, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -22,6 +22,11 @@ from app.models.user import User
 from app.models.patient import Patient
 from app.models.facility import Facility
 from app.models.appointment import Appointment
+from app.utils.idempotency import (
+    IdempotencyConflictError,
+    idempotency_payload_hash,
+    require_idempotency_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +104,8 @@ async def get_appointments(
 @router.post("", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_appointment(
     data: AppointmentCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -106,6 +113,7 @@ async def create_appointment(
         facility_slug = current_user.facility_slug
         if not facility_slug:
             raise HTTPException(status_code=400, detail="User is not associated with a facility")
+        idempotency_key = require_idempotency_key(idempotency_key)
 
         # Verify patient belongs to facility
         patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
@@ -119,6 +127,7 @@ async def create_appointment(
         require_tenant_row(doctor, current_user, "Doctor or staff member not found")
 
         payload = data.model_dump()
+        payload['facility_id'] = current_user.facility_id
         payload['facility_slug'] = facility_slug
         resolved_branch_id = current_user.branch_id or payload.get('branch_id') or patient.branch_id or doctor.branch_id
         legacy_branch_id = current_user.department_id or payload.get('department_id') or patient.department_id or doctor.department_id
@@ -131,28 +140,38 @@ async def create_appointment(
         if payload.get('notes'):
             payload['notes'] = Validators.sanitize_string(payload['notes'])
 
-        appointment = AppointmentService.create_appointment(payload)
-        PatientNotificationService.create(
-            facility_slug=facility_slug,
-            patient=patient,
-            notification_type="appointment_reminder",
-            title="Appointment reminder",
-            message=f"Your appointment is scheduled for {appointment.appointment_date.isoformat()}.",
-            source_type="appointment",
-            source_id=appointment.id,
-            metadata={
-                "appointment_date": appointment.appointment_date.isoformat() if appointment.appointment_date else None,
-                "doctor_id": appointment.doctor_id,
-            },
+        appointment, created = AppointmentService.create_appointment(
+            payload,
+            idempotency_key=idempotency_key,
+            payload_hash=idempotency_payload_hash({
+                "facility_slug": facility_slug,
+                "appointment": payload,
+            }),
         )
-        publish_tenant_event(
-            event_type="appointment.created",
-            facility_slug=facility_slug,
-            branch_id=appointment.branch_id or appointment.department_id,
-            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST"],
-            modules=["reception", "consultations"],
-            resource_id=appointment.id,
-        )
+        if not created:
+            response.status_code = status.HTTP_200_OK
+        else:
+            PatientNotificationService.create(
+                facility_slug=facility_slug,
+                patient=patient,
+                notification_type="appointment_reminder",
+                title="Appointment reminder",
+                message=f"Your appointment is scheduled for {appointment.appointment_date.isoformat()}.",
+                source_type="appointment",
+                source_id=appointment.id,
+                metadata={
+                    "appointment_date": appointment.appointment_date.isoformat() if appointment.appointment_date else None,
+                    "doctor_id": appointment.doctor_id,
+                },
+            )
+            publish_tenant_event(
+                event_type="appointment.created",
+                facility_slug=facility_slug,
+                branch_id=appointment.branch_id or appointment.department_id,
+                roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST"],
+                modules=["reception", "consultations"],
+                resource_id=appointment.id,
+            )
 
         return AppointmentResponse(
             id=str(appointment.id),
@@ -173,6 +192,8 @@ async def create_appointment(
 
     except HTTPException:
         raise
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except Exception:
         logger.exception("[Appointment] Failed to create appointment")
         raise HTTPException(status_code=500, detail="Appointment could not be created")

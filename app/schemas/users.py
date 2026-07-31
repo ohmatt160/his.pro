@@ -8,7 +8,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(..., min_length=8)
-    role: str = Field(..., pattern="^(ADMIN|BRANCH_ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|admin|branch_admin|doctor|nurse|lab_tech|pharmacist|receptionist)$")
+    role: str = Field(..., pattern="^(ADMIN|BRANCH_ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|BILLING|admin|branch_admin|doctor|nurse|lab_tech|pharmacist|receptionist|billing)$")
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     facility_slug: Optional[str] = Field(None, max_length=100)
@@ -67,7 +67,7 @@ class UserSessionResponse(BaseModel):
 
 class FacilityStaffCreate(BaseModel):
     fullName: str = Field(..., min_length=2, max_length=200)
-    role: str = Field(..., pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    role: str = Field(..., pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|billing|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH|BILLING)$")
     department: str = Field(..., min_length=2, max_length=100)
     departmentId: Optional[str] = Field(None, max_length=36)
     departmentIds: List[str] = Field(default_factory=list)
@@ -81,7 +81,7 @@ class FacilityStaffCreate(BaseModel):
 
 class FacilityStaffUpdate(BaseModel):
     fullName: Optional[str] = Field(None, min_length=2, max_length=200)
-    role: Optional[str] = Field(None, pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH)$")
+    role: Optional[str] = Field(None, pattern="^(branch_admin|doctor|nurse|reception|pharmacist|lab|billing|BRANCH_ADMIN|DOCTOR|NURSE|RECEPTIONIST|PHARMACIST|LAB_TECH|BILLING)$")
     department: Optional[str] = Field(None, min_length=2, max_length=100)
     departmentId: Optional[str] = Field(None, max_length=36)
     departmentIds: Optional[List[str]] = None

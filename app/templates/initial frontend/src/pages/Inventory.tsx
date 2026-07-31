@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -91,7 +92,7 @@ const formatCurrency = (value: number) =>
 
 const Inventory = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);

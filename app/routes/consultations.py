@@ -5,7 +5,7 @@ Consultations are stored as MedicalRecord rows so clinical notes remain in the
 shared patient record while exposing a workflow-oriented API for doctors.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from typing import Optional, List
 
@@ -24,6 +24,7 @@ from app.services.medical_record_service import MedicalRecordService
 from app.services.realtime_service import publish_tenant_event
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
+from app.utils.idempotency import idempotency_payload_hash, require_idempotency_key
 from app.utils.pagination import apply_pagination
 from app.utils.validators import Validators
 
@@ -160,6 +161,8 @@ async def list_consultations(
 @router.post("/start", response_model=ConsultationResponse, status_code=status.HTTP_201_CREATED)
 async def start_consultation(
     data: ConsultationStart,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR")),
     db: Session = Depends(get_db),
 ):
@@ -178,31 +181,47 @@ async def start_consultation(
     if existing:
         if existing.created_by != current_user.id and current_user.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Consultation belongs to another clinician")
+        response.status_code = status.HTTP_200_OK
         return _consultation_response(existing)
 
-    record = MedicalRecordService.create_medical_record(
-        {
-            "patient_id": patient.id,
-            "appointment_id": appointment.id if appointment else None,
-            "chief_complaint": Validators.sanitize_string(data.chief_complaint or ""),
-            "vital_signs": {},
-            "symptoms": [],
-            "diagnosis": [],
-            "treatment_plan": None,
-            "prescriptions": [],
-            "lab_orders": [],
-            "notes": "",
-        },
+    payload = {
+        "patient_id": patient.id,
+        "appointment_id": appointment.id if appointment else None,
+        "chief_complaint": Validators.sanitize_string(data.chief_complaint or ""),
+        "vital_signs": {},
+        "symptoms": [],
+        "diagnosis": [],
+        "treatment_plan": None,
+        "prescriptions": [],
+        "lab_orders": [],
+        "notes": "",
+    }
+    operation_key = (
+        f"consultation-start:{appointment.id}"
+        if appointment
+        else require_idempotency_key(idempotency_key)
+    )
+    record, created = MedicalRecordService.create_medical_record(
+        payload,
         current_user.id,
         facility_slug,
+        current_user.facility_id,
+        idempotency_key=operation_key,
+        payload_hash=idempotency_payload_hash({
+            "facility_slug": facility_slug,
+            "consultation": payload,
+        }),
     )
 
-    if appointment and appointment.status in {"SCHEDULED", "CONFIRMED"}:
+    if created and appointment and appointment.status in {"SCHEDULED", "CONFIRMED"}:
         appointment.status = "IN_PROGRESS"
         db_session.add(appointment)
         db_session.commit()
         db_session.refresh(record)
-    _publish_consultation_event("consultation.started", record, patient)
+    if created:
+        _publish_consultation_event("consultation.started", record, patient)
+    else:
+        response.status_code = status.HTTP_200_OK
 
     return _consultation_response(record)
 

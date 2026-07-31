@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -71,7 +72,7 @@ const parseClient = (userAgent?: string | null) => {
 
 const AuditLogs = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");

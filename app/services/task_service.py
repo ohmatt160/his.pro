@@ -27,6 +27,9 @@ ROLE_ALIASES = {
     "PHARMACIST": "PHARMACIST",
     "RECEPTION": "RECEPTIONIST",
     "RECEPTIONIST": "RECEPTIONIST",
+    "BILLING": "BILLING",
+    "BILLING_OFFICER": "BILLING",
+    "CASHIER": "BILLING",
 }
 
 
@@ -106,7 +109,7 @@ class TaskService:
         role = normalize_task_role(role)
         if role == "ADMIN":
             tasks: list[dict[str, Any]] = []
-            for staff_role in ["DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST"]:
+            for staff_role in ["DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST", "BILLING"]:
                 tasks.extend(TaskService.get_tasks_for_role(facility_slug, staff_role, limit=20, branch_id=branch_id))
             return TaskService._sort_tasks(tasks)[:limit]
 
@@ -116,6 +119,7 @@ class TaskService:
             "LAB_TECH": TaskService._lab_tasks,
             "PHARMACIST": TaskService._pharmacy_tasks,
             "RECEPTIONIST": TaskService._reception_tasks,
+            "BILLING": TaskService._billing_tasks,
         }
         builder = builders.get(role)
         if not builder:
@@ -427,3 +431,42 @@ class TaskService:
                 )
             )
         return tasks
+
+    @staticmethod
+    def _billing_tasks(facility_slug: str, branch_id: str | None = None) -> list[dict[str, Any]]:
+        invoices_query = db_session.query(Invoice).filter(
+            Invoice.facility_slug == facility_slug,
+            Invoice.status.in_(["PENDING", "PARTIAL"]),
+        )
+        invoices = (
+            _scope_task_query(invoices_query, Invoice, branch_id, patient_scoped=True)
+            .order_by(Invoice.due_date.asc(), Invoice.invoice_date.asc())
+            .limit(50)
+            .all()
+        )
+        return [
+            _task(
+                task_id=f"billing-invoice-{invoice.id}",
+                title="Collect outstanding payment",
+                description=f"Invoice {invoice.invoice_number} is {invoice.status.lower()}.",
+                role="BILLING",
+                module="billing",
+                source_type="invoice",
+                source_id=invoice.id,
+                patient_id=invoice.patient_id,
+                patient_name=_patient_name(invoice),
+                action_path="billing",
+                priority=(
+                    "high"
+                    if invoice.due_date and invoice.due_date < datetime.utcnow().date()
+                    else "normal"
+                ),
+                due_at=(
+                    datetime.combine(invoice.due_date, datetime.min.time())
+                    if invoice.due_date
+                    else None
+                ),
+                created_at=invoice.invoice_date or invoice.created_at,
+            )
+            for invoice in invoices
+        ]

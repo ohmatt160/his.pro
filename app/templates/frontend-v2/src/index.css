@@ -1,0 +1,218 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 164 20% 97%;
+    --foreground: 184 25% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 184 25% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 184 25% 12%;
+
+    --primary: 175 88% 27%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 168 17% 92%;
+    --secondary-foreground: 184 25% 15%;
+
+    --muted: 165 14% 94%;
+    --muted-foreground: 178 8% 42%;
+
+    --accent: 196 76% 43%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 5 72% 52%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 170 14% 84%;
+    --input: 170 14% 78%;
+    --ring: 175 88% 27%;
+
+    --radius: 0.375rem;
+    --cta: 175 88% 27%;
+    --cta-foreground: 0 0% 100%;
+    --cta-warm: 18 88% 56%;
+    --cta-warm-foreground: 0 0% 100%;
+
+    --sidebar-background: 183 27% 12%;
+    --sidebar-foreground: 164 18% 91%;
+    --sidebar-primary: 168 82% 42%;
+    --sidebar-primary-foreground: 183 27% 8%;
+    --sidebar-accent: 182 22% 18%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 181 18% 24%;
+    --sidebar-ring: 168 82% 42%;
+
+    --status-success: 151 58% 39%;
+    --status-warning: 38 92% 50%;
+    --status-critical: 5 72% 52%;
+    --status-info: 196 76% 43%;
+  }
+
+  .dark {
+    --background: 184 25% 8%;
+    --foreground: 164 16% 94%;
+    --card: 184 22% 11%;
+    --card-foreground: 164 16% 94%;
+    --popover: 184 22% 11%;
+    --popover-foreground: 164 16% 94%;
+    --primary: 168 73% 45%;
+    --primary-foreground: 184 28% 7%;
+    --secondary: 182 17% 17%;
+    --secondary-foreground: 164 16% 94%;
+    --muted: 183 16% 16%;
+    --muted-foreground: 170 8% 64%;
+    --accent: 196 80% 55%;
+    --accent-foreground: 184 28% 7%;
+    --destructive: 5 72% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 181 15% 23%;
+    --input: 181 15% 28%;
+    --ring: 168 73% 45%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  [class*="tracking-"] {
+    letter-spacing: 0 !important;
+  }
+
+  .rounded-xl,
+  .rounded-2xl,
+  .rounded-3xl {
+    border-radius: var(--radius) !important;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.18);
+  }
+}
+
+@layer components {
+  .v2-grid {
+    background-color: hsl(var(--background));
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.24) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.24) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .v2-panel {
+    @apply border border-border bg-card shadow-[0_8px_24px_rgba(18,51,49,0.05)];
+    border-radius: var(--radius);
+  }
+
+  .v2-panel-muted {
+    @apply border border-border/80 bg-muted/60;
+    border-radius: var(--radius);
+  }
+
+  .v2-kicker {
+    @apply text-[11px] font-semibold uppercase text-muted-foreground;
+    letter-spacing: 0;
+  }
+
+  .v2-focus-ring {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
+
+  .clinical-pulse-path {
+    stroke-dasharray: 118 220;
+    animation: clinical-pulse-trace 3.2s linear infinite;
+  }
+
+  .clinical-scan-line {
+    animation: clinical-scan-line 5s linear infinite;
+  }
+
+  .glass-card {
+    @apply border border-border bg-card shadow-[0_6px_18px_rgba(18,51,49,0.05)];
+    border-radius: var(--radius);
+  }
+
+  .gradient-cta {
+    background: hsl(var(--primary));
+  }
+
+  .gradient-warm {
+    background: hsl(var(--cta-warm));
+  }
+
+  .gradient-hero {
+    background: hsl(183 27% 12%);
+  }
+
+  .text-gradient {
+    color: hsl(var(--primary));
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+@layer utilities {
+  .scrollbar-clinical {
+    scrollbar-color: hsl(var(--border)) transparent;
+    scrollbar-width: thin;
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@keyframes clinical-pulse-trace {
+  from {
+    stroke-dashoffset: 338;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes clinical-scan-line {
+  0% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  12%, 88% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateX(520%);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

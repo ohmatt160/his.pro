@@ -12,6 +12,12 @@ class Invoice(BaseModel):
         Index('idx_invoices_status_facility', 'status', 'facility_slug'),
         Index('idx_invoices_facility_date', 'facility_slug', 'invoice_date'),
         Index('idx_invoices_facility_patient', 'facility_slug', 'patient_id'),
+        Index(
+            'uq_invoices_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
@@ -29,6 +35,8 @@ class Invoice(BaseModel):
     due_date = Column(Date)
     invoice_date = Column(DateTime, nullable=False, index=True)
     paid_date = Column(DateTime, index=True)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
 
     # Relationships
     items = relationship('InvoiceItem', backref='invoice', lazy=True, cascade='all, delete-orphan')
@@ -87,6 +95,14 @@ class InvoiceItem(BaseModel):
 class Payment(BaseModel):
     """Payment records"""
     __tablename__ = 'payments'
+    __table_args__ = (
+        Index(
+            'uq_payments_invoice_idempotency',
+            'invoice_id',
+            'idempotency_key',
+            unique=True,
+        ),
+    )
 
     invoice_id = Column(String(36), ForeignKey('invoices.id'), nullable=False)
     amount = Column(Numeric(10, 2), nullable=False)
@@ -99,6 +115,8 @@ class Payment(BaseModel):
     receipt_content_type = Column(String(100), nullable=True)
     receipt_size = Column(Integer, nullable=True)
     receipt_uploaded_at = Column(DateTime, nullable=True)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
 
     PAYMENT_METHODS = ['CASH', 'CARD', 'TRANSFER', 'INSURANCE']
 

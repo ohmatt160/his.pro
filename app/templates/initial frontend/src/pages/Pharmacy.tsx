@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -34,6 +35,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import {
   addSettledError,
   hasResourceErrors,
@@ -122,7 +124,7 @@ const formatCurrency = (value?: number | null) =>
 
 const Pharmacy = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [medications, setMedications] = useState<Medication[]>([]);
   const [inventory, setInventory] = useState<Record<string, Inventory | null>>({});
@@ -136,6 +138,9 @@ const Pharmacy = () => {
   const [stockForm, setStockForm] = useState(emptyStockForm);
   const [prescriptionForm, setPrescriptionForm] = useState(emptyPrescriptionForm);
   const [error, setError] = useState("");
+  const [creatingPrescription, setCreatingPrescription] = useState(false);
+  const prescriptionCreateRef = useRef(false);
+  const prescriptionKeyRef = useRef("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<PharmacyResource>>({});
 
   const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
@@ -299,6 +304,9 @@ const Pharmacy = () => {
 
   const createPrescription = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (prescriptionCreateRef.current) {
+      return;
+    }
     setError("");
 
     const quantity = Number(prescriptionForm.quantity);
@@ -307,21 +315,29 @@ const Pharmacy = () => {
       return;
     }
 
+    prescriptionCreateRef.current = true;
+    setCreatingPrescription(true);
+    prescriptionKeyRef.current ||= createIdempotencyKey("prescription");
     try {
-      await apiClient.post<Prescription>("/pharmacy/prescriptions", {
-        patient_id: prescriptionForm.patient_id,
-        items: [
-          {
-            medication_id: prescriptionForm.medication_id,
-            quantity,
-            dosage: prescriptionForm.dosage.trim() || undefined,
-            instructions: prescriptionForm.instructions.trim() || undefined,
-          },
-        ],
-        notes: prescriptionForm.notes.trim() || undefined,
+      await apiClient.request<Prescription>("/pharmacy/prescriptions", {
+        method: "POST",
+        headers: { "Idempotency-Key": prescriptionKeyRef.current },
+        body: {
+          patient_id: prescriptionForm.patient_id,
+          items: [
+            {
+              medication_id: prescriptionForm.medication_id,
+              quantity,
+              dosage: prescriptionForm.dosage.trim() || undefined,
+              instructions: prescriptionForm.instructions.trim() || undefined,
+            },
+          ],
+          notes: prescriptionForm.notes.trim() || undefined,
+        },
       });
       setPrescriptionForm(emptyPrescriptionForm);
       setShowPrescriptionDialog(false);
+      prescriptionKeyRef.current = "";
       await loadPharmacy();
     } catch (prescriptionError) {
       setError(
@@ -329,6 +345,9 @@ const Pharmacy = () => {
           ? prescriptionError.message
           : "Prescription creation failed."
       );
+    } finally {
+      prescriptionCreateRef.current = false;
+      setCreatingPrescription(false);
     }
   };
 
@@ -364,7 +383,10 @@ const Pharmacy = () => {
               <PackagePlus className="mr-2 h-4 w-4" /> Stock
             </Button>
             <Button
-              onClick={() => setShowPrescriptionDialog(true)}
+              onClick={() => {
+                prescriptionKeyRef.current = createIdempotencyKey("prescription");
+                setShowPrescriptionDialog(true);
+              }}
               className="gradient-cta gap-2 border-0 text-primary-foreground"
             >
               <Plus className="h-4 w-4" /> Prescription
@@ -580,7 +602,11 @@ const Pharmacy = () => {
               />
             </div>
             {error && <FormError message={error} />}
-            <DialogActions onCancel={() => setShowPrescriptionDialog(false)} submitLabel="Create Prescription" />
+            <DialogActions
+              onCancel={() => setShowPrescriptionDialog(false)}
+              submitLabel={creatingPrescription ? "Creating..." : "Create Prescription"}
+              disabled={creatingPrescription}
+            />
           </form>
         </DialogContent>
       </Dialog>
@@ -700,15 +726,17 @@ const SelectField = ({
 const DialogActions = ({
   onCancel,
   submitLabel,
+  disabled = false,
 }: {
   onCancel: () => void;
   submitLabel: string;
+  disabled?: boolean;
 }) => (
   <div className="flex gap-3 sm:col-span-2">
     <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
       Cancel
     </Button>
-    <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
+    <Button type="submit" disabled={disabled} className="gradient-cta flex-1 border-0 text-primary-foreground">
       {submitLabel}
     </Button>
   </div>

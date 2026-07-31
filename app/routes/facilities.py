@@ -3,7 +3,7 @@ Facility Routes - FastAPI Version
 Converted from Flask-RESTx facility_resource.py
 """
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status, Query, Body
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status, Query, Body
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -22,6 +22,8 @@ from app.schemas.facilities import (
     FacilityUpdate,
     FacilityModulesUpdate,
     FacilitySettingsUpdate,
+    FacilityRoutingResponse,
+    PublicFacilityWorkspaceResponse,
 )
 from app.schemas.users import MessageResponse, FacilityStaffCreate, FacilityStaffUpdate, FacilityStaffResponse
 from app.utils.dependencies import get_current_user, role_required
@@ -30,9 +32,15 @@ from app.models.user import User
 from app.models.facility import Facility
 from app.models.branch import Branch
 from app.services.audit_log_service import AuditLogService
-from app.services.background_jobs import background_jobs
+from app.services.background_jobs import (
+    BackgroundJobConflictError,
+    BackgroundJobService,
+    background_jobs,
+)
 from app.services.data_migration_service import DataMigrationService
 from app.services.realtime_service import publish_tenant_event
+from app.utils.tenant_urls import is_valid_canonical_subdomain, is_valid_facility_slug
+from app.utils.idempotency import require_idempotency_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/facilities", tags=["facilities"])
@@ -43,7 +51,7 @@ def _publish_workspace_event(event_type: str, facility_slug: str, branch_id: str
         event_type=event_type,
         facility_slug=facility_slug,
         branch_id=branch_id,
-        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH"],
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST", "PHARMACIST", "LAB_TECH", "BILLING"],
         modules=["workspace"],
     )
 
@@ -216,6 +224,7 @@ def build_facility_response(facility: Facility) -> FacilityResponse:
     return FacilityResponse(
         id=str(facility.id),
         tenant_id=str(facility.id),
+        canonical_subdomain=facility.canonical_subdomain,
         name=facility.name,
         slug=facility.slug,
         type=facility.type,
@@ -234,7 +243,25 @@ def build_facility_response(facility: Facility) -> FacilityResponse:
     )
 
 
-def create_facility_record(data: FacilityCreate) -> Facility:
+def build_facility_routing_response(facility: Facility) -> FacilityRoutingResponse:
+    return FacilityRoutingResponse(
+        slug=facility.slug,
+        canonical_subdomain=facility.canonical_subdomain,
+    )
+
+
+def build_public_workspace_response(facility: Facility) -> PublicFacilityWorkspaceResponse:
+    return PublicFacilityWorkspaceResponse(
+        canonical_subdomain=facility.canonical_subdomain,
+        name=facility.name,
+        slug=facility.slug,
+        type=facility.type,
+        country=facility.country,
+        modules=normalize_facility_modules(facility.modules, facility.type),
+    )
+
+
+def create_facility_record(data: FacilityCreate, *, commit: bool = True) -> Facility:
     name = Validators.sanitize_string(data.name)
     if not name:
         raise HTTPException(status_code=400, detail="Facility name is required")
@@ -263,13 +290,19 @@ def create_facility_record(data: FacilityCreate) -> Facility:
         settings=data.settings or {}
     )
     db_session.add(facility)
-    db_session.commit()
-    db_session.refresh(facility)
+    if commit:
+        db_session.commit()
+        db_session.refresh(facility)
+    else:
+        db_session.flush()
     return facility
 
 
-def attach_user_to_facility(user: User, facility: Facility) -> None:
-    if user.facility_slug and user.facility_slug != facility.slug:
+def attach_user_to_facility(user: User, facility: Facility, *, commit: bool = True) -> None:
+    if (
+        (user.facility_id and str(user.facility_id) != str(facility.id))
+        or (user.facility_slug and user.facility_slug != facility.slug)
+    ):
         raise HTTPException(
             status_code=409,
             detail="User already belongs to another facility"
@@ -279,8 +312,11 @@ def attach_user_to_facility(user: User, facility: Facility) -> None:
         user.facility_id = facility.id
         user.facility_slug = facility.slug
         db_session.add(user)
-        db_session.commit()
-        db_session.refresh(user)
+        if commit:
+            db_session.commit()
+            db_session.refresh(user)
+        else:
+            db_session.flush()
 
 
 FRONTEND_TO_BACKEND_ROLE = {
@@ -290,6 +326,7 @@ FRONTEND_TO_BACKEND_ROLE = {
     "reception": "RECEPTIONIST",
     "pharmacist": "PHARMACIST",
     "lab": "LAB_TECH",
+    "billing": "BILLING",
 }
 
 BACKEND_TO_FRONTEND_ROLE = {
@@ -300,6 +337,7 @@ BACKEND_TO_FRONTEND_ROLE = {
     "RECEPTIONIST": "reception",
     "PHARMACIST": "pharmacist",
     "LAB_TECH": "lab",
+    "BILLING": "billing",
 }
 
 ROLE_PREFIX = {
@@ -310,7 +348,50 @@ ROLE_PREFIX = {
     "RECEPTIONIST": "REC",
     "PHARMACIST": "PHA",
     "LAB_TECH": "LAB",
+    "BILLING": "BIL",
 }
+
+ROLE_REQUIRED_MODULE = {
+    "DOCTOR": "consultations",
+    "NURSE": "nursing",
+    "RECEPTIONIST": "reception",
+    "PHARMACIST": "pharmacy",
+    "LAB_TECH": "lab",
+    "BILLING": "billing",
+}
+
+
+def validate_staff_role_configuration(
+    facility: Facility,
+    role: str,
+    department: str,
+    branch_id: str | None,
+) -> None:
+    multi_branch_enabled = facility.hospital_type == "multi_clinic"
+    if (
+        role == "BRANCH_ADMIN"
+        or (department or "").strip().casefold() == "administration"
+    ) and not multi_branch_enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Administration roles and departments require multi-branch mode",
+        )
+
+    required_module = ROLE_REQUIRED_MODULE.get(role)
+    if not required_module:
+        return
+
+    modules = normalize_facility_modules(facility.modules, facility.type)
+    if branch_id:
+        branch = get_branch_or_404(facility, branch_id)
+        if branch.modules:
+            modules = normalize_facility_modules(branch.modules, facility.type)
+    if required_module not in modules:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The {required_module} module must be enabled for this staff role",
+        )
+
 
 def require_admin_for_facility(user: User, facility: Facility) -> None:
     if user.role != "ADMIN":
@@ -536,22 +617,99 @@ async def ensure_facility(
     slug = Validators.generate_slug(Validators.sanitize_string(data.name))
     existing = db_session.query(Facility).filter_by(slug=slug, is_active=True).first()
     if existing:
+        if (
+            not current_user.facility_id
+            or str(current_user.facility_id) != str(existing.id)
+            or current_user.facility_slug != existing.slug
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="A facility with this name already exists",
+            )
         attach_user_to_facility(current_user, existing)
         return build_facility_response(existing)
+
+    if current_user.facility_id or current_user.facility_slug:
+        raise HTTPException(
+            status_code=409,
+            detail="Administrator already belongs to a facility",
+        )
 
     facility = create_facility_record(data)
     attach_user_to_facility(current_user, facility)
     return build_facility_response(facility)
 
 
-@router.get("/workspace/{facility_slug}", response_model=FacilityResponse)
+@router.get("/workspace/{facility_slug}", response_model=PublicFacilityWorkspaceResponse)
 async def get_public_facility_workspace(
     facility_slug: str,
     db: Session = Depends(get_db)
 ):
     """Return non-sensitive workspace metadata needed before login."""
     facility = get_facility_or_404(facility_slug)
-    return build_facility_response(facility)
+    return build_public_workspace_response(facility)
+
+
+@router.get(
+    "/resolve-host/{canonical_subdomain}",
+    response_model=FacilityRoutingResponse,
+)
+async def resolve_public_facility_host(
+    canonical_subdomain: str,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Resolve a registered tenant hostname to its immutable facility identity."""
+    normalized = canonical_subdomain.strip().lower()
+    if not is_valid_canonical_subdomain(normalized):
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    facility = (
+        db.query(Facility)
+        .filter(
+            Facility.canonical_subdomain == normalized,
+            Facility.is_active == True,
+        )
+        .first()
+    )
+    if not facility:
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    response.headers["Cache-Control"] = (
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=60"
+    )
+    return build_facility_routing_response(facility)
+
+
+@router.get(
+    "/resolve-workspace/{facility_slug}",
+    response_model=FacilityRoutingResponse,
+)
+async def resolve_public_facility_workspace(
+    facility_slug: str,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Resolve a legacy slug without exposing facility configuration."""
+    normalized = facility_slug.strip().lower()
+    if not is_valid_facility_slug(normalized):
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    facility = (
+        db.query(Facility)
+        .filter(
+            Facility.slug == normalized,
+            Facility.is_active == True,
+        )
+        .first()
+    )
+    if not facility:
+        raise HTTPException(status_code=404, detail="Facility not found")
+
+    response.headers["Cache-Control"] = (
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=60"
+    )
+    return build_facility_routing_response(facility)
 
 
 @router.put("/{facility_slug}/settings", response_model=FacilityResponse)
@@ -589,7 +747,7 @@ async def update_facility_settings(
 @router.get("/{facility_slug}/branches", response_model=List[BranchResponse])
 async def list_branches(
     facility_slug: str,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH', 'BILLING')),
     db: Session = Depends(get_db),
 ):
     facility = get_facility_or_404(facility_slug)
@@ -771,7 +929,7 @@ async def deactivate_branch(
 @router.get("/{facility_slug}/departments")
 async def list_departments(
     facility_slug: str,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     facility = get_facility_or_404(facility_slug)
@@ -918,52 +1076,52 @@ async def validate_data_migration(
 async def queue_data_migration_import(
     facility_slug: str,
     request: Request,
+    response: Response,
     source_system: str = Form(...),
     import_mode: str = Form(...),
     file: UploadFile = File(...),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db),
 ):
     facility = get_facility_or_404(facility_slug)
     require_admin_for_facility(current_user, facility)
+    idempotency_key = require_idempotency_key(idempotency_key)
+    existing = background_jobs.get_by_idempotency(
+        name="data_migration_import",
+        facility_id=facility.id,
+        idempotency_key=idempotency_key,
+    )
+    if existing:
+        response.status_code = status.HTTP_200_OK
+        summary = dict((existing.payload_json or {}).get("summary") or {})
+        summary.update({
+            "status": existing.status.lower(),
+            "next_step": (
+                "completed"
+                if existing.status == "COMPLETED"
+                else "background_processing"
+            ),
+            "job_id": existing.id,
+        })
+        return summary
+
     parsed = await DataMigrationService.parse_upload(file, source_system, import_mode)
     result = DataMigrationService.summarize(parsed, db, facility)
-    facility_id = facility.id
-    facility_slug_for_job = facility.slug
-    actor_id = current_user.id
-
-    async def process_import() -> dict:
-        try:
-            job_facility = db_session.query(Facility).filter_by(id=facility_id, slug=facility_slug_for_job).first()
-            job_actor = db_session.query(User).filter_by(id=actor_id, facility_slug=facility_slug_for_job).first()
-            if not job_facility or not job_actor:
-                raise RuntimeError("Migration facility or actor no longer exists")
-            import_result = DataMigrationService.import_parsed(
-                parsed,
-                db_session,
-                job_facility,
-                job_actor,
-                dry_run=False,
-            )
-            db_session.commit()
-            return import_result
-        except Exception:
-            db_session.rollback()
-            raise
-        finally:
-            db_session.remove()
-
-    job = background_jobs.enqueue(
-        "data_migration_import",
-        process_import,
-        metadata={
-            "facility_slug": facility.slug,
-            "source_system": result["source_system"],
-            "import_mode": result["import_mode"],
-            "records_detected": result["records_detected"],
-            "file_size": result["file_size"],
-        },
-    )
+    payload = BackgroundJobService.migration_payload(parsed, facility.slug)
+    payload["summary"] = result
+    try:
+        job, created = background_jobs.enqueue(
+            "data_migration_import",
+            payload,
+            facility_id=facility.id,
+            requested_by_user_id=current_user.id,
+            idempotency_key=idempotency_key,
+        )
+    except BackgroundJobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if not created:
+        response.status_code = status.HTTP_200_OK
     result["status"] = "queued"
     result["next_step"] = "background_processing"
     result["job_id"] = job.id
@@ -994,16 +1152,16 @@ async def get_data_migration_job(
 ):
     facility = get_facility_or_404(facility_slug)
     require_admin_for_facility(current_user, facility)
-    job = background_jobs.get(job_id)
+    job = background_jobs.get(job_id, facility_id=facility.id)
     if not job:
         raise HTTPException(status_code=404, detail="Migration job not found")
     return {
         "id": job.id,
         "name": job.name,
-        "status": job.status,
-        "created_at": job.created_at,
-        "updated_at": job.updated_at,
-        "result": job.result,
+        "status": job.status.lower(),
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "updated_at": job.updated_at.isoformat() if job.updated_at else None,
+        "result": job.result_json,
         "error": job.error,
         "external_job_id": job.external_job_id,
     }
@@ -1012,6 +1170,8 @@ async def get_data_migration_job(
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])
 async def get_facility_staff(
     facility_slug: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
     db: Session = Depends(get_db)
 ):
@@ -1033,7 +1193,12 @@ async def get_facility_staff(
         branch_id = current_user.branch_id or current_user.department_id
         query = query.filter(or_(User.branch_id == branch_id, User.department_id == branch_id))
 
-    staff = query.order_by(User.created_at.asc()).all()
+    staff = (
+        query.order_by(User.created_at.asc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
 
     return [build_staff_response(member) for member in staff]
 
@@ -1041,6 +1206,8 @@ async def get_facility_staff(
 @router.get("/{facility_slug}/clinicians", response_model=List[FacilityStaffResponse])
 async def get_facility_clinicians(
     facility_slug: str,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -1060,6 +1227,8 @@ async def get_facility_clinicians(
             User.is_active == True,
         )
         .order_by(User.role.asc(), User.first_name.asc(), User.username.asc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
 
@@ -1104,6 +1273,7 @@ async def create_facility_staff(
         get_branch_or_404(facility, branch_id)
     for assigned_branch_id in branch_ids:
         get_branch_or_404(facility, assigned_branch_id)
+    validate_staff_role_configuration(facility, role, department, branch_id)
     department_id = branch_id
     department_ids = branch_ids
     first_name, last_name = split_full_name(full_name)
@@ -1259,6 +1429,13 @@ async def update_facility_staff_member(
         if member.id == current_user.id and payload["isActive"] is False:
             raise HTTPException(status_code=400, detail="You cannot deactivate your own admin account")
         member.is_active = bool(payload["isActive"])
+
+    validate_staff_role_configuration(
+        facility,
+        member.role,
+        member.department or "",
+        member.branch_id or member.department_id,
+    )
 
     db_session.add(member)
     db_session.commit()

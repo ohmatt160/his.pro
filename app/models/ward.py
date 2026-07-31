@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text, Index
+from sqlalchemy import Column, DateTime, ForeignKey, JSON, String, Text, Index, text
 from sqlalchemy.orm import relationship
 
 from app.models.base_model import BaseModel
@@ -12,7 +12,13 @@ class WardBed(BaseModel):
     __tablename__ = "ward_beds"
     __table_args__ = (
         Index("idx_ward_beds_facility_status", "facility_slug", "status"),
-        Index("idx_ward_beds_facility_ward_bed", "facility_slug", "ward_name", "bed_number"),
+        Index(
+            "uq_ward_beds_facility_ward_bed",
+            "facility_slug",
+            "ward_name",
+            "bed_number",
+            unique=True,
+        ),
     )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)
@@ -35,6 +41,22 @@ class WardAdmission(BaseModel):
         Index("idx_ward_admissions_facility_status", "facility_slug", "status"),
         Index("idx_ward_admissions_facility_patient_status", "facility_slug", "patient_id", "status"),
         Index("idx_ward_admissions_facility_admitted", "facility_slug", "admitted_at"),
+        Index(
+            "uq_ward_admissions_active_patient",
+            "facility_slug",
+            "patient_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE'"),
+            sqlite_where=text("status = 'ACTIVE'"),
+        ),
+        Index(
+            "uq_ward_admissions_active_bed",
+            "facility_slug",
+            "bed_id",
+            unique=True,
+            postgresql_where=text("status = 'ACTIVE' AND bed_id IS NOT NULL"),
+            sqlite_where=text("status = 'ACTIVE' AND bed_id IS NOT NULL"),
+        ),
     )
 
     facility_id = Column(String(36), ForeignKey("facilities.id"), nullable=True, index=True)

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -80,7 +81,7 @@ const emptyOrderForm = {
 
 const Radiology = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [orders, setOrders] = useState<RadiologyOrder[]>([]);
   const [loading, setLoading] = useState(true);

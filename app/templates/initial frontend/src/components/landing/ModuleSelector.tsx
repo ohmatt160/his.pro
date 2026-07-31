@@ -8,22 +8,23 @@ import {
   BarChart3,
   CreditCard,
   CalendarDays,
+  Check,
   Users,
 } from "lucide-react";
 
 const modules = [
-  { id: "opd", icon: Building2, label: "OPD / IPD" },
-  { id: "ehr", icon: FileText, label: "EHR" },
+  { id: "reception", icon: Building2, label: "Reception" },
+  { id: "records", icon: FileText, label: "Records" },
   { id: "pharmacy", icon: Pill, label: "Pharmacy" },
   { id: "lab", icon: FlaskConical, label: "Lab" },
-  { id: "analytics", icon: BarChart3, label: "Analytics" },
+  { id: "reports", icon: BarChart3, label: "Reports" },
   { id: "billing", icon: CreditCard, label: "Billing" },
-  { id: "appointments", icon: CalendarDays, label: "Scheduling" },
-  { id: "staff", icon: Users, label: "Staff Mgmt" },
+  { id: "consultations", icon: CalendarDays, label: "Consultations" },
+  { id: "nursing", icon: Users, label: "Nursing" },
 ];
 
 const ModuleSelector = () => {
-  const [selected, setSelected] = useState<string[]>(["opd", "ehr", "lab"]);
+  const [selected, setSelected] = useState<string[]>(["reception", "records", "lab"]);
 
   const toggle = (id: string) => {
     setSelected((prev) =>
@@ -32,10 +33,10 @@ const ModuleSelector = () => {
   };
 
   return (
-    <section id="modules" className="py-24 bg-muted/30">
+    <section id="modules" className="scroll-mt-16 bg-muted/30 py-24">
       <div className="container mx-auto px-4">
         <div className="text-center max-w-2xl mx-auto mb-12">
-          <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+          <h2 className="text-3xl font-extrabold sm:text-4xl">
             Choose the Modules{" "}
             <span className="text-gradient">You Need</span>
           </h2>
@@ -52,7 +53,8 @@ const ModuleSelector = () => {
                 key={m.id}
                 whileTap={{ scale: 0.96 }}
                 onClick={() => toggle(m.id)}
-                className={`relative rounded-xl p-5 text-center transition-all duration-300 border ${
+                aria-pressed={active}
+                className={`relative min-h-28 rounded-lg border p-5 text-center transition-all duration-300 ${
                   active
                     ? "bg-primary/10 border-primary/40 shadow-md"
                     : "bg-background border-border hover:border-primary/20"
@@ -65,9 +67,9 @@ const ModuleSelector = () => {
                 {active && (
                   <motion.div
                     layoutId="module-check"
-                    className="absolute top-2 right-2 w-5 h-5 rounded-full bg-accent flex items-center justify-center"
+                    className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-accent"
                   >
-                    <span className="text-accent-foreground text-xs">✓</span>
+                    <Check className="h-3 w-3 text-accent-foreground" />
                   </motion.div>
                 )}
               </motion.button>
@@ -75,15 +77,9 @@ const ModuleSelector = () => {
           })}
         </div>
 
-        {/* Preview */}
-        <div className="max-w-3xl mx-auto glass-card rounded-2xl p-6">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-3 h-3 rounded-full bg-destructive/60" />
-            <div className="w-3 h-3 rounded-full bg-cta-warm/60" />
-            <div className="w-3 h-3 rounded-full bg-accent/60" />
-            <span className="ml-2 text-xs text-muted-foreground">Your Custom HIS Preview</span>
-          </div>
-          <div className="flex flex-wrap gap-2 mb-4">
+        <div className="mx-auto max-w-3xl border-t border-slate-300 pt-6">
+          <p className="mb-4 text-sm font-semibold text-slate-700">Selected workspace modules</p>
+          <div className="flex min-h-10 flex-wrap gap-2">
             <AnimatePresence>
               {selected.map((id) => {
                 const mod = modules.find((m) => m.id === id)!;
@@ -93,7 +89,7 @@ const ModuleSelector = () => {
                     initial={{ opacity: 0, scale: 0.8 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.8 }}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10"
+                    className="flex items-center gap-2 rounded-md border border-teal-200 bg-white px-3 py-2"
                   >
                     <mod.icon className="h-4 w-4 text-primary" />
                     <span className="text-sm font-medium text-foreground">{mod.label}</span>
@@ -106,22 +102,6 @@ const ModuleSelector = () => {
             <p className="text-sm text-muted-foreground text-center py-4">
               Select modules above to preview your HIS setup
             </p>
-          )}
-          {selected.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {selected.map((id) => {
-                const mod = modules.find((m) => m.id === id)!;
-                return (
-                  <div key={id} className="rounded-lg bg-muted/50 p-3 flex items-center gap-2">
-                    <mod.icon className="h-4 w-4 text-primary" />
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">{mod.label}</p>
-                      <p className="text-xs text-muted-foreground">Active</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
           )}
         </div>
       </div>

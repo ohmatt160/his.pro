@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Boolean, ForeignKey, Index
+from sqlalchemy import Column, String, Text, Boolean, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -9,6 +9,14 @@ class Supplier(BaseModel):
     __table_args__ = (
         Index('idx_suppliers_facility_active', 'facility_slug', 'is_active'),
         Index('idx_suppliers_facility_name', 'facility_slug', 'name'),
+        Index(
+            'uq_suppliers_active_facility_name',
+            'facility_slug',
+            'name',
+            unique=True,
+            postgresql_where=text('is_active = true'),
+            sqlite_where=text('is_active = 1'),
+        ),
     )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)

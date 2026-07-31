@@ -1,20 +1,25 @@
 import { type ReactNode } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import {
   getWorkspaceDashboardPath,
 } from "@/lib/facility-workspace";
 import { canAccessModule, type FacilityModuleId } from "@/lib/modules";
 import { useAuth } from "@/context/AuthContext";
 import { useBranchesQuery, useWorkspaceQuery } from "@/hooks/useWorkspaceQueries";
+import {
+  getBranchStaffPortalPath,
+  getStaffPortalPath,
+} from "@/lib/facility-staff";
 
 const ModuleRoute = ({
   module,
   children,
 }: {
-  module: FacilityModuleId;
+  module: FacilityModuleId | FacilityModuleId[];
   children: ReactNode;
 }) => {
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const { user } = useAuth();
   const workspaceQuery = useWorkspaceQuery(facilitySlug);
   const branchesQuery = useBranchesQuery(facilitySlug, Boolean(branchSlug));
@@ -36,19 +41,31 @@ const ModuleRoute = ({
     user?.branchSlug === branchSlug ||
     Boolean(user?.branchSlugs?.includes(branchSlug));
   const modules = branchSlug ? branch?.modules || [] : workspace?.selectedModules || [];
+  const requiredModules = Array.isArray(module) ? module : [module];
   const allowed = Boolean(
     workspace &&
       userBelongsToBranch &&
-      canAccessModule({
-        modules,
-        moduleId: module,
-        role: user?.role,
-      })
+      requiredModules.some((moduleId) =>
+        canAccessModule({
+          modules,
+          moduleId,
+          role: user?.role,
+        })
+      )
   );
 
   if (!allowed) {
     if (user && !["admin", "branch_admin"].includes(user.role)) {
-      return <Navigate to={branchSlug ? `/${facilitySlug}/branches/${branchSlug}/portal` : `/portal/${facilitySlug}`} replace />;
+      return (
+        <Navigate
+          to={
+            branchSlug
+              ? getBranchStaffPortalPath(facilitySlug, branchSlug)
+              : getStaffPortalPath(facilitySlug)
+          }
+          replace
+        />
+      );
     }
 
     return <Navigate to={getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined)} replace />;

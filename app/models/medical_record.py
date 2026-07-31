@@ -10,6 +10,13 @@ class MedicalRecord(BaseModel):
         Index('idx_medical_records_facility_patient_created', 'facility_slug', 'patient_id', 'created_at'),
         Index('idx_medical_records_facility_appointment', 'facility_slug', 'appointment_id'),
         Index('idx_medical_records_facility_created', 'facility_slug', 'created_at'),
+        Index('idx_medical_records_facility_status_created', 'facility_slug', 'status', 'created_at'),
+        Index(
+            'uq_medical_records_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
@@ -28,6 +35,12 @@ class MedicalRecord(BaseModel):
     lab_orders = Column(JSON, default=list)  # Lab tests ordered
     follow_up_date = Column(Date)
     notes = Column(Text)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
+    status = Column(String(20), nullable=False, default="ACTIVE", index=True)
+    void_reason = Column(Text, nullable=True)
+    voided_at = Column(DateTime, nullable=True)
+    voided_by = Column(String(36), ForeignKey('users.id'), nullable=True)
 
     # Relationships
     patient = relationship('Patient', backref='medical_records')

@@ -1,7 +1,13 @@
 import { type ReactNode } from "react";
-import { Navigate, useLocation, useParams } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { getBranchLoginPath, getFacilityLoginPath, getStaffPortalPath } from "@/lib/facility-staff";
+import { useTenantParams, useTenantRouting } from "@/context/TenantRoutingContext";
+import {
+  getBranchLoginPath,
+  getBranchStaffPortalPath,
+  getFacilityLoginPath,
+  getStaffPortalPath,
+} from "@/lib/facility-staff";
 import { getWorkspaceDashboardPath } from "@/lib/facility-workspace";
 import { roleAllows, type WorkspaceRole } from "@/lib/role-access";
 
@@ -20,14 +26,13 @@ const ProtectedRoute = ({
 }: ProtectedRouteProps) => {
   const { user, loading } = useAuth();
   const location = useLocation();
-  const params = useParams();
-  const facilitySlug = params.facilitySlug ?? "";
-  const branchSlug = params.branchSlug ?? "";
+  const { facilitySlug, branchSlug, routeFacilitySlug } = useTenantParams();
+  const tenant = useTenantRouting();
   const loginPath = branchSlug
     ? getBranchLoginPath(facilitySlug, branchSlug)
     : getFacilityLoginPath(facilitySlug);
   const portalPath = branchSlug
-    ? `/${facilitySlug}/branches/${branchSlug}/portal`
+    ? getBranchStaffPortalPath(facilitySlug, branchSlug)
     : getStaffPortalPath(facilitySlug);
 
   if (loading) {
@@ -42,6 +47,14 @@ const ProtectedRoute = ({
         replace
       />
     );
+  }
+
+  if (
+    tenant.facilitySlug &&
+    routeFacilitySlug &&
+    routeFacilitySlug !== tenant.facilitySlug
+  ) {
+    return <Navigate to="/login" replace />;
   }
 
   if (facilitySlug && user.facilitySlug !== facilitySlug) {

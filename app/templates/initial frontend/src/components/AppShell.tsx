@@ -1,6 +1,7 @@
 import { useEffect, useMemo, type ElementType, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import {
   Activity,
   BedDouble,
@@ -55,7 +56,7 @@ const navItems: Array<{
   roles?: WorkspaceRole[];
 }> = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "", branchSlug), roles: routeRoles.admin },
-  { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug, branchSlug) => branchSlug ? getBranchStaffPortalPath(slug, branchSlug) : getStaffPortalPath(slug), roles: ["doctor", "nurse", "reception", "pharmacist", "lab"] },
+  { id: "portal", label: "My Portal", icon: LayoutDashboard, path: (slug, branchSlug) => branchSlug ? getBranchStaffPortalPath(slug, branchSlug) : getStaffPortalPath(slug), roles: ["doctor", "nurse", "reception", "pharmacist", "lab", "billing"] },
   { id: "staff", label: "Staff & Access", icon: ShieldCheck, path: (slug, branchSlug) => branchSlug ? getBranchStaffAccessPath(slug, branchSlug) : getStaffAccessPath(slug), roles: routeRoles.admin },
   { id: "chat", label: "Messages", icon: MessageSquare, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "chat", branchSlug), roles: routeRoles.chat },
   { id: "alerts", label: "Alerts", icon: Bell, path: (slug, branchSlug) => getWorkspaceRoutePath(slug, "alerts", branchSlug), roles: routeRoles.alerts },
@@ -80,7 +81,7 @@ const navItems: Array<{
 const defaultModules = ["reception", "records", "consultations", "nursing", "pharmacy", "billing"];
 
 const AppShell = ({ children }: AppShellProps) => {
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();

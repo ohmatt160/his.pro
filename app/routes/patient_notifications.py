@@ -61,6 +61,8 @@ async def list_patient_notifications(
     status_filter: Optional[str] = Query(None, alias="status"),
     channel: Optional[str] = Query(None),
     notification_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST")),
     db: Session = Depends(get_db),
 ):
@@ -78,7 +80,12 @@ async def list_patient_notifications(
     if notification_type:
         query = query.filter_by(notification_type=notification_type)
 
-    notifications = query.order_by(PatientNotification.created_at.desc()).limit(200).all()
+    notifications = (
+        query.order_by(PatientNotification.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     return [_response(notification) for notification in notifications]
 
 

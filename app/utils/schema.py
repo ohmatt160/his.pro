@@ -17,8 +17,161 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.schema import CreateColumn
 
 from app.extensions import Base
+from app.utils.tenant_urls import generate_canonical_subdomain
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_facility_canonical_subdomains(engine: Engine) -> None:
+    """Backfill the immutable facility hostname on legacy development schemas."""
+    if engine.dialect.name not in {"sqlite", "postgresql"}:
+        return
+
+    inspector = inspect(engine)
+    if "facilities" not in set(inspector.get_table_names()):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("facilities")}
+    with engine.begin() as connection:
+        if "canonical_subdomain" not in columns:
+            connection.execute(
+                text(
+                    'ALTER TABLE "facilities" '
+                    'ADD COLUMN "canonical_subdomain" VARCHAR(63)'
+                )
+            )
+
+        rows = connection.execute(
+            text(
+                'SELECT "id", "slug", "canonical_subdomain" '
+                'FROM "facilities"'
+            )
+        ).mappings()
+        for row in rows:
+            if row["canonical_subdomain"]:
+                continue
+            connection.execute(
+                text(
+                    'UPDATE "facilities" '
+                    'SET "canonical_subdomain" = :canonical_subdomain '
+                    'WHERE "id" = :facility_id'
+                ),
+                {
+                    "canonical_subdomain": generate_canonical_subdomain(
+                        row["slug"],
+                        row["id"],
+                    ),
+                    "facility_id": row["id"],
+                },
+            )
+
+        connection.execute(
+            text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS '
+                '"ix_facilities_canonical_subdomain" '
+                'ON "facilities" ("canonical_subdomain")'
+            )
+        )
+        if engine.dialect.name == "postgresql":
+            connection.execute(
+                text(
+                    'ALTER TABLE "facilities" '
+                    'ALTER COLUMN "canonical_subdomain" SET NOT NULL'
+                )
+            )
+
+
+def ensure_patient_registration_idempotency_index(engine: Engine) -> None:
+    """Restore the patient-create uniqueness guard on additive legacy schemas."""
+    if engine.dialect.name not in {"sqlite", "postgresql"}:
+        return
+
+    inspector = inspect(engine)
+    if "patients" not in set(inspector.get_table_names()):
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("patients")}
+    if not {
+        "facility_slug",
+        "registration_idempotency_key",
+    }.issubset(columns):
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                'CREATE UNIQUE INDEX IF NOT EXISTS '
+                '"uq_patients_facility_registration_idempotency" '
+                'ON "patients" ("facility_slug", "registration_idempotency_key")'
+            )
+        )
+
+
+def ensure_billing_idempotency_indexes(engine: Engine) -> None:
+    """Restore financial write uniqueness guards on additive legacy schemas."""
+    if engine.dialect.name not in {"sqlite", "postgresql"}:
+        return
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    index_specs = (
+        (
+            "invoices",
+            {"facility_slug", "idempotency_key"},
+            'CREATE UNIQUE INDEX IF NOT EXISTS '
+            '"uq_invoices_facility_idempotency" '
+            'ON "invoices" ("facility_slug", "idempotency_key")',
+        ),
+        (
+            "payments",
+            {"invoice_id", "idempotency_key"},
+            'CREATE UNIQUE INDEX IF NOT EXISTS '
+            '"uq_payments_invoice_idempotency" '
+            'ON "payments" ("invoice_id", "idempotency_key")',
+        ),
+    )
+
+    with engine.begin() as connection:
+        for table_name, required_columns, statement in index_specs:
+            if table_name not in tables:
+                continue
+            columns = {
+                column["name"]
+                for column in inspect(engine).get_columns(table_name)
+            }
+            if required_columns.issubset(columns):
+                connection.execute(text(statement))
+
+
+def ensure_clinical_idempotency_indexes(engine: Engine) -> None:
+    """Restore duplicate-write guards on additive legacy schemas."""
+    if engine.dialect.name not in {"sqlite", "postgresql"}:
+        return
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    specs = (
+        ("appointments", "uq_appointments_facility_idempotency"),
+        ("medical_records", "uq_medical_records_facility_idempotency"),
+        ("lab_orders", "uq_lab_orders_facility_idempotency"),
+        ("prescriptions", "uq_prescriptions_facility_idempotency"),
+        ("patient_queues", "uq_patient_queues_facility_idempotency"),
+    )
+    with engine.begin() as connection:
+        for table_name, index_name in specs:
+            if table_name not in tables:
+                continue
+            columns = {
+                column["name"]
+                for column in inspect(engine).get_columns(table_name)
+            }
+            if {"facility_slug", "idempotency_key"}.issubset(columns):
+                connection.execute(
+                    text(
+                        f'CREATE UNIQUE INDEX IF NOT EXISTS "{index_name}" '
+                        f'ON "{table_name}" ("facility_slug", "idempotency_key")'
+                    )
+                )
 
 
 def _quote_identifier(name: str) -> str:
@@ -156,12 +309,18 @@ def ensure_database_schema_current(engine: Engine) -> None:
     SQLite and PostgreSQL receive additive column updates. PostgreSQL also gets
     safe widening fixes for columns that older deployments created too narrowly.
     """
+    ensure_facility_canonical_subdomains(engine)
     ensure_sqlite_schema_current(engine)
+
+    if engine.dialect.name == "postgresql":
+        ensure_postgresql_additive_schema_current(engine)
+
+    ensure_patient_registration_idempotency_index(engine)
+    ensure_billing_idempotency_indexes(engine)
+    ensure_clinical_idempotency_indexes(engine)
 
     if engine.dialect.name != "postgresql":
         return
-
-    ensure_postgresql_additive_schema_current(engine)
 
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())

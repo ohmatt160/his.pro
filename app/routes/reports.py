@@ -309,7 +309,7 @@ async def get_report_summary(
 async def get_revenue_report(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
-    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "RECEPTIONIST")),
+    current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "RECEPTIONIST", "BILLING")),
 ):
     facility_slug = _require_facility(current_user)
     branch_id = _branch_scope_for(current_user)

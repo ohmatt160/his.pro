@@ -91,6 +91,7 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             "/api/v1/auth/login",
             "/api/v1/auth/register",
             "/api/v1/auth/ensure",
+            "/api/v1/auth/onboard",
         ])
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -101,13 +102,15 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        uses_cookie_auth = bool(
+        has_authorization_header = bool(
+            request.headers.get("authorization")
+            or request.headers.get("x-hispro-authorization")
+        )
+        uses_cookie_auth = not has_authorization_header and bool(
             request.cookies.get("hispro_access_token")
             or request.cookies.get("hispro_refresh_token")
         )
         if not uses_cookie_auth:
-            return await call_next(request)
-        if not request.headers.get("origin") and not request.headers.get("referer"):
             return await call_next(request)
 
         cookie_token = request.cookies.get(CSRF_COOKIE_NAME)

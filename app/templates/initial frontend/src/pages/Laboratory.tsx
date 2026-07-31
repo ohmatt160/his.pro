@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -35,6 +36,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import {
   addSettledError,
   hasResourceErrors,
@@ -121,7 +123,7 @@ const formatCurrency = (value?: number | null) =>
 
 const Laboratory = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [tests, setTests] = useState<LabTest[]>([]);
   const [orders, setOrders] = useState<LabOrder[]>([]);
@@ -135,6 +137,9 @@ const Laboratory = () => {
   const [orderForm, setOrderForm] = useState(emptyOrderForm);
   const [resultForm, setResultForm] = useState(emptyResultForm);
   const [error, setError] = useState("");
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const orderCreateRef = useRef(false);
+  const orderKeyRef = useRef("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<LaboratoryResource>>({});
 
   const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
@@ -255,6 +260,9 @@ const Laboratory = () => {
 
   const createOrder = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (orderCreateRef.current) {
+      return;
+    }
     setError("");
 
     if (!orderForm.patient_id || !orderForm.test_id) {
@@ -262,18 +270,29 @@ const Laboratory = () => {
       return;
     }
 
+    orderCreateRef.current = true;
+    setCreatingOrder(true);
+    orderKeyRef.current ||= createIdempotencyKey("lab-order");
     try {
-      await apiClient.post<LabOrder>("/laboratory/orders", {
-        patient_id: orderForm.patient_id,
-        test_id: orderForm.test_id,
-        priority: orderForm.priority,
-        notes: orderForm.notes.trim() || undefined,
+      await apiClient.request<LabOrder>("/laboratory/orders", {
+        method: "POST",
+        headers: { "Idempotency-Key": orderKeyRef.current },
+        body: {
+          patient_id: orderForm.patient_id,
+          test_id: orderForm.test_id,
+          priority: orderForm.priority,
+          notes: orderForm.notes.trim() || undefined,
+        },
       });
       setOrderForm(emptyOrderForm);
       setShowOrderDialog(false);
+      orderKeyRef.current = "";
       await loadLaboratory();
     } catch (orderError) {
       setError(orderError instanceof Error ? orderError.message : "Order creation failed.");
+    } finally {
+      orderCreateRef.current = false;
+      setCreatingOrder(false);
     }
   };
 
@@ -330,7 +349,10 @@ const Laboratory = () => {
               <Plus className="mr-2 h-4 w-4" /> Lab Test
             </Button>
             <Button
-              onClick={() => setShowOrderDialog(true)}
+              onClick={() => {
+                orderKeyRef.current = createIdempotencyKey("lab-order");
+                setShowOrderDialog(true);
+              }}
               className="gradient-cta gap-2 border-0 text-primary-foreground"
             >
               <Plus className="h-4 w-4" /> New Order
@@ -554,7 +576,11 @@ const Laboratory = () => {
               />
             </div>
             {error && <FormError message={error} />}
-            <DialogActions onCancel={() => setShowOrderDialog(false)} submitLabel="Create Order" />
+            <DialogActions
+              onCancel={() => setShowOrderDialog(false)}
+              submitLabel={creatingOrder ? "Creating..." : "Create Order"}
+              disabled={creatingOrder}
+            />
           </form>
         </DialogContent>
       </Dialog>
@@ -712,15 +738,17 @@ const SelectField = ({
 const DialogActions = ({
   onCancel,
   submitLabel,
+  disabled = false,
 }: {
   onCancel: () => void;
   submitLabel: string;
+  disabled?: boolean;
 }) => (
   <div className="flex gap-3 sm:col-span-2">
     <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
       Cancel
     </Button>
-    <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
+    <Button type="submit" disabled={disabled} className="gradient-cta flex-1 border-0 text-primary-foreground">
       {submitLabel}
     </Button>
   </div>

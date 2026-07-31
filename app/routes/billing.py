@@ -3,15 +3,22 @@ Billing Routes - FastAPI Version
 Converted from Flask-RESTx billing_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, Response, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 import logging
+import hashlib
+import json
+import re
 
 from app.extensions import get_db, db_session
 from app.schemas.billing import InvoiceResponse, PaymentCreate, PaymentResponse, InvoiceCreate, InvoiceUpdate
-from app.services.billing_service import BillingService
+from app.services.billing_service import (
+    BillingIdempotencyConflictError,
+    BillingService,
+    BillingValidationError,
+)
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.receipt_service import ReceiptService
 from app.services.realtime_service import publish_tenant_event
@@ -30,6 +37,26 @@ from app.models.facility import Facility
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/billing", tags=["billing"])
+BILLING_IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,200}$")
+
+
+def _require_idempotency_key(value: str | None) -> str:
+    if not value or not BILLING_IDEMPOTENCY_KEY_PATTERN.fullmatch(value):
+        raise HTTPException(
+            status_code=400,
+            detail="A valid Idempotency-Key header is required",
+        )
+    return value
+
+
+def _payload_hash(payload: dict) -> str:
+    encoded = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _invoice_response(invoice, payments=None) -> InvoiceResponse:
@@ -91,7 +118,7 @@ def _publish_billing_event(event_type: str, invoice: Invoice, resource_id: str |
         event_type=event_type,
         facility_slug=invoice.facility_slug,
         branch_id=invoice.branch_id or invoice.department_id,
-        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST", "NURSE"],
+        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "RECEPTIONIST", "NURSE", "BILLING"],
         modules=["billing"],
         resource_id=resource_id or invoice.id,
         payload={"patient_id": invoice.patient_id, "invoice_id": invoice.id, "status": invoice.status},
@@ -105,7 +132,7 @@ async def get_invoices(
     patient_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     branch_id: Optional[str] = Query(None, max_length=36),
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     facility_slug = require_facility_slug(current_user)
@@ -149,7 +176,9 @@ async def get_invoices(
 @router.post("/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice(
     data: InvoiceCreate,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     facility_slug = require_facility_slug(current_user)
@@ -160,12 +189,32 @@ async def create_invoice(
         raise HTTPException(status_code=404, detail="Patient not found")
     branch_id = ensure_patient_branch_access(patient, current_user)
 
-    invoice = BillingService.create_invoice(
-        data.model_dump(),
-        facility_slug=facility_slug,
-        branch_id=branch_id or patient.branch_id or patient.department_id,
-        department_id=branch_id or patient.department_id,
-    )
+    idempotency_key = _require_idempotency_key(idempotency_key)
+    try:
+        invoice, created = BillingService.create_invoice(
+            data.model_dump(),
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            branch_id=branch_id or patient.branch_id or patient.department_id,
+            department_id=branch_id or patient.department_id,
+            idempotency_key=idempotency_key,
+            payload_hash=_payload_hash(
+                {
+                    "facility_slug": facility_slug,
+                    "patient_id": patient.id,
+                    "invoice": data.model_dump(),
+                }
+            ),
+        )
+    except BillingIdempotencyConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for another invoice",
+        )
+    if not created:
+        response.status_code = status.HTTP_200_OK
+        return _invoice_response(invoice)
+
     PatientNotificationService.create(
         facility_slug=facility_slug,
         patient=patient,
@@ -184,7 +233,7 @@ async def create_invoice(
 @router.get("/invoices/{invoice_id}", response_model=InvoiceResponse)
 async def get_invoice(
     invoice_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     invoice = BillingService.get_invoice_by_id(invoice_id)
@@ -197,20 +246,41 @@ async def get_invoice(
 async def add_payment(
     invoice_id: str,
     data: PaymentCreate,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     facility_slug = require_facility_slug(current_user)
     invoice = BillingService.get_invoice_by_id(invoice_id)
     require_tenant_row(invoice, current_user, "Invoice not found")
-    payment, error = BillingService.create_payment(
-        invoice_id,
-        data.model_dump(),
-        facility_slug=facility_slug,
-    )
+    idempotency_key = _require_idempotency_key(idempotency_key)
+    try:
+        payment, created = BillingService.create_payment(
+            invoice_id,
+            data.model_dump(),
+            facility_slug=facility_slug,
+            idempotency_key=idempotency_key,
+            payload_hash=_payload_hash(
+                {
+                    "facility_slug": facility_slug,
+                    "invoice_id": invoice_id,
+                    "payment": data.model_dump(),
+                }
+            ),
+        )
+    except BillingIdempotencyConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for another payment",
+        )
+    except BillingValidationError as exc:
+        status_code = 404 if str(exc) == "Invoice not found" else 400
+        raise HTTPException(status_code=status_code, detail=str(exc))
 
-    if not payment:
-        raise HTTPException(status_code=404, detail=error or "Invoice not found or payment error")
+    if not created:
+        response.status_code = status.HTTP_200_OK
+        return _payment_response(payment)
 
     invoice = payment.invoice
     patient = db_session.query(Patient).filter_by(
@@ -241,20 +311,30 @@ async def add_payment(
 @router.get("/invoices/{invoice_id}/payments", response_model=List[PaymentResponse])
 async def get_invoice_payments(
     invoice_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE')),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST', 'NURSE', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     invoice = BillingService.get_invoice_by_id(invoice_id)
     require_tenant_row(invoice, current_user, "Invoice not found")
 
-    return [_payment_response(payment) for payment in invoice.payments]
+    payments = (
+        db.query(Payment)
+        .filter(Payment.invoice_id == invoice.id)
+        .order_by(Payment.payment_date.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return [_payment_response(payment) for payment in payments]
 
 
 @router.post("/payments/{payment_id}/receipt", response_model=PaymentResponse)
 async def upload_payment_receipt(
     payment_id: str,
     file: UploadFile = File(...),
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     payment = _get_payment_for_user(payment_id, current_user)
@@ -266,7 +346,7 @@ async def upload_payment_receipt(
 @router.get("/payments/{payment_id}/receipt")
 async def download_payment_receipt(
     payment_id: str,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST', 'DOCTOR', 'NURSE')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'RECEPTIONIST', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     payment = _get_payment_for_user(payment_id, current_user)
@@ -275,6 +355,7 @@ async def download_payment_receipt(
         path,
         media_type=payment.receipt_content_type or "application/octet-stream",
         filename=payment.receipt_original_name or "receipt",
+        headers={"Cache-Control": "private, no-store"},
     )
 
 
@@ -282,7 +363,7 @@ async def download_payment_receipt(
 async def update_invoice(
     invoice_id: str,
     data: InvoiceUpdate,
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'BILLING')),
     db: Session = Depends(get_db)
 ):
     invoice = BillingService.get_invoice_by_id(invoice_id)

@@ -21,21 +21,14 @@ describe("facility workspace API", () => {
     window.localStorage.clear();
   });
 
-  it("ensures an admin, creates a facility, caches the workspace, and leaves login required", async () => {
-    fetchMock()
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            access_token: "access-token",
-            refresh_token: "refresh-token",
-            token_type: "bearer",
-          }),
-          { status: 200 }
-        )
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
+  it("atomically onboards a facility owner and caches the workspace", async () => {
+    fetchMock().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          access_token: "access-token",
+          refresh_token: "refresh-token",
+          token_type: "bearer",
+          facility: {
             id: "facility-1",
             name: "Sunrise Medical Centre",
             slug: "sunrise-medical-centre",
@@ -45,10 +38,11 @@ describe("facility workspace API", () => {
             email: "admin@sunrise.test",
             modules: ["reception", "records"],
             created_at: "2026-05-31T10:00:00",
-          }),
-          { status: 201 }
-        )
-      );
+          },
+        }),
+        { status: 200 }
+      )
+    );
 
     const workspace = await saveFacilityWorkspace({
       facilityName: "Sunrise Medical Centre",
@@ -61,39 +55,35 @@ describe("facility workspace API", () => {
       selectedModules: ["reception", "records"],
     });
 
-    expect(fetchMock()).toHaveBeenCalledTimes(2);
-    expect(fetchMock().mock.calls[0][0]).toBe("/api/v1/auth/ensure");
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(fetchMock().mock.calls[0][0]).toBe("/api/v1/auth/onboard");
     expect(fetchMock().mock.calls[0][1].body).toBe(
       JSON.stringify({
-        username: "sunrise-medical-centre-admin",
-        email: "admin@sunrise.test",
-        password: "Password1",
-        role: "ADMIN",
-        first_name: "Dr.",
-        last_name: "Amina Yusuf",
-      })
-    );
-    expect(fetchMock().mock.calls[1][0]).toBe("/api/v1/facilities/ensure");
-    expect(fetchMock().mock.calls[1][1].body).toBe(
-      JSON.stringify({
-        name: "Sunrise Medical Centre",
-        type: "hospital",
-        country: "Nigeria",
-        phone: "+234 800 000 0000",
-        email: "admin@sunrise.test",
-        modules: ["reception", "records"],
-        settings: {
-          administrator: {
-            fullName: "Dr. Amina Yusuf",
-            username: "sunrise-medical-centre-admin",
+        owner: {
+          username: "sunrise-medical-centre-admin",
+          email: "admin@sunrise.test",
+          password: "Password1",
+          first_name: "Dr.",
+          last_name: "Amina Yusuf",
+        },
+        facility: {
+          name: "Sunrise Medical Centre",
+          type: "hospital",
+          country: "Nigeria",
+          phone: "+234 800 000 0000",
+          email: "admin@sunrise.test",
+          modules: ["reception", "records"],
+          settings: {
+            administrator: {
+              fullName: "Dr. Amina Yusuf",
+              username: "sunrise-medical-centre-admin",
+            },
           },
         },
       })
     );
     expect(workspace.facilitySlug).toBe("sunrise-medical-centre");
-    expect(fetchMock().mock.calls[1][1].headers.get("Authorization")).toBe(
-      "Bearer access-token"
-    );
+    expect(workspace.canonicalSubdomain).toBe("sunrise-medical-centre");
     expect(window.localStorage.getItem("hispro.auth.token")).toBeNull();
     expect(window.localStorage.getItem("hispro.auth.user")).toBeNull();
   });

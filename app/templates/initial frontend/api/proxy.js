@@ -130,7 +130,17 @@ export default async function handler(request, response) {
       }
       response.setHeader(key, value);
     });
-    response.setHeader("cache-control", "no-store");
+    const isPublicTenantResolution =
+      request.method === "GET" &&
+      /^facilities\/resolve-host\/[a-z0-9-]+$/.test(path) &&
+      !backendResponse.headers.get("set-cookie");
+    response.setHeader(
+      "cache-control",
+      isPublicTenantResolution
+        ? backendResponse.headers.get("cache-control") ||
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=60"
+        : "no-store"
+    );
     response.end(responseBody);
   } catch (error) {
     console.error("HIS.Pro proxy failed", {

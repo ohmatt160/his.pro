@@ -29,6 +29,7 @@ AUTH_ENDPOINT_LIMITS = {
     ("POST", "/api/v1/auth/login"): RateLimitRule(5, 60),
     ("POST", "/api/v1/auth/register"): RateLimitRule(3, 60),
     ("POST", "/api/v1/auth/ensure"): RateLimitRule(3, 60),
+    ("POST", "/api/v1/auth/onboard"): RateLimitRule(3, 60),
     ("POST", "/api/v1/auth/verify"): RateLimitRule(5, 60),
     ("POST", "/api/v1/password-reset/forgot"): RateLimitRule(3, 60),
     ("POST", "/api/v1/password-reset/confirm"): RateLimitRule(5, 60),

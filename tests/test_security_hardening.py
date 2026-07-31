@@ -76,6 +76,35 @@ class SecurityHardeningTest(unittest.TestCase):
         self.assertEqual(live_headers.get("access-control-allow-origin"), "https://his-pro-v1-0.vercel.app")
         self.assertEqual(live_headers.get("access-control-allow-credentials"), "true")
 
+        idempotent_write_preflight = await client.options(
+            "/api/v1/patients",
+            headers={
+                "Origin": "https://his-pro-v1-0.vercel.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type,idempotency-key,x-onboarding-token",
+            },
+        )
+        self.assertIn(idempotent_write_preflight.status_code, (200, 204))
+        allowed_headers = idempotent_write_preflight.headers.get(
+            "access-control-allow-headers", ""
+        ).lower()
+        self.assertIn("idempotency-key", allowed_headers)
+        self.assertIn("x-onboarding-token", allowed_headers)
+
+        rejected_header_preflight = await client.options(
+            "/api/v1/patients",
+            headers={
+                "Origin": "https://his-pro-v1-0.vercel.app",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "x-unapproved-secret-header",
+            },
+        )
+        self.assertEqual(rejected_header_preflight.status_code, 400)
+        self.assertNotIn(
+            "x-unapproved-secret-header",
+            rejected_header_preflight.headers.get("access-control-allow-headers", "").lower(),
+        )
+
         malicious = await client.get(
             "/api/v1/patients",
             params={"search": "' OR '1'='1"},
@@ -122,7 +151,18 @@ class SecurityHardeningTest(unittest.TestCase):
         )
         self.assertIn("access_token", refresh_with_expired_access_header.json())
 
-        verify = await client.post("/api/v1/auth/verify")
+        csrf_token = client.cookies.get("hispro_csrf_token")
+        self.assertTrue(csrf_token)
+        csrf_headers = {"X-CSRF-Token": csrf_token}
+
+        missing_csrf = await client.post(
+            "/api/v1/files/upload",
+            files={"file": ("receipt.png", b"not a real image", "image/png")},
+            data={"folder": "../receipts"},
+        )
+        self.assertEqual(missing_csrf.status_code, 403)
+
+        verify = await client.post("/api/v1/auth/verify", headers=csrf_headers)
         self.assertEqual(verify.status_code, 200, verify.text)
         self.assertEqual(verify.json()["username"], "secure-admin")
 
@@ -130,10 +170,14 @@ class SecurityHardeningTest(unittest.TestCase):
             "/api/v1/files/upload",
             files={"file": ("receipt.png", b"not a real image", "image/png")},
             data={"folder": "../receipts"},
+            headers=csrf_headers,
         )
         self.assertEqual(bad_upload.status_code, 400)
 
-        logout_all = await client.post("/api/v1/auth/logout-everywhere")
+        logout_all = await client.post(
+            "/api/v1/auth/logout-everywhere",
+            headers=csrf_headers,
+        )
         self.assertEqual(logout_all.status_code, 200, logout_all.text)
 
         rejected_after_logout = await client.post("/api/v1/auth/verify")

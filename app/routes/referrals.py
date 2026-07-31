@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -12,7 +12,9 @@ from app.models.patient import Patient
 from app.models.referral import Referral
 from app.models.user import User
 from app.schemas.referrals import ReferralCreate, ReferralResponse
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.dependencies import role_required
+from app.utils.idempotency import IdempotencyConflictError
 from app.utils.validators import Validators
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
@@ -73,6 +75,8 @@ def _notify_department(facility_slug: str, department_id: str, referral: Referra
 @router.post("", response_model=ReferralResponse, status_code=status.HTTP_201_CREATED)
 async def create_referral(
     data: ReferralCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db),
 ):
@@ -82,6 +86,31 @@ async def create_referral(
     patient = db_session.query(Patient).filter_by(id=data.patient_id, facility_slug=facility.slug, is_active=True).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
+
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility.slug,
+            facility_id=facility.id,
+            actor_id=current_user.id,
+            operation="referrals.create",
+            idempotency_key=idempotency_key,
+            payload={
+                **data.model_dump(),
+                "from_department_id": current_user.department_id or patient.department_id,
+            },
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        referral = db_session.query(Referral).filter_by(
+            id=claim.record.resource_id,
+            facility_slug=facility.slug,
+        ).first()
+        if not referral:
+            raise HTTPException(status_code=409, detail="Idempotency replay target missing")
+        response.status_code = status.HTTP_200_OK
+        return _response(referral)
 
     referral = Referral(
         facility_id=facility.id,
@@ -98,6 +127,12 @@ async def create_referral(
     db_session.add(referral)
     db_session.flush()
     _notify_department(facility.slug, data.to_department_id, referral)
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="referral",
+        resource_id=referral.id,
+        response_status=status.HTTP_201_CREATED,
+    )
     db_session.commit()
     db_session.refresh(referral)
     return _response(referral)
@@ -106,6 +141,8 @@ async def create_referral(
 @router.get("", response_model=List[ReferralResponse])
 async def get_referrals(
     department_id: Optional[str] = Query(None, max_length=36),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required('ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
     db: Session = Depends(get_db),
 ):
@@ -117,7 +154,13 @@ async def get_referrals(
         query = query.filter_by(to_department_id=current_user.department_id)
     elif department_id:
         query = query.filter_by(to_department_id=department_id)
-    return [_response(referral) for referral in query.order_by(Referral.created_at.desc()).all()]
+    referrals = (
+        query.order_by(Referral.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    return [_response(referral) for referral in referrals]
 
 
 @router.put("/{referral_id}/accept", response_model=ReferralResponse)

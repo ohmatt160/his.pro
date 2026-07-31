@@ -1,39 +1,59 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  LayoutDashboard,
-  Database,
-  ShieldCheck,
-  Layers,
-  Settings,
-  Sparkles,
-  CheckCircle2,
-} from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Building2, CheckCircle2, Loader2, RotateCcw, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   type FacilityWorkspaceData,
   getFacilityReadyPath,
   saveFacilityWorkspace,
 } from "@/lib/facility-workspace";
 
-const steps = [
-  { icon: Database, label: "Setting up your database", sub: "Creating tables & schemas…" },
-  { icon: Layers, label: "Arranging your modules", sub: "Reception, records, billing, pharmacy…" },
-  { icon: Settings, label: "Configuring workflows", sub: "Customizing to your facility…" },
-  { icon: ShieldCheck, label: "Applying security policies", sub: "HIPAA-ready encryption…" },
-  { icon: LayoutDashboard, label: "Building your dashboard", sub: "Laying out widgets & analytics…" },
-  { icon: Sparkles, label: "Final touches", sub: "Almost there…" },
-];
+type SetupLocationState = FacilityWorkspaceData & {
+  adminPassword?: string;
+  onboardingToken?: string;
+};
 
 const SettingUp = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const setupData = location.state as
-    | (FacilityWorkspaceData & { adminPassword?: string })
-    | null;
+  const setupData = location.state as SetupLocationState | null;
+  const inFlight = useRef(false);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [status, setStatus] = useState<"working" | "done" | "error">("working");
+  const [error, setError] = useState("");
 
-  const [active, setActive] = useState(0);
-  const [done, setDone] = useState(false);
+  const createWorkspace = useCallback(async () => {
+    if (!setupData || inFlight.current) {
+      return;
+    }
+
+    inFlight.current = true;
+    setStatus("working");
+    setError("");
+
+    try {
+      const workspace = await saveFacilityWorkspace(
+        setupData,
+        setupData.onboardingToken
+      );
+      setStatus("done");
+      redirectTimer.current = setTimeout(() => {
+        navigate(getFacilityReadyPath(workspace.facilitySlug), {
+          replace: true,
+          state: workspace,
+        });
+      }, 700);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "The facility workspace could not be created."
+      );
+      setStatus("error");
+      inFlight.current = false;
+    }
+  }, [navigate, setupData]);
 
   useEffect(() => {
     if (!setupData) {
@@ -41,179 +61,80 @@ const SettingUp = () => {
       return;
     }
 
-    const interval = setInterval(() => {
-      setActive((prev) => {
-        if (prev >= steps.length - 1) {
-          clearInterval(interval);
-
-          setTimeout(async () => {
-            setDone(true);
-
-            try {
-              const workspace = await saveFacilityWorkspace(setupData);
-
-              setTimeout(() => {
-                navigate(getFacilityReadyPath(workspace.facilitySlug), {
-                  replace: true,
-                  state: workspace,
-                });
-              }, 1600);
-            } catch (error) {
-              console.error("Workspace creation failed", error);
-              navigate("/get-started", { replace: true });
-            }
-          }, 600);
-
-          return prev;
-        }
-
-        return prev + 1;
-      });
-    }, 1200);
-
-    return () => clearInterval(interval);
-  }, [navigate, setupData]);
-
-  const progress = ((active + 1) / steps.length) * 100;
+    void createWorkspace();
+    return () => {
+      if (redirectTimer.current) {
+        clearTimeout(redirectTimer.current);
+      }
+    };
+  }, [createWorkspace, navigate, setupData]);
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center relative overflow-hidden">
-      {/* Animated bg blobs */}
-      <motion.div
-        className="absolute w-[500px] h-[500px] rounded-full bg-primary/5 blur-3xl"
-        animate={{ x: [0, 40, 0], y: [0, -30, 0] }}
-        transition={{ duration: 8, repeat: Infinity }}
-        style={{ top: "-10%", right: "-5%" }}
-      />
-      <motion.div
-        className="absolute w-[400px] h-[400px] rounded-full bg-accent/5 blur-3xl"
-        animate={{ x: [0, -30, 0], y: [0, 40, 0] }}
-        transition={{ duration: 10, repeat: Infinity }}
-        style={{ bottom: "-10%", left: "-5%" }}
-      />
+    <main className="flex min-h-screen items-center justify-center bg-background px-6 py-12">
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-lg border-y border-border py-12 text-center"
+        aria-live="polite"
+      >
+        {status === "working" && (
+          <>
+            <div className="relative mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-full border border-primary/25 bg-primary/5">
+              <Loader2 className="h-9 w-9 animate-spin text-primary" aria-hidden="true" />
+            </div>
+            <p className="mb-3 text-sm font-semibold uppercase text-primary">
+              Secure onboarding
+            </p>
+            <h1 className="mb-3 text-3xl font-extrabold text-foreground">
+              Creating {setupData?.facilityName || "your facility"}
+            </h1>
+            <p className="mx-auto max-w-md text-muted-foreground">
+              HIS.Pro is creating the facility and administrator together, then
+              applying the selected modules. You can leave this tab open.
+            </p>
+            <div className="mx-auto mt-8 flex max-w-sm items-center justify-center gap-2 border-t border-border pt-5 text-sm text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 text-primary" aria-hidden="true" />
+              No workspace is exposed until setup completes.
+            </div>
+          </>
+        )}
 
-      <div className="relative z-10 w-full max-w-lg px-6 text-center">
-        <AnimatePresence mode="wait">
-          {!done ? (
-            <motion.div key="loading" exit={{ opacity: 0, scale: 0.95 }}>
-              {/* Spinner ring */}
-              <div className="mx-auto mb-8 relative w-24 h-24">
-                <motion.div
-                  className="absolute inset-0 rounded-full border-4 border-primary/20"
-                  style={{ borderTopColor: "hsl(var(--primary))" }}
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                />
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <motion.div
-                    key={active}
-                    initial={{ scale: 0, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    exit={{ scale: 0, opacity: 0 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                  >
-                    {(() => {
-                      const Icon = steps[active].icon;
-                      return <Icon className="h-8 w-8 text-primary" />;
-                    })()}
-                  </motion.div>
-                </div>
-              </div>
+        {status === "done" && (
+          <>
+            <div className="mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-600 text-white">
+              <CheckCircle2 className="h-10 w-10" aria-hidden="true" />
+            </div>
+            <h1 className="mb-3 text-3xl font-extrabold text-foreground">
+              Workspace created
+            </h1>
+            <p className="text-muted-foreground">
+              Your administrator access is ready. Opening the secure workspace now.
+            </p>
+          </>
+        )}
 
-              <h1 className="text-2xl font-extrabold tracking-tight mb-2 text-foreground">
-                Setting up your <span className="text-gradient">HIS</span>
-              </h1>
-
-              {/* Active step label */}
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={active}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="mb-8"
-                >
-                  <p className="text-foreground font-medium">{steps[active].label}</p>
-                  <p className="text-sm text-muted-foreground">{steps[active].sub}</p>
-                </motion.div>
-              </AnimatePresence>
-
-              {/* Progress bar */}
-              <div className="w-full h-2 rounded-full bg-muted overflow-hidden mb-6">
-                <motion.div
-                  className="h-full rounded-full gradient-cta"
-                  animate={{ width: `${progress}%` }}
-                  transition={{ duration: 0.5, ease: "easeOut" }}
-                />
-              </div>
-
-              {/* Steps checklist */}
-              <div className="space-y-2 text-left">
-                {steps.map((step, i) => {
-                  const Icon = step.icon;
-                  const isActive = i === active;
-                  const isDone = i < active;
-                  return (
-                    <motion.div
-                      key={i}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-300 ${
-                        isActive
-                          ? "bg-primary/10 border border-primary/20"
-                          : isDone
-                          ? "opacity-60"
-                          : "opacity-30"
-                      }`}
-                    >
-                      {isDone ? (
-                        <CheckCircle2 className="h-5 w-5 text-accent shrink-0" />
-                      ) : (
-                        <Icon className={`h-5 w-5 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                      )}
-                      <div>
-                        <p className={`text-sm font-medium ${isDone ? "line-through text-muted-foreground" : "text-foreground"}`}>
-                          {step.label}
-                        </p>
-                      </div>
-                      {isActive && (
-                        <motion.div
-                          className="ml-auto h-2 w-2 rounded-full bg-primary"
-                          animate={{ scale: [1, 1.4, 1] }}
-                          transition={{ duration: 1, repeat: Infinity }}
-                        />
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="done"
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ type: "spring", stiffness: 200 }}
-              className="flex flex-col items-center"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ type: "spring", delay: 0.1 }}
-                className="w-20 h-20 rounded-full gradient-cta flex items-center justify-center mb-6 shadow-xl"
-              >
-                <CheckCircle2 className="h-10 w-10 text-primary-foreground" />
-              </motion.div>
-              <h1 className="text-3xl font-extrabold tracking-tight mb-2 text-foreground">
-                You're all set! 🎉
-              </h1>
-              <p className="text-muted-foreground">Preparing your facility access link…</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
+        {status === "error" && (
+          <>
+            <div className="mx-auto mb-7 flex h-20 w-20 items-center justify-center rounded-full border border-destructive/30 bg-destructive/5">
+              <Building2 className="h-9 w-9 text-destructive" aria-hidden="true" />
+            </div>
+            <h1 className="mb-3 text-3xl font-extrabold text-foreground">
+              Setup needs attention
+            </h1>
+            <p className="mx-auto max-w-md text-muted-foreground">{error}</p>
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <Button variant="outline" onClick={() => navigate("/get-started", { replace: true })}>
+                Review details
+              </Button>
+              <Button onClick={() => void createWorkspace()} className="gap-2">
+                <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                Retry setup
+              </Button>
+            </div>
+          </>
+        )}
+      </motion.section>
+    </main>
   );
 };
 

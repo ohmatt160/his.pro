@@ -16,7 +16,7 @@ class RoleAlertCreate(BaseModel):
     alert_type: str = Field(..., pattern="^(info|warning|critical)$")
     title: str = Field(..., max_length=200)
     message: str = Field(...)
-    recipient_role: str = Field(..., pattern="^(ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|RADIOLOGIST)$")
+    recipient_role: str = Field(..., pattern="^(ADMIN|DOCTOR|NURSE|LAB_TECH|PHARMACIST|RECEPTIONIST|RADIOLOGIST|BILLING)$")
     expires_at: Optional[str] = Field(None)
 
 

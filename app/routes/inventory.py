@@ -3,7 +3,7 @@ Inventory Routes - FastAPI Version
 Converted from Flask-RESTx inventory_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel, Field
 from decimal import Decimal
@@ -21,6 +21,8 @@ from app.models.user import User
 from app.models.inventory import Inventory
 from app.models.supplier import Supplier
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
+from app.utils.idempotency import IdempotencyConflictError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/inventory", tags=["inventory"])
@@ -170,6 +172,8 @@ async def create_inventory_item(
 @router.get("/low-stock", response_model=List[LowStockItemResponse])
 async def get_low_stock(
     facility_slug: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
     db: Session = Depends(get_db)
 ):
@@ -179,7 +183,7 @@ async def get_low_stock(
         Inventory.is_active == True,
         Inventory.facility_slug == facility,
         Inventory.current_stock <= Inventory.reorder_level,
-    ).order_by(Inventory.current_stock).all()
+    ).order_by(Inventory.current_stock).offset((page - 1) * per_page).limit(per_page).all()
 
     return [
         LowStockItemResponse(
@@ -323,15 +327,37 @@ async def deactivate_inventory_item(
 async def update_stock(
     item_id: str,
     data: StockUpdate,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'PHARMACIST', 'STORE_KEEPER')),
     db: Session = Depends(get_db)
 ):
     """Update stock level"""
     facility = _require_facility(current_user)
-    item = db_session.query(Inventory).filter_by(id=item_id, facility_slug=facility).first()
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="inventory.stock.update",
+            idempotency_key=idempotency_key,
+            payload={"item_id": item_id, **data.model_dump()},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    item = (
+        db_session.query(Inventory)
+        .filter_by(id=item_id, facility_slug=facility)
+        .with_for_update()
+        .first()
+    )
 
     if not item or not item.is_active:
         raise HTTPException(status_code=404, detail="Inventory item not found")
+    if claim.replay:
+        if claim.record.resource_id != str(item.id):
+            raise HTTPException(status_code=409, detail="Idempotency replay target mismatch")
+        return _inventory_response(item)
 
     adjustment_type = data.adjustment_type
     new_stock = data.current_stock
@@ -345,8 +371,15 @@ async def update_stock(
             raise HTTPException(status_code=400, detail="Insufficient stock for reduction")
         item.current_stock -= new_stock
 
-    item.save()
+    db_session.add(item)
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="inventory",
+        resource_id=item.id,
+        response_status=status.HTTP_200_OK,
+    )
     db_session.commit()
+    db_session.refresh(item)
     _publish_inventory_event("inventory.stock_updated", item)
 
     return _inventory_response(item)

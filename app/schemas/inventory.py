@@ -30,7 +30,7 @@ class InventoryUpdate(BaseModel):
 
 
 class StockUpdate(BaseModel):
-    current_stock: int = Field(...)
+    current_stock: int = Field(..., ge=0)
     adjustment_type: str = Field(..., pattern="^(set|addition|reduction)$")
 
 

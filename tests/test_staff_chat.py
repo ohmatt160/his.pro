@@ -117,10 +117,24 @@ class StaffChatTest(unittest.TestCase):
                 sent_message = await client.post(
                     f"/api/v1/chat/conversations/{conversation_id}/messages",
                     json={"content": "Please review bay 2.", "message_type": "text"},
-                    headers=alpha_admin["headers"],
+                    headers={
+                        **alpha_admin["headers"],
+                        "Idempotency-Key": "test:chat:message-send",
+                    },
                 )
                 self.assertEqual(sent_message.status_code, 201, sent_message.text)
                 self.assertFalse(sent_message.json()["is_read"])
+
+                replayed_message = await client.post(
+                    f"/api/v1/chat/conversations/{conversation_id}/messages",
+                    json={"content": "Please review bay 2.", "message_type": "text"},
+                    headers={
+                        **alpha_admin["headers"],
+                        "Idempotency-Key": "test:chat:message-send",
+                    },
+                )
+                self.assertEqual(replayed_message.status_code, 200, replayed_message.text)
+                self.assertEqual(replayed_message.json()["id"], sent_message.json()["id"])
 
                 unread = await client.get("/api/v1/chat/unread-count", headers=alpha_staff_headers)
                 self.assertEqual(unread.status_code, 200, unread.text)
@@ -175,7 +189,7 @@ class StaffChatTest(unittest.TestCase):
                 "type": "hospital",
                 "country": "Nigeria",
                 "email": email,
-                "modules": ["reception", "records"],
+                "modules": ["reception", "records", "nursing"],
             },
             headers=headers,
         )

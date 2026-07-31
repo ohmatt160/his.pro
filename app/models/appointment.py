@@ -13,6 +13,12 @@ class Appointment(BaseModel):
         Index('idx_appointments_status_facility', 'status', 'facility_slug'),
         Index('idx_appointments_facility_date', 'facility_slug', 'appointment_date'),
         Index('idx_appointments_facility_doctor_date', 'facility_slug', 'doctor_id', 'appointment_date'),
+        Index(
+            'uq_appointments_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
@@ -27,6 +33,8 @@ class Appointment(BaseModel):
     status = Column(String(50), default='SCHEDULED', index=True)
     reason = Column(Text)
     notes = Column(Text)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
 
     STATUSES = ['SCHEDULED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']
 

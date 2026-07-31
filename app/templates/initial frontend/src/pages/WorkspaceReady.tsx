@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -34,7 +35,7 @@ const moduleLabels: Record<string, string> = {
 const WorkspaceReady = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const routeState = (location.state as SavedFacilityWorkspace | null) || null;
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(
     routeState
@@ -56,8 +57,12 @@ const WorkspaceReady = () => {
   }, [facilitySlug, workspace]);
 
   const facilityLink = useMemo(
-    () => getFacilityPlatformLink(facilitySlug),
-    [facilitySlug]
+    () =>
+      getFacilityPlatformLink(
+        facilitySlug,
+        workspace?.canonicalSubdomain || facilitySlug
+      ),
+    [facilitySlug, workspace?.canonicalSubdomain]
   );
   const staffAccessPath = getStaffAccessPath(facilitySlug);
   const facilityLoginPath = getFacilityLoginPath(facilitySlug);
@@ -156,9 +161,9 @@ const WorkspaceReady = () => {
                       {copied ? "Copied" : "Copy link"}
                     </Button>
                     <Button asChild variant="outline" className="gap-2">
-                      <Link to={facilityLoginPath}>
+                      <a href={facilityLink}>
                         Open login page <ExternalLink className="h-4 w-4" />
-                      </Link>
+                      </a>
                     </Button>
                   </div>
                 </div>
@@ -218,9 +223,9 @@ const WorkspaceReady = () => {
                     </Link>
                   </Button>
                   <Button asChild variant="outline">
-                    <Link to={facilityLoginPath}>
+                    <a href={facilityLink}>
                       Open login page
-                    </Link>
+                    </a>
                   </Button>
                   <Button asChild variant="ghost">
                     <Link to="/">Back to landing page</Link>

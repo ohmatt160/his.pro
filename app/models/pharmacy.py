@@ -8,10 +8,11 @@ class Medication(BaseModel):
     __tablename__ = 'medications'
     __table_args__ = (
         Index('idx_medications_facility_active', 'facility_slug', 'is_active'),
+        Index('uq_medications_facility_code', 'facility_slug', 'code', unique=True),
     )
 
     name = Column(String(200), nullable=False)
-    code = Column(String(50), unique=True, nullable=False)
+    code = Column(String(50), nullable=False)
     generic_name = Column(String(200))
     description = Column(Text)
     category = Column(String(100))  # e.g., Antibiotic, Pain Relief
@@ -37,6 +38,13 @@ class Medication(BaseModel):
 class PharmacyInventory(BaseModel):
     """Pharmacy inventory tracking"""
     __tablename__ = 'pharmacy_inventory'
+    __table_args__ = (
+        Index(
+            'uq_pharmacy_inventory_medication',
+            'medication_id',
+            unique=True,
+        ),
+    )
 
     medication_id = Column(String(36), ForeignKey('medications.id'), nullable=False, index=True)
     quantity = Column(Integer, default=0)
@@ -60,6 +68,12 @@ class Prescription(BaseModel):
         Index('idx_prescriptions_status_facility', 'status', 'facility_slug'),
         Index('idx_prescriptions_facility_date', 'facility_slug', 'prescription_date'),
         Index('idx_prescriptions_facility_patient', 'facility_slug', 'patient_id'),
+        Index(
+            'uq_prescriptions_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     patient_id = Column(String(36), ForeignKey('patients.id'), nullable=False, index=True)
@@ -70,6 +84,8 @@ class Prescription(BaseModel):
     branch_id = Column(String(36), ForeignKey('branches.id'), nullable=True, index=True)
     status = Column(String(50), default='PENDING', index=True)  # PENDING, DISPENSED, CANCELLED
     notes = Column(Text)
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
     prescription_date = Column(DateTime, nullable=False, index=True)
     dispensed_by = Column(String(36), ForeignKey('users.id'), index=True)
     dispensed_date = Column(DateTime, index=True)

@@ -3,7 +3,7 @@ Pharmacy Routes - FastAPI Version
 Converted from Flask-RESTx pharmacy_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
@@ -24,10 +24,16 @@ from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.pharmacy_service import PharmacyService
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import apply_branch_filter, belongs_to_branch, effective_branch_id
 from app.models.user import User
 from app.models.patient import Patient
+from app.utils.idempotency import (
+    IdempotencyConflictError,
+    idempotency_payload_hash,
+    require_idempotency_key,
+)
 from app.models.facility import Facility
 from app.models.pharmacy import Medication, PharmacyInventory
 
@@ -137,6 +143,7 @@ async def create_medication(
 ):
     facility_slug = current_user.facility_slug
     payload = data.model_dump()
+    payload['facility_id'] = current_user.facility_id
     payload['facility_slug'] = facility_slug
 
     medication, error = PharmacyService.create_medication(payload)
@@ -202,13 +209,49 @@ async def get_inventory(
 async def add_inventory(
     medication_id: str,
     data: InventoryCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'PHARMACIST')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
-    inventory, error = PharmacyService.add_inventory(medication_id, facility_slug, data.model_dump())
+    payload = data.model_dump()
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="pharmacy.inventory.receive",
+            idempotency_key=idempotency_key,
+            payload={"medication_id": medication_id, **payload},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        inventory = PharmacyService.get_inventory(medication_id, facility_slug)
+        if not inventory or claim.record.resource_id != str(inventory.id):
+            raise HTTPException(status_code=409, detail="Idempotency replay target mismatch")
+        response.status_code = status.HTTP_200_OK
+        return _inventory_response(inventory)
+
+    inventory, error = PharmacyService.add_inventory(
+        medication_id,
+        facility_slug,
+        payload,
+        commit=False,
+    )
     if error:
         raise HTTPException(status_code=400, detail=error)
+
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="pharmacy_inventory",
+        resource_id=inventory.id,
+        response_status=status.HTTP_201_CREATED,
+    )
+    db.commit()
+    db.refresh(inventory)
 
     return _inventory_response(inventory)
 
@@ -258,12 +301,15 @@ async def get_prescriptions(
 @router.post("/prescriptions", response_model=PrescriptionResponse, status_code=status.HTTP_201_CREATED)
 async def create_prescription(
     data: PrescriptionCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
     facility_slug = current_user.facility_slug
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
+    idempotency_key = require_idempotency_key(idempotency_key)
 
     # Verify patient belongs to facility
     patient = db.query(Patient).filter_by(id=data.patient_id, facility_slug=facility_slug).first()
@@ -282,29 +328,43 @@ async def create_prescription(
     payload['branch_id'] = resolved_branch_id or legacy_branch_id
     payload['department_id'] = payload.get('department_id') or legacy_branch_id
 
-    prescription = PharmacyService.create_prescription(payload, current_user.id)
-    OrderWorkflowService.record(
-        facility_slug=facility_slug,
-        patient_id=prescription.patient_id,
-        order_type="prescription",
-        order_id=prescription.id,
-        event_type="consultation_order_created",
-        status=prescription.status,
-        title="Prescription created",
-        message="Prescription created for pharmacy dispensing.",
-        actor_id=current_user.id,
-        target_role="PHARMACIST",
-        metadata={"items": len(data.items)},
-    )
-    publish_tenant_event(
-        event_type="prescription.created",
-        facility_slug=facility_slug,
-        branch_id=prescription.branch_id or prescription.department_id,
-        roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"],
-        modules=["pharmacy", "consultations", "records"],
-        resource_id=prescription.id,
-        payload={"patient_id": prescription.patient_id, "status": prescription.status},
-    )
+    try:
+        prescription, created = PharmacyService.create_prescription(
+            payload,
+            current_user.id,
+            idempotency_key=idempotency_key,
+            payload_hash=idempotency_payload_hash({
+                "facility_slug": facility_slug,
+                "prescription": payload,
+            }),
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if created:
+        OrderWorkflowService.record(
+            facility_slug=facility_slug,
+            patient_id=prescription.patient_id,
+            order_type="prescription",
+            order_id=prescription.id,
+            event_type="consultation_order_created",
+            status=prescription.status,
+            title="Prescription created",
+            message="Prescription created for pharmacy dispensing.",
+            actor_id=current_user.id,
+            target_role="PHARMACIST",
+            metadata={"items": len(data.items)},
+        )
+        publish_tenant_event(
+            event_type="prescription.created",
+            facility_slug=facility_slug,
+            branch_id=prescription.branch_id or prescription.department_id,
+            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "PHARMACIST"],
+            modules=["pharmacy", "consultations", "records"],
+            resource_id=prescription.id,
+            payload={"patient_id": prescription.patient_id, "status": prescription.status},
+        )
+    else:
+        response.status_code = status.HTTP_200_OK
 
     return _prescription_response(prescription)
 

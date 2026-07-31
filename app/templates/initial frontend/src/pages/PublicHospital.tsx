@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { ArrowLeft, Building2, Clock, Globe, Phone } from "lucide-react";
 import { apiClient } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,7 @@ type PublicProfileData = {
 };
 
 const PublicHospital = () => {
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const [profile, setProfile] = useState<PublicProfileData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

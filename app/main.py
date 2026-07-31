@@ -4,12 +4,14 @@ Converted from Flask/Flask-RESTx for better scalability
 """
 
 import os
+import hmac
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 import redis
@@ -58,9 +60,12 @@ from app.middleware.audit import AuditMiddleware
 from app.middleware.metrics import MetricsMiddleware
 from app.utils.error_handlers import register_error_handlers
 from app.utils.schema import ensure_database_schema_current
+from app.utils.production_config import validate_production_configuration
 from app.services.email_service import EmailService
 from app.services.realtime_service import realtime_broker
 from app.services.metrics_service import metrics_service
+from app.services.integration_outbox_service import IntegrationOutboxService
+from app.services.background_jobs import background_jobs
 from app.services.ohmattos_client import ohmattos_client
 from app.services.tenant_service import backfill_facility_ids, register_tenant_hooks
 from app.extensions import db_session
@@ -117,6 +122,7 @@ async def lifespan(app: FastAPI):
             redis_client = None
     elif os.getenv("REALTIME_REDIS_REQUIRED", "").lower() == "true" and app_env == "production":
         raise RuntimeError("REDIS_URL must be set when REALTIME_REDIS_REQUIRED=true")
+    await realtime_broker.start()
 
     # Email
     try:
@@ -125,6 +131,10 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[WARNING] Email service init failed: {e}")
 
+    ohmattos_client.validate_configuration(
+        production=app_env in {"production", "staging"}
+    )
+
     yield
 
     print("[INFO] Shutting down...")
@@ -132,6 +142,7 @@ async def lifespan(app: FastAPI):
         await realtime_broker.close()
     except Exception:
         logger.warning("Realtime broker shutdown failed", exc_info=True)
+    ohmattos_client.close()
     if redis_client:
         redis_client.close()
 
@@ -139,6 +150,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application"""
 
+    validate_production_configuration()
     register_tenant_hooks()
 
     app_env = os.getenv('APP_ENV') or os.getenv('FLASK_ENV', 'development')
@@ -198,20 +210,36 @@ def create_app() -> FastAPI:
             return response
         except Exception as exc:
             db_session.rollback()
-            if ohmattos_client.feature_enabled("logs"):
-                ohmattos_client.report_error(
-                    message=str(exc),
-                    severity="error",
-                    context={
-                        "path": request.url.path,
-                        "method": request.method,
-                        "facility_slug": getattr(request.state, "facility_slug", None),
-                        "branch_id": getattr(request.state, "branch_id", None),
-                    },
-                    user_id=getattr(request.state, "user_id", None),
-                    ip_address=request.client.host if request.client else None,
-                    user_agent=request.headers.get("user-agent"),
-                )
+            tenant_id = getattr(request.state, "tenant_id", None)
+            if ohmattos_client.feature_enabled("logs") and tenant_id:
+                try:
+                    event_id = str(uuid.uuid4())
+                    route = request.scope.get("route")
+                    IntegrationOutboxService.enqueue(
+                        facility_id=str(tenant_id),
+                        event_type="logs.error",
+                        aggregate_type="request",
+                        aggregate_id=None,
+                        idempotency_key=f"hispro:error:{event_id}",
+                        correlation_id=event_id,
+                        payload={
+                            "message": exc.__class__.__name__,
+                            "severity": "error",
+                            "context": {
+                                "route": getattr(route, "path", None),
+                                "method": request.method,
+                            },
+                            "request_id": event_id,
+                            "user_id": None,
+                        },
+                    )
+                    db_session.commit()
+                except Exception:
+                    db_session.rollback()
+                    logger.warning(
+                        "Failed to queue external error telemetry",
+                        exc_info=True,
+                    )
             raise
         finally:
             db_session.remove()
@@ -257,24 +285,6 @@ def create_app() -> FastAPI:
         }
 
 
-    # Keep CORS as the outer edge of the ASGI stack so preflight and
-    # middleware-generated errors always include credentialed CORS headers.
-    app.add_middleware(
-        ForceCORSHeadersMiddleware,
-        allowed_origins=allowed_origins,
-        allowed_origin_regex=allowed_origin_regex,
-    )
-
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_origin_regex=allowed_origin_regex,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["Content-Type", "Authorization", "Accept", "X-CSRF-Token", "X-HISPro-Authorization"],
-        expose_headers=["Authorization"],
-    )
-
     app.add_middleware(MetricsMiddleware)
     app.add_middleware(RateLimitMiddleware)
     app.add_middleware(InputValidationMiddleware)
@@ -283,6 +293,30 @@ def create_app() -> FastAPI:
     app.add_middleware(AuditMiddleware)
     app.add_middleware(ModuleAccessMiddleware)
     app.add_middleware(JWTMiddleware)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_origin_regex=allowed_origin_regex,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+        allow_headers=[
+            "Content-Type",
+            "Authorization",
+            "Accept",
+            "Idempotency-Key",
+            "X-CSRF-Token",
+            "X-HISPro-Authorization",
+            "X-Onboarding-Token",
+        ],
+        expose_headers=["Authorization"],
+    )
+    # Registered last so this wrapper is the outer ASGI edge and can add CORS
+    # headers even when authentication or tenant middleware returns an error.
+    app.add_middleware(
+        ForceCORSHeadersMiddleware,
+        allowed_origins=allowed_origins,
+        allowed_origin_regex=allowed_origin_regex,
+    )
     register_error_handlers(app)
 
     # Health check
@@ -300,21 +334,43 @@ def create_app() -> FastAPI:
             try:
                 redis_client.ping()
                 health_status["redis"] = "connected"
+                if is_production and os.getenv("BACKGROUND_JOB_WORKER_ENABLED", "").lower() == "true":
+                    worker_heartbeat = redis_client.get("hispro:worker:background_jobs")
+                    health_status["background_worker"] = (
+                        "connected" if worker_heartbeat else "missing heartbeat"
+                    )
+                    if not worker_heartbeat:
+                        health_status["status"] = "unhealthy"
             except Exception:
                 health_status["redis"] = "error"
+                if is_production:
+                    health_status["status"] = "unhealthy"
         else:
             health_status["redis"] = "not configured"
-        return health_status
+            if (
+                is_production
+                and os.getenv("REALTIME_REDIS_REQUIRED", "").lower() == "true"
+            ):
+                health_status["status"] = "unhealthy"
+        return JSONResponse(
+            status_code=200 if health_status["status"] == "healthy" else 503,
+            content=health_status,
+        )
 
     @app.get("/metrics", include_in_schema=False)
     async def metrics(request: Request):
         public = os.getenv("METRICS_PUBLIC", "").lower() == "true"
         token = os.getenv("METRICS_TOKEN", "")
-        provided = request.headers.get("x-metrics-token") or request.query_params.get("token")
-        if not public and (not token or provided != token):
+        provided = request.headers.get("x-metrics-token", "")
+        if not public and (
+            not token
+            or not provided
+            or not hmac.compare_digest(provided, token)
+        ):
             raise HTTPException(status_code=404, detail="Not found")
         snapshot = metrics_service.snapshot()
         snapshot["realtime"] = realtime_broker.stats()
+        snapshot["background_jobs"] = background_jobs.stats()
         return snapshot
 
     # API routers

@@ -1,41 +1,41 @@
-# Use Python 3.11 slim image
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
-# Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV APP_ENV=production
-ENV PORT=7860
-ENV WEB_CONCURRENCY=1
-ENV DATABASE_URL=sqlite:////data/hispro.db
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1
 
-# Set work directory
-WORKDIR /app
-
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        postgresql-client \
-        build-essential \
-        libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first for better caching
+WORKDIR /build
+RUN python -m venv /opt/venv
 COPY requirements.txt .
+RUN /opt/venv/bin/pip install --upgrade pip \
+    && /opt/venv/bin/pip install -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
 
-# Copy project (includes built static files in app/static)
-COPY . .
+FROM python:3.11-slim AS runtime
 
-# Create runtime data directories. On Hugging Face Spaces, enable persistent
-# storage so /data survives rebuilds and restarts.
-RUN mkdir -p /data uploads
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:${PATH}" \
+    APP_ENV=production \
+    PORT=7860 \
+    WEB_CONCURRENCY=2
 
-# Expose port
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 hispro \
+    && useradd --system --uid 10001 --gid hispro --home-dir /app --shell /usr/sbin/nologin hispro
+
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
+COPY --chown=hispro:hispro . .
+
+RUN mkdir -p /data/private/files /data/private/chat /data/private/receipts \
+    && chown -R hispro:hispro /data
+
+USER hispro
 EXPOSE 7860
 
-# Bootstrap legacy databases once, apply migrations, then accept traffic.
-CMD ["sh", "-c", "python scripts/migrate.py && gunicorn --bind 0.0.0.0:${PORT:-7860} --workers ${WEB_CONCURRENCY:-1} --worker-class uvicorn.workers.UvicornWorker --timeout 120 app.main:app"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7860/health', timeout=4)"
+
+CMD ["sh", "-c", "exec gunicorn --bind 0.0.0.0:${PORT:-7860} --workers ${WEB_CONCURRENCY:-2} --worker-class uvicorn.workers.UvicornWorker --timeout 120 --graceful-timeout 30 --max-requests 2000 --max-requests-jitter 200 --access-logfile - --error-logfile - app.main:app"]

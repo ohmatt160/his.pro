@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.extensions import db_session, get_db
@@ -10,8 +10,10 @@ from app.schemas.suppliers import SupplierCreate, SupplierResponse, SupplierUpda
 from app.schemas.users import MessageResponse
 from app.services.audit_log_service import AuditLogService
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.dependencies import role_required
 from app.utils.validators import Validators
+from app.utils.idempotency import IdempotencyConflictError
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -51,6 +53,8 @@ def _publish_supplier_event(event_type: str, supplier: Supplier) -> None:
 async def get_suppliers(
     search: Optional[str] = Query(None, max_length=100),
     active_only: bool = Query(True),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     current_user: User = Depends(role_required("ADMIN", "PHARMACIST", "STORE_KEEPER")),
     db: Session = Depends(get_db),
 ):
@@ -62,7 +66,12 @@ async def get_suppliers(
     if search:
         query = query.filter(Supplier.name.ilike(f"%{search}%"))
 
-    suppliers = query.order_by(Supplier.name.asc()).all()
+    suppliers = (
+        query.order_by(Supplier.name.asc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     return [_supplier_response(supplier) for supplier in suppliers]
 
 
@@ -70,11 +79,35 @@ async def get_suppliers(
 async def create_supplier(
     data: SupplierCreate,
     request: Request,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required("ADMIN", "PHARMACIST", "STORE_KEEPER")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
     name = Validators.sanitize_string(data.name)
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="suppliers.create",
+            idempotency_key=idempotency_key,
+            payload={**data.model_dump(mode="json"), "normalized_name": name},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        supplier = db_session.query(Supplier).filter_by(
+            id=claim.record.resource_id,
+            facility_slug=facility_slug,
+        ).first()
+        if not supplier:
+            raise HTTPException(status_code=409, detail="Idempotency replay target missing")
+        response.status_code = status.HTTP_200_OK
+        return _supplier_response(supplier)
+
     existing = db_session.query(Supplier).filter(
         Supplier.facility_slug == facility_slug,
         Supplier.name == name,
@@ -92,8 +125,7 @@ async def create_supplier(
         address=Validators.sanitize_string(data.address or "") or None,
     )
     db_session.add(supplier)
-    db_session.commit()
-    db_session.refresh(supplier)
+    db_session.flush()
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -103,7 +135,18 @@ async def create_supplier(
         facility_slug=facility_slug,
         details={"name": supplier.name},
         request=request,
+        commit=False,
+        raise_on_error=True,
+        session=db_session,
     )
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="supplier",
+        resource_id=supplier.id,
+        response_status=status.HTTP_201_CREATED,
+    )
+    db_session.commit()
+    db_session.refresh(supplier)
     _publish_supplier_event("supplier.created", supplier)
 
     return _supplier_response(supplier)

@@ -10,6 +10,12 @@ class Patient(BaseModel):
         Index('idx_patients_facility_dept', 'facility_slug', 'department_id'),
         Index('idx_patients_facility_branch', 'facility_slug', 'branch_id'),
         Index('idx_patients_facility_created', 'facility_slug', 'created_at'),
+        Index(
+            'uq_patients_facility_registration_idempotency',
+            'facility_slug',
+            'registration_idempotency_key',
+            unique=True,
+        ),
     )
 
     first_name = Column(String(100), nullable=False)
@@ -23,6 +29,8 @@ class Patient(BaseModel):
     medical_history = Column(JSON, default=dict)
     emergency_contact_name = Column(String(100))
     emergency_contact_phone = Column(String(20))
+    registration_idempotency_key = Column(String(200), nullable=True)
+    registration_payload_hash = Column(String(64), nullable=True)
     is_active = Column(Boolean, default=True)
     created_by = Column(String(36), ForeignKey('users.id'), index=True)
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)

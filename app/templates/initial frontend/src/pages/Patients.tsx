@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -84,9 +85,12 @@ const emptyForm = {
 
 const bloodTypes = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
 
+const createRegistrationKey = () =>
+  `patient:${globalThis.crypto?.randomUUID?.() || `${Date.now()}:${Math.random()}`}`;
+
 const Patients = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
@@ -102,6 +106,9 @@ const Patients = () => {
   });
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const creatingRef = useRef(false);
+  const registrationKeyRef = useRef("");
 
   const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
   const staffPath = branchSlug
@@ -159,8 +166,18 @@ const Patients = () => {
     loadPatients(search).catch(() => undefined);
   };
 
+  const openCreate = () => {
+    registrationKeyRef.current = createRegistrationKey();
+    setForm(emptyForm);
+    setError("");
+    setShowCreate(true);
+  };
+
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (creatingRef.current) {
+      return;
+    }
     if (!form.first_name.trim() || !form.last_name.trim() || !form.date_of_birth) {
       setError("First name, last name, and date of birth are required.");
       return;
@@ -181,10 +198,20 @@ const Patients = () => {
     };
 
     try {
-      await apiClient.post<Patient>("/patients", payload);
+      creatingRef.current = true;
+      setCreating(true);
+      registrationKeyRef.current ||= createRegistrationKey();
+      await apiClient.request<Patient>("/patients", {
+        method: "POST",
+        body: payload,
+        headers: {
+          "Idempotency-Key": registrationKeyRef.current,
+        },
+      });
       invalidatePatientOptions();
       setShowCreate(false);
       setForm(emptyForm);
+      registrationKeyRef.current = "";
       await loadPatients("");
       setSearch("");
     } catch (createError) {
@@ -193,6 +220,9 @@ const Patients = () => {
           ? createError.message
           : "Patient registration failed."
       );
+    } finally {
+      creatingRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -252,7 +282,7 @@ const Patients = () => {
               <Link to={staffPath}>Staff</Link>
             </Button>
             <Button
-              onClick={() => setShowCreate(true)}
+              onClick={openCreate}
               className="gradient-cta gap-2 border-0 text-primary-foreground"
             >
               <Plus className="h-4 w-4" /> Register Patient
@@ -336,7 +366,7 @@ const Patients = () => {
                       )}
                       <Button asChild variant="outline" size="sm" className="gap-2">
                         <Link to={getWorkspaceRoutePath(facilitySlug, `patients/${patient.id}/timeline`, branchSlug || undefined)}>
-                          <ClipboardList className="h-4 w-4" /> Timeline
+                          <ClipboardList className="h-4 w-4" /> View record
                         </Link>
                       </Button>
                     </div>
@@ -348,7 +378,18 @@ const Patients = () => {
         </Card>
       </main>
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog
+        open={showCreate}
+        onOpenChange={(open) => {
+          if (creating) return;
+          setShowCreate(open);
+          if (!open) {
+            registrationKeyRef.current = "";
+            setForm(emptyForm);
+            setError("");
+          }
+        }}
+      >
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Register Patient</DialogTitle>
@@ -403,11 +444,11 @@ const Patients = () => {
             )}
 
             <div className="flex gap-3 sm:col-span-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>
+              <Button type="button" variant="outline" className="flex-1" disabled={creating} onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
-                Register Patient
+              <Button type="submit" disabled={creating} className="gradient-cta flex-1 border-0 text-primary-foreground">
+                {creating ? "Registering..." : "Register Patient"}
               </Button>
             </div>
           </form>

@@ -1,6 +1,6 @@
 from typing import Optional, List, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 from app.schemas.branches import BranchResponse
 
@@ -53,6 +53,7 @@ class FacilitySettingsUpdate(BaseModel):
 class FacilityResponse(BaseModel):
     id: str
     tenant_id: str
+    canonical_subdomain: str
     name: str
     slug: str
     type: str
@@ -68,4 +69,40 @@ class FacilityResponse(BaseModel):
     is_active: bool
     created_at: str
     updated_at: Optional[str]
+
+
+class PublicFacilityWorkspaceResponse(BaseModel):
+    """Minimal tenant branding and routing data that is safe before login."""
+
+    canonical_subdomain: str
+    name: str
+    slug: str
+    type: str
+    country: Optional[str]
+    modules: List[str]
+
+
+class FacilityRoutingResponse(BaseModel):
+    slug: str
+    canonical_subdomain: str
+
+
+class FacilityOwnerCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    first_name: Optional[str] = Field(None, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
+
+
+class FacilityOnboardingCreate(BaseModel):
+    owner: FacilityOwnerCreate
+    facility: FacilityCreate
+
+
+class FacilityOnboardingResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    facility: FacilityResponse
 

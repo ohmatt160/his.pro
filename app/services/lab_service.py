@@ -1,6 +1,8 @@
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 from app.models.lab import LabTest, LabOrder, LabResult
 from app.extensions import db
+from app.utils.idempotency import verify_idempotent_replay
 
 class LabService:
     """Laboratory service class"""
@@ -8,10 +10,12 @@ class LabService:
     # ==================== Lab Tests ====================
     
     @staticmethod
-    def create_lab_test(data):
+    def create_lab_test(data, facility_slug, facility_id=None):
         """Create a new lab test"""
-        # Check if code already exists
-        if LabTest.query.filter_by(code=data['code']).first():
+        if LabTest.query.filter_by(
+            code=data['code'],
+            facility_slug=facility_slug,
+        ).first():
             return None, "Lab test code already exists"
         
         test = LabTest(
@@ -21,23 +25,33 @@ class LabService:
             category=data.get('category'),
             unit=data.get('unit'),
             reference_range=data.get('reference_range'),
-            price=data.get('price', 0)
+            price=data.get('price', 0),
+            facility_id=facility_id,
+            facility_slug=facility_slug,
         )
         test.save()
         return test, None
     
     @staticmethod
-    def get_lab_test_by_id(test_id):
+    def get_lab_test_by_id(test_id, facility_slug=None):
         """Get lab test by ID"""
-        return LabTest.query.get(test_id)
+        query = LabTest.query.filter_by(id=test_id)
+        if facility_slug:
+            query = query.filter_by(facility_slug=facility_slug)
+        return query.first()
     
     @staticmethod
-    def get_all_lab_tests(active_only=True):
-        """Get all lab tests"""
-        query = LabTest.query
+    def get_all_lab_tests(facility_slug, active_only=True, page=1, per_page=100):
+        """Get a bounded tenant-owned lab test catalog."""
+        query = LabTest.query.filter_by(facility_slug=facility_slug)
         if active_only:
             query = query.filter_by(is_active=True)
-        return query.order_by(LabTest.name).all()
+        return (
+            query.order_by(LabTest.name)
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+            .all()
+        )
     
     @staticmethod
     def update_lab_test(test, data):
@@ -51,8 +65,15 @@ class LabService:
     # ==================== Lab Orders ====================
     
     @staticmethod
-    def create_lab_order(data, ordered_by_id):
+    def create_lab_order(data, ordered_by_id, idempotency_key=None, payload_hash=None):
         """Create a new lab order"""
+        existing = LabOrder.query.filter_by(
+            facility_slug=data.get('facility_slug'),
+            idempotency_key=idempotency_key,
+        ).first()
+        if existing:
+            return verify_idempotent_replay(existing, payload_hash), False
+
         order_date = data.get('order_date') or datetime.utcnow()
         if isinstance(order_date, str):
             order_date = datetime.fromisoformat(order_date)
@@ -60,16 +81,29 @@ class LabService:
         order = LabOrder(
             patient_id=data['patient_id'],
             test_id=data['test_id'],
+            facility_id=data.get('facility_id'),
             facility_slug=data.get('facility_slug'),
             branch_id=data.get('branch_id') or data.get('department_id'),
             department_id=data.get('department_id') or data.get('branch_id'),
             ordered_by=ordered_by_id,
             priority=data.get('priority', 'ROUTINE'),
             notes=data.get('notes'),
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
             order_date=order_date
         )
-        order.save()
-        return order
+        try:
+            order.save()
+            return order, True
+        except IntegrityError:
+            db.session.rollback()
+            existing = LabOrder.query.filter_by(
+                facility_slug=data.get('facility_slug'),
+                idempotency_key=idempotency_key,
+            ).first()
+            if not existing:
+                raise
+            return verify_idempotent_replay(existing, payload_hash), False
     
     @staticmethod
     def get_lab_order_by_id(order_id):
@@ -109,20 +143,17 @@ class LabService:
     
     @staticmethod
     def create_lab_result(order_id, data):
-        """Create or update lab result for an order"""
-        # Check if result already exists
-        result = LabResult.query.filter_by(order_id=order_id).first()
-        
-        if result:
-            # Update existing result
-            result.value = data.get('value')
-            result.is_abnormal = data.get('is_abnormal', False)
-            result.notes = data.get('notes')
-            result.result_date = datetime.utcnow()
-            result.save()
-            return result
-        
-        # Create new result
+        """Create one result atomically and complete its order."""
+        order_query = LabOrder.query.filter_by(id=order_id)
+        if db.session.bind and db.session.bind.dialect.name == "postgresql":
+            order_query = order_query.with_for_update()
+        order = order_query.first()
+        if not order:
+            return None, False
+        existing = LabResult.query.filter_by(order_id=order_id).first()
+        if existing:
+            return existing, False
+
         result = LabResult(
             order_id=order_id,
             value=data.get('value'),
@@ -130,12 +161,20 @@ class LabService:
             notes=data.get('notes'),
             result_date=datetime.utcnow()
         )
-        result.save()
-        
-        # Update order status to completed
-        LabService.update_lab_order_status(LabOrder.query.get(order_id), 'COMPLETED')
-        
-        return result
+        try:
+            db.session.add(result)
+            order.status = "COMPLETED"
+            order.completed_date = datetime.utcnow()
+            db.session.add(order)
+            db.session.commit()
+            db.session.refresh(result)
+            return result, True
+        except IntegrityError:
+            db.session.rollback()
+            existing = LabResult.query.filter_by(order_id=order_id).first()
+            if existing:
+                return existing, False
+            raise
     
     @staticmethod
     def get_result_by_order(order_id):

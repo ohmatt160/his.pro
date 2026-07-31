@@ -1,7 +1,10 @@
 from datetime import datetime
+import logging
 
 from app.models.audit_log import AuditLog
 from app.extensions import db
+
+logger = logging.getLogger(__name__)
 
 
 class AuditLogService:
@@ -39,25 +42,40 @@ class AuditLogService:
         user_agent=None,
         facility_slug=None,
         request=None,
+        commit=True,
+        raise_on_error=False,
+        session=None,
     ):
         """Log a user action"""
+        session = session or db.session
         try:
             audit_log = AuditLog(
                 user_id=user_id,
                 action=action,
                 resource_type=resource_type,
                 resource_id=resource_id,
+                facility_id=(
+                    getattr(request.state, "tenant_id", None) if request else None
+                ),
                 facility_slug=facility_slug,
                 details=details or {},
                 ip_address=ip_address or AuditLogService._request_ip(request),
                 user_agent=user_agent or AuditLogService._request_user_agent(request),
             )
-            db.session.add(audit_log)
-            db.session.commit()
+            session.add(audit_log)
+            if commit:
+                session.commit()
+            else:
+                session.flush()
+            if request:
+                request.state.audit_log_id = str(audit_log.id)
+                request.state.audit_action = str(action)
             return audit_log
-        except Exception as e:
-            db.session.rollback()
-            print(f"Error logging audit action: {e}")
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to persist audit action %s", action)
+            if raise_on_error:
+                raise
             return None
 
     @staticmethod

@@ -20,6 +20,8 @@ class TenantIsolationTest(unittest.TestCase):
         cls.database_path = os.path.join(cls.temp_dir.name, "tenant-isolation.db")
         os.environ["DATABASE_URL"] = f"sqlite:///{cls.database_path}"
         os.environ["RATE_LIMIT_NAMESPACE"] = f"tenant-isolation-{os.path.basename(cls.temp_dir.name)}"
+        os.environ["FILE_UPLOAD_DIR"] = os.path.join(cls.temp_dir.name, "uploads")
+        os.environ["RECEIPT_UPLOAD_DIR"] = os.path.join(cls.temp_dir.name, "receipts")
 
         app, Base, db_session, engine, httpx = import_isolated_app()
 
@@ -66,7 +68,10 @@ class TenantIsolationTest(unittest.TestCase):
                         "gender": "FEMALE",
                         "phone": "+234800000001",
                     },
-                    headers=alpha_headers,
+                    headers={
+                        **alpha_headers,
+                        "Idempotency-Key": "test:tenant:alpha-patient",
+                    },
                 )
                 self.assertEqual(patient.status_code, 201, patient.text)
                 patient_id = patient.json()["id"]
@@ -91,6 +96,44 @@ class TenantIsolationTest(unittest.TestCase):
                 )
                 self.assertEqual(beta_patient_timeline.status_code, 404, beta_patient_timeline.text)
 
+                alpha_lab_test = await client.post(
+                    "/api/v1/laboratory/tests",
+                    json={
+                        "name": "Complete Blood Count",
+                        "code": "CBC",
+                        "category": "Haematology",
+                        "price": 5000,
+                    },
+                    headers=alpha_headers,
+                )
+                self.assertEqual(alpha_lab_test.status_code, 201, alpha_lab_test.text)
+
+                beta_lab_lookup = await client.get(
+                    f"/api/v1/laboratory/tests/{alpha_lab_test.json()['id']}",
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_lab_lookup.status_code, 404, beta_lab_lookup.text)
+
+                beta_lab_list = await client.get(
+                    "/api/v1/laboratory/tests",
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_lab_list.status_code, 200, beta_lab_list.text)
+                self.assertEqual(beta_lab_list.json(), [])
+
+                beta_lab_test = await client.post(
+                    "/api/v1/laboratory/tests",
+                    json={
+                        "name": "Complete Blood Count",
+                        "code": "CBC",
+                        "category": "Haematology",
+                        "price": 4500,
+                    },
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_lab_test.status_code, 201, beta_lab_test.text)
+                self.assertNotEqual(beta_lab_test.json()["id"], alpha_lab_test.json()["id"])
+
                 medication = await client.post(
                     "/api/v1/pharmacy/medications",
                     json={
@@ -107,6 +150,29 @@ class TenantIsolationTest(unittest.TestCase):
                 )
                 self.assertEqual(medication.status_code, 201, medication.text)
 
+                beta_medication_lookup = await client.get(
+                    f"/api/v1/pharmacy/medications/{medication.json()['id']}",
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_medication_lookup.status_code, 404, beta_medication_lookup.text)
+
+                beta_medication = await client.post(
+                    "/api/v1/pharmacy/medications",
+                    json={
+                        "name": "Tenant Capsule",
+                        "code": "TEN-CAP-001",
+                        "generic_name": "Tenantine",
+                        "category": "Test",
+                        "unit": "capsule",
+                        "strength": "250mg",
+                        "price": 240,
+                        "reorder_level": 5,
+                    },
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_medication.status_code, 201, beta_medication.text)
+                self.assertNotEqual(beta_medication.json()["id"], medication.json()["id"])
+
                 prescription = await client.post(
                     "/api/v1/pharmacy/prescriptions",
                     json={
@@ -119,7 +185,10 @@ class TenantIsolationTest(unittest.TestCase):
                             }
                         ],
                     },
-                    headers=alpha_headers,
+                    headers={
+                        **alpha_headers,
+                        "Idempotency-Key": "test:tenant:alpha-prescription",
+                    },
                 )
                 self.assertEqual(prescription.status_code, 201, prescription.text)
                 prescription_id = prescription.json()["id"]
@@ -145,7 +214,28 @@ class TenantIsolationTest(unittest.TestCase):
                     headers=alpha_headers,
                 )
                 self.assertEqual(upload.status_code, 201, upload.text)
-                self.assertIn("/static/tenants/alpha-hospital/shared/", upload.json()["url"])
+                self.assertTrue(upload.json()["url"].startswith("/api/v1/files/content/"))
+                self.assertIn("folder=shared", upload.json()["url"])
+
+                async with self.httpx.AsyncClient(
+                    transport=transport,
+                    base_url="http://testserver",
+                ) as anonymous_client:
+                    anonymous_download = await anonymous_client.get(upload.json()["url"])
+                    self.assertEqual(anonymous_download.status_code, 401, anonymous_download.text)
+
+                alpha_download = await client.get(
+                    upload.json()["url"],
+                    headers=alpha_headers,
+                )
+                self.assertEqual(alpha_download.status_code, 200, alpha_download.text)
+                self.assertIn(b"TENANT-A", alpha_download.content)
+
+                beta_download = await client.get(
+                    upload.json()["url"],
+                    headers=beta_headers,
+                )
+                self.assertEqual(beta_download.status_code, 404, beta_download.text)
 
                 beta_files = await client.get(
                     "/api/v1/files?folder=shared",
@@ -182,7 +272,7 @@ class TenantIsolationTest(unittest.TestCase):
                     "type": "hospital",
                     "country": "Nigeria",
                     "email": email,
-                    "modules": ["reception", "records", "pharmacy"],
+                    "modules": ["reception", "records", "lab", "pharmacy"],
                 },
                 headers=headers,
             )

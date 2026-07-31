@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -40,6 +41,7 @@ import {
   type FacilityStaffAccount,
 } from "@/lib/facility-staff";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import { addSettledError, getResourceError, settledValue } from "@/lib/resource-loading";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
 
@@ -127,7 +129,7 @@ export const loadAppointmentResources = async (
 
 const Appointments = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [staff, setStaff] = useState<FacilityStaffAccount[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -137,6 +139,11 @@ const Appointments = () => {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [queueingAppointmentId, setQueueingAppointmentId] = useState("");
+  const queueingRef = useRef("");
+  const createRef = useRef(false);
+  const createKeyRef = useRef("");
   const [dataErrors, setDataErrors] = useState<AppointmentResourceState["errors"]>({});
 
   const dashboardPath = getWorkspaceDashboardPath(facilitySlug, branchSlug || undefined);
@@ -198,23 +205,34 @@ const Appointments = () => {
 
   const handleCreate = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (createRef.current) {
+      return;
+    }
     const doctorId = form.doctor_id || clinicians[0]?.staffRecordId || "";
     if (!form.patient_id || !doctorId || !form.date || !form.time) {
       setError("Patient, clinician, date, and time are required.");
       return;
     }
 
+    createRef.current = true;
+    setCreating(true);
+    createKeyRef.current ||= createIdempotencyKey("appointment");
     try {
-      await apiClient.post<Appointment>("/appointments", {
-        patient_id: form.patient_id,
-        doctor_id: doctorId,
-        appointment_date: `${form.date}T${form.time}:00`,
-        duration_minutes: Number(form.duration_minutes) || 30,
-        reason: form.reason.trim() || undefined,
-        notes: form.notes.trim() || undefined,
+      await apiClient.request<Appointment>("/appointments", {
+        method: "POST",
+        headers: { "Idempotency-Key": createKeyRef.current },
+        body: {
+          patient_id: form.patient_id,
+          doctor_id: doctorId,
+          appointment_date: `${form.date}T${form.time}:00`,
+          duration_minutes: Number(form.duration_minutes) || 30,
+          reason: form.reason.trim() || undefined,
+          notes: form.notes.trim() || undefined,
+        },
       });
       setForm(emptyForm);
       setShowCreate(false);
+      createKeyRef.current = "";
       await loadData();
     } catch (createError) {
       setError(
@@ -222,6 +240,9 @@ const Appointments = () => {
           ? createError.message
           : "Appointment scheduling failed."
       );
+    } finally {
+      createRef.current = false;
+      setCreating(false);
     }
   };
 
@@ -235,16 +256,30 @@ const Appointments = () => {
   };
 
   const addToQueue = async (appointment: Appointment) => {
+    if (queueingRef.current === appointment.id) {
+      return;
+    }
+    queueingRef.current = appointment.id;
+    setQueueingAppointmentId(appointment.id);
     try {
-      await apiClient.post<QueueEntry>("/queue", {
-        patient_id: appointment.patient_id,
-        appointment_id: appointment.id,
-        department: "Front Desk",
-        priority: "normal",
+      await apiClient.request<QueueEntry>("/queue", {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": `appointment-queue:${appointment.id}`,
+        },
+        body: {
+          patient_id: appointment.patient_id,
+          appointment_id: appointment.id,
+          department: "Front Desk",
+          priority: "normal",
+        },
       });
       await loadData();
     } catch (queueError) {
       setError(getResourceError(queueError, "Patient could not be added to queue."));
+    } finally {
+      queueingRef.current = "";
+      setQueueingAppointmentId("");
     }
   };
 
@@ -278,7 +313,10 @@ const Appointments = () => {
               <Link to={staffPath}>Clinicians</Link>
             </Button>
             <Button
-              onClick={() => setShowCreate(true)}
+              onClick={() => {
+                createKeyRef.current = createIdempotencyKey("appointment");
+                setShowCreate(true);
+              }}
               className="gradient-cta gap-2 border-0 text-primary-foreground"
             >
               <Plus className="h-4 w-4" /> Schedule
@@ -329,7 +367,10 @@ const Appointments = () => {
                   onRetry={loadData}
                 />
               ) : filteredAppointments.length === 0 ? (
-                <EmptyState onCreate={() => setShowCreate(true)} />
+                <EmptyState onCreate={() => {
+                  createKeyRef.current = createIdempotencyKey("appointment");
+                  setShowCreate(true);
+                }} />
               ) : (
                 <div className="space-y-2">
                   {filteredAppointments.map((appointment, index) => {
@@ -356,8 +397,13 @@ const Appointments = () => {
                         <Info icon={Activity} value={appointment.status.replaceAll("_", " ")} />
                         <div className="flex flex-wrap justify-end gap-2">
                           {!isInQueue(appointment.id) && appointment.status !== "COMPLETED" && (
-                            <Button size="sm" variant="outline" onClick={() => addToQueue(appointment)}>
-                              Add to queue
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={queueingAppointmentId === appointment.id}
+                              onClick={() => addToQueue(appointment)}
+                            >
+                              {queueingAppointmentId === appointment.id ? "Adding..." : "Add to queue"}
                             </Button>
                           )}
                           {appointment.status !== "COMPLETED" && (
@@ -488,8 +534,8 @@ const Appointments = () => {
               <Button type="button" variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
-                Schedule
+              <Button type="submit" disabled={creating} className="gradient-cta flex-1 border-0 text-primary-foreground">
+                {creating ? "Scheduling..." : "Schedule"}
               </Button>
             </div>
           </form>

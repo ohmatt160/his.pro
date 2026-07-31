@@ -1,14 +1,23 @@
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from app.models.appointment import Appointment
 from app.extensions import db
+from app.utils.idempotency import verify_idempotent_replay
 from datetime import datetime
 
 class AppointmentService:
     """Appointment service class"""
     
     @staticmethod
-    def create_appointment(data):
+    def create_appointment(data, idempotency_key=None, payload_hash=None):
         """Create a new appointment"""
+        existing = Appointment.query.filter_by(
+            facility_slug=data.get('facility_slug'),
+            idempotency_key=idempotency_key,
+        ).first()
+        if existing:
+            return verify_idempotent_replay(existing, payload_hash), False
+
         appointment_date = data['appointment_date']
         if isinstance(appointment_date, str):
             appointment_date = datetime.fromisoformat(appointment_date)
@@ -16,6 +25,7 @@ class AppointmentService:
         appointment = Appointment(
             patient_id=data['patient_id'],
             doctor_id=data['doctor_id'],
+            facility_id=data.get('facility_id'),
             facility_slug=data.get('facility_slug'),
             department_id=data.get('department_id'),
             branch_id=data.get('branch_id') or data.get('department_id'),
@@ -23,10 +33,22 @@ class AppointmentService:
             scheduled_time=appointment_date,
             duration_minutes=data.get('duration_minutes', 30),
             reason=data.get('reason'),
-            notes=data.get('notes')
+            notes=data.get('notes'),
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
         )
-        appointment.save()
-        return appointment
+        try:
+            appointment.save()
+            return appointment, True
+        except IntegrityError:
+            db.session.rollback()
+            existing = Appointment.query.filter_by(
+                facility_slug=data.get('facility_slug'),
+                idempotency_key=idempotency_key,
+            ).first()
+            if not existing:
+                raise
+            return verify_idempotent_replay(existing, payload_hash), False
     
     @staticmethod
     def get_appointment_by_id(appointment_id):

@@ -1,6 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import Column, String, Integer, Date, Numeric, Boolean, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, Date, Numeric, Boolean, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -12,6 +12,14 @@ class Inventory(BaseModel):
         Index('idx_inventory_facility_active', 'facility_slug', 'is_active'),
         Index('idx_inventory_facility_category_active', 'facility_slug', 'category', 'is_active'),
         Index('idx_inventory_facility_sku', 'facility_slug', 'sku'),
+        Index(
+            'uq_inventory_active_facility_sku',
+            'facility_slug',
+            'sku',
+            unique=True,
+            postgresql_where=text('is_active = true'),
+            sqlite_where=text('is_active = 1'),
+        ),
     )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)

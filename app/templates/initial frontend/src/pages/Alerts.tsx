@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -69,7 +70,7 @@ type AlertResource = "alerts" | "staff";
 
 const Alerts = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "" } = useParams();
+  const { facilitySlug = "" } = useTenantParams();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [staff, setStaff] = useState<FacilityStaffAccount[]>([]);
   const [loading, setLoading] = useState(true);

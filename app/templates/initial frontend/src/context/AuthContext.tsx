@@ -8,6 +8,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { AUTH_EXPIRED_EVENT, apiClient, type AuthUser } from "@/api/client";
 import { refreshProfile } from "@/lib/auth-session";
+import { useTenantRouting } from "@/context/TenantRoutingContext";
 import {
   authenticateStaff,
   getProfile,
@@ -53,6 +54,7 @@ const hasTimedOut = () => Date.now() - getLastActivityAt() > IDLE_TIMEOUT_MS;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const queryClient = useQueryClient();
+  const { facilitySlug } = useTenantRouting();
   const [token, setTokenState] = useState<string | null>(apiClient.getToken());
   const [user, setUserState] = useState<AuthUser | null>(apiClient.getUser());
   const [loading, setLoading] = useState(true);
@@ -64,6 +66,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const restoreSession = async () => {
       setLoading(true);
       try {
+        if (!facilitySlug && !apiClient.getUser() && !apiClient.getToken()) {
+          return;
+        }
         if ((apiClient.getUser() || apiClient.getToken()) && hasTimedOut()) {
           throw new Error("Session idle timeout");
         }
@@ -111,7 +116,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [facilitySlug]);
 
   useEffect(() => {
     if (!user) {

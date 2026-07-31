@@ -3,11 +3,14 @@ Patients Routes - FastAPI Version
 Converted from Flask-RESTx patient_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, status, Request, Query, Response
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List
 import logging
+import hashlib
+import json
+import re
 
 from app.extensions import get_db
 from app.schemas.patients import (
@@ -19,19 +22,86 @@ from app.schemas.patients import (
     PatientUpdate,
 )
 from app.schemas.users import MessageResponse
-from app.services.patient_service import PatientService
+from app.services.patient_service import PatientIdempotencyConflictError, PatientService
 from app.services.realtime_service import publish_tenant_event
 from app.services.patient_timeline_service import PatientTimelineService
 from app.utils.validators import Validators
 from app.utils.dependencies import get_current_user, role_required
-from app.utils.branch_scope import user_branch_id
 from app.models.user import User
 from app.models.facility import Facility
+from app.models.branch import Branch
 
 logger = logging.getLogger(__name__)
 
 # Create router
 router = APIRouter(prefix="/patients", tags=["patients"])
+PATIENT_IDEMPOTENCY_KEY_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{16,200}$")
+
+
+def _registration_payload_hash(data: dict, facility_slug: str) -> str:
+    canonical_payload = {"facility_slug": facility_slug, "patient": data}
+    encoded = json.dumps(
+        canonical_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _apply_patient_registration_scope(
+    data: dict,
+    current_user: User,
+    db: Session,
+) -> None:
+    requested_branch_id = data.pop("branch_id", None)
+    requested_department_id = data.pop("department_id", None)
+
+    if current_user.branch_id:
+        data["branch_id"] = str(current_user.branch_id)
+        return
+    if current_user.department_id:
+        data["department_id"] = str(current_user.department_id)
+        return
+
+    if (current_user.role or "").upper() != "ADMIN":
+        return
+
+    if requested_branch_id:
+        branch = (
+            db.query(Branch)
+            .filter(
+                Branch.id == requested_branch_id,
+                Branch.facility_slug == current_user.facility_slug,
+                Branch.is_active == True,
+            )
+            .first()
+        )
+        if not branch:
+            raise HTTPException(status_code=400, detail="Invalid patient branch")
+        data["branch_id"] = str(branch.id)
+        return
+
+    if requested_department_id:
+        facility = (
+            db.query(Facility)
+            .filter(
+                Facility.slug == current_user.facility_slug,
+                Facility.is_active == True,
+            )
+            .first()
+        )
+        department_ids = {
+            str(department.get("id"))
+            for department in (facility.departments if facility else [])
+            if isinstance(department, dict) and department.get("id")
+        }
+        if str(requested_department_id) not in department_ids:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid patient department",
+            )
+        data["department_id"] = str(requested_department_id)
 
 
 def _load_patient_page(**kwargs):
@@ -69,7 +139,7 @@ async def get_patient_options(
     limit: int = Query(50, ge=1, le=200),
     department_id: Optional[str] = Query(None, max_length=36),
     branch_id: Optional[str] = Query(None, max_length=36),
-    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST')),
+    current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'BILLING')),
 ):
     facility_slug = current_user.facility_slug
     if not facility_slug:
@@ -150,6 +220,8 @@ async def get_patients(
 @router.post("", response_model=PatientResponse, status_code=status.HTTP_201_CREATED)
 async def create_patient(
     patient_data: PatientCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'RECEPTIONIST')),
     db: Session = Depends(get_db)
 ):
@@ -157,6 +229,14 @@ async def create_patient(
     Create a new patient
     """
     try:
+        if not idempotency_key or not PATIENT_IDEMPOTENCY_KEY_PATTERN.fullmatch(
+            idempotency_key
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="A valid Idempotency-Key header is required",
+            )
+
         # Sanitize string fields
         data = patient_data.model_dump()
         if 'first_name' in data:
@@ -173,35 +253,42 @@ async def create_patient(
             data['emergency_contact_name'] = Validators.sanitize_string(data['emergency_contact_name'])
         if data.get('emergency_contact_phone'):
             data['emergency_contact_phone'] = Validators.sanitize_string(data['emergency_contact_phone'])
-        current_branch_id = user_branch_id(current_user)
-        if current_user.branch_id:
-            data['branch_id'] = current_user.branch_id
-        elif current_branch_id:
-            data['branch_id'] = current_branch_id
-            data['department_id'] = current_branch_id
-
-        logger.info(f"[Patient] Creating patient with data: {data}")
+        _apply_patient_registration_scope(data, current_user, db)
 
         # Create patient
-        patient = PatientService.create_patient(
+        patient, created = PatientService.create_patient(
             data=data,
             user_id=current_user.id,
-            facility_slug=current_user.facility_slug
+            facility_slug=current_user.facility_slug,
+            facility_id=current_user.facility_id,
+            idempotency_key=idempotency_key,
+            payload_hash=_registration_payload_hash(
+                data,
+                current_user.facility_slug,
+            ),
         )
 
-        logger.info(f"[Patient] Patient created successfully: {patient.id}")
-        publish_tenant_event(
-            event_type="patient.created",
-            facility_slug=current_user.facility_slug,
-            branch_id=patient.branch_id or patient.department_id,
-            roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
-            modules=["reception", "records"],
-            resource_id=patient.id,
-        )
+        if created:
+            logger.info("[Patient] Patient created successfully: %s", patient.id)
+            publish_tenant_event(
+                event_type="patient.created",
+                facility_slug=current_user.facility_slug,
+                branch_id=patient.branch_id or patient.department_id,
+                roles=["ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE", "RECEPTIONIST"],
+                modules=["reception", "records"],
+                resource_id=patient.id,
+            )
+        else:
+            response.status_code = status.HTTP_200_OK
 
         # Return patient data
         return build_patient_response(patient)
 
+    except PatientIdempotencyConflictError:
+        raise HTTPException(
+            status_code=409,
+            detail="Idempotency key was already used for another patient registration",
+        )
     except HTTPException:
         raise
     except Exception:
@@ -304,6 +391,8 @@ async def update_patient(
 
         # Sanitize fields
         data = patient_data.model_dump(exclude_unset=True)
+        data.pop("branch_id", None)
+        data.pop("department_id", None)
         for key, value in data.items():
             if isinstance(value, str):
                 data[key] = Validators.sanitize_string(value)
@@ -363,7 +452,7 @@ async def delete_patient(
             resource_id=patient.id,
         )
 
-        return MessageResponse(message="Patient deleted successfully")
+        return MessageResponse(message="Patient archived successfully")
 
     except HTTPException:
         raise

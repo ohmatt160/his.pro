@@ -94,6 +94,11 @@ class RealtimeBroker:
         self._redis = None
         self._listener_task: asyncio.Task | None = None
         self._redis_failed = False
+        self._started = False
+
+    async def start(self) -> None:
+        """Enable external fanout after the application lifespan has started."""
+        self._started = True
 
     async def subscribe(self, facility_slug: str) -> asyncio.Queue[dict[str, Any]]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=self.queue_size)
@@ -131,7 +136,7 @@ class RealtimeBroker:
                 pass
 
     async def _ensure_redis_listener(self) -> None:
-        if self._listener_task or self._redis_failed:
+        if not self._started or self._listener_task or self._redis_failed:
             return
         redis_url = os.getenv("REDIS_URL")
         if not redis_url or redis_async is None:
@@ -177,6 +182,7 @@ class RealtimeBroker:
         await self._publish_local(event)
 
     async def close(self) -> None:
+        self._started = False
         if self._listener_task:
             self._listener_task.cancel()
             try:
@@ -205,6 +211,7 @@ class RealtimeBroker:
             "facilities": len(self._subscribers),
             "redis_configured": bool(os.getenv("REDIS_URL")),
             "redis_failed": self._redis_failed,
+            "started": self._started,
         }
 
 

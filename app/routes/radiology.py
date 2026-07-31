@@ -3,7 +3,7 @@ Radiology Routes - FastAPI Version
 Converted from Flask-RESTx radiology_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from pydantic import BaseModel, Field
@@ -17,9 +17,11 @@ from app.services.clinical_workflow_service import ClinicalWorkflowService
 from app.services.order_workflow_service import OrderWorkflowService
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.dependencies import get_current_user, role_required
 from app.utils.branch_scope import ensure_patient_branch_access, require_facility_slug, require_tenant_row, tenant_query
 from app.utils.validators import Validators
+from app.utils.idempotency import IdempotencyConflictError
 from app.models.user import User
 from app.models.patient import Patient
 from app.models.radiology import Radiology
@@ -113,6 +115,8 @@ async def get_radiology_orders(
 @router.post("", response_model=RadiologyResponse, status_code=status.HTTP_201_CREATED)
 async def create_radiology_order(
     data: RadiologyCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')),
     db: Session = Depends(get_db)
 ):
@@ -131,6 +135,36 @@ async def create_radiology_order(
     Radiology.MODALITIES
     if data.modality not in Radiology.MODALITIES:
         raise HTTPException(status_code=400, detail=f"Invalid modality. Must be one of: {', '.join(Radiology.MODALITIES)}")
+
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="radiology.order.create",
+            idempotency_key=idempotency_key,
+            payload={
+                **data.model_dump(),
+                "resolved_branch_id": branch_id or patient.branch_id or patient.department_id,
+            },
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        radiology = (
+            db_session.query(Radiology)
+            .options(
+                joinedload(Radiology.patient),
+                joinedload(Radiology.requester),
+                joinedload(Radiology.radiologist),
+            )
+            .filter_by(id=claim.record.resource_id)
+            .first()
+        )
+        require_tenant_row(radiology, current_user, "Radiology order not found")
+        response.status_code = status.HTTP_200_OK
+        return _radiology_response(radiology)
 
     # Sanitize notes
     clinical_notes = Validators.sanitize_string(data.clinical_notes or '')
@@ -160,6 +194,12 @@ async def create_radiology_order(
         actor_id=current_user.id,
         target_role="RADIOLOGIST",
         metadata={"modality": radiology.modality, "body_part": radiology.body_part},
+    )
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="radiology_order",
+        resource_id=radiology.id,
+        response_status=status.HTTP_201_CREATED,
     )
     db_session.commit()
     db_session.refresh(radiology)

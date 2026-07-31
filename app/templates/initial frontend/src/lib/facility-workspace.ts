@@ -1,5 +1,11 @@
-import { apiClient } from "@/api/client";
+import { apiClient, setToken } from "@/api/client";
 import { normalizeModules } from "@/lib/modules";
+import {
+  getCanonicalTenantUrl,
+  getCurrentBranchSlugFromPath,
+  getTenantPath,
+  isValidCanonicalSubdomain,
+} from "@/lib/tenant-routing";
 
 export type FacilityWorkspaceData = {
   facilityName: string;
@@ -14,12 +20,14 @@ export type FacilityWorkspaceData = {
 
 export type SavedFacilityWorkspace = FacilityWorkspaceData & {
   facilitySlug: string;
+  canonicalSubdomain: string;
   createdAt: string;
 };
 
 type BackendFacility = {
   id: string;
   tenant_id?: string;
+  canonical_subdomain?: string;
   name: string;
   slug: string;
   type: string;
@@ -36,6 +44,10 @@ type BackendTokenResponse = {
   token_type: "bearer";
 };
 
+type BackendOnboardingResponse = BackendTokenResponse & {
+  facility: BackendFacility;
+};
+
 const WORKSPACE_STORAGE_PREFIX = "hispro.workspace.";
 export const WORKSPACE_UPDATED_EVENT = "hispro:workspace-updated";
 
@@ -46,24 +58,18 @@ export const createFacilitySlug = (facilityName: string) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "") || "my-facility";
 
-const getCurrentBranchSlug = (facilitySlug: string) => {
-  if (typeof window === "undefined" || !facilitySlug) {
-    return "";
-  }
-
-  const match = window.location.pathname.match(
-    new RegExp(`^/${facilitySlug}/branches/([^/]+)(?:/|$)`)
-  );
-  return match?.[1] || "";
-};
-
 export const getFacilityDashboardPath = (facilitySlug: string) => {
-  const branchSlug = getCurrentBranchSlug(facilitySlug);
-  return branchSlug ? getBranchDashboardPath(facilitySlug, branchSlug) : `/dashboard/${facilitySlug}`;
+  const branchSlug = getCurrentBranchSlugFromPath(facilitySlug);
+  return branchSlug
+    ? getBranchDashboardPath(facilitySlug, branchSlug)
+    : getTenantPath("/dashboard", `/dashboard/${facilitySlug}`);
 };
 
 export const getBranchDashboardPath = (facilitySlug: string, branchSlug: string) =>
-  `/${facilitySlug}/branches/${branchSlug}/dashboard`;
+  getTenantPath(
+    `/branches/${branchSlug}/dashboard`,
+    `/${facilitySlug}/branches/${branchSlug}/dashboard`
+  );
 
 export const getWorkspaceDashboardPath = (facilitySlug: string, branchSlug?: string) =>
   branchSlug ? getBranchDashboardPath(facilitySlug, branchSlug) : getFacilityDashboardPath(facilitySlug);
@@ -79,13 +85,20 @@ export const getWorkspaceRoutePath = (
 };
 
 export const getFacilityReadyPath = (facilitySlug: string) =>
-  `/workspace-ready/${facilitySlug}`;
+  getTenantPath("/workspace-ready", `/workspace-ready/${facilitySlug}`);
 
-export const getFacilityPlatformLink = (facilitySlug: string) => {
+export const getFacilityPlatformLink = (
+  facilitySlug: string,
+  canonicalSubdomain = facilitySlug
+) => {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
 
-  return `${origin}/${facilitySlug}`;
+  return !isLocal && isValidCanonicalSubdomain(canonicalSubdomain)
+    ? getCanonicalTenantUrl(canonicalSubdomain, "/login")
+    : `${origin}/${facilitySlug}`;
 };
 
 const getWorkspaceStorageKey = (facilitySlug: string) =>
@@ -153,11 +166,13 @@ const mapBackendFacility = (
     ? normalizeModules(facility.modules)
     : fallback.selectedModules,
   facilitySlug: facility.slug,
+  canonicalSubdomain: facility.canonical_subdomain || facility.slug,
   createdAt: facility.created_at || new Date().toISOString(),
 });
 
 export const saveFacilityWorkspace = async (
-  data: FacilityWorkspaceData
+  data: FacilityWorkspaceData,
+  onboardingToken?: string
 ): Promise<SavedFacilityWorkspace> => {
   const facilitySlug = createFacilitySlug(data.facilityName);
   const { firstName, lastName } = splitFullName(data.fullName);
@@ -167,33 +182,43 @@ export const saveFacilityWorkspace = async (
   }
 
   const email = data.email.trim().toLowerCase();
-  const auth = await apiClient.post<BackendTokenResponse>("/auth/ensure", {
-    username,
-    email,
-    password: data.adminPassword,
-    role: "ADMIN",
-    first_name: firstName,
-    last_name: lastName,
-  });
-
-  const facility = await apiClient.request<BackendFacility>("/facilities/ensure", {
-    method: "POST",
-    authToken: auth.access_token,
-    body: {
-      name: data.facilityName,
-      type: data.facilityType,
-      country: data.country,
-      phone: data.phone,
-      email,
-      modules: data.selectedModules,
-      settings: {
-        administrator: {
-          fullName: data.fullName,
+  const headers = new Headers();
+  if (onboardingToken?.trim()) {
+    headers.set("X-Onboarding-Token", onboardingToken.trim());
+  }
+  const onboarding = await apiClient.request<BackendOnboardingResponse>(
+    "/auth/onboard",
+    {
+      method: "POST",
+      headers,
+      authToken: null,
+      body: {
+        owner: {
           username,
+          email,
+          password: data.adminPassword,
+          first_name: firstName,
+          last_name: lastName,
+        },
+        facility: {
+          name: data.facilityName,
+          type: data.facilityType,
+          country: data.country,
+          phone: data.phone,
+          email,
+          modules: data.selectedModules,
+          settings: {
+            administrator: {
+              fullName: data.fullName,
+              username,
+            },
+          },
         },
       },
-    },
-  });
+    }
+  );
+  setToken(onboarding.access_token);
+  const facility = onboarding.facility;
   const workspace = mapBackendFacility(facility, data);
 
   cacheWorkspace(workspace);
@@ -242,6 +267,8 @@ export const updateCachedFacilityWorkspace = (
     ...cachedWorkspace,
     ...updates,
     facilitySlug: cachedWorkspace.facilitySlug,
+    canonicalSubdomain:
+      cachedWorkspace.canonicalSubdomain || cachedWorkspace.facilitySlug,
   };
 
   cacheWorkspace(workspace);

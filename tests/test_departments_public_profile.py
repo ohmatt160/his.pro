@@ -142,7 +142,10 @@ class DepartmentsPublicProfileTest(unittest.TestCase):
                         "department_id": general_id,
                         "medical_history": {},
                     },
-                    headers=headers,
+                    headers={
+                        **headers,
+                        "Idempotency-Key": "test:department:patient",
+                    },
                 )
                 self.assertEqual(patient.status_code, 201, patient.text)
                 self.assertEqual(patient.json()["department_id"], general_id)
@@ -155,10 +158,29 @@ class DepartmentsPublicProfileTest(unittest.TestCase):
                         "reason": "Blurred vision",
                         "priority": "urgent",
                     },
-                    headers=headers,
+                    headers={
+                        **headers,
+                        "Idempotency-Key": "test:department:referral",
+                    },
                 )
                 self.assertEqual(referral.status_code, 201, referral.text)
                 self.assertEqual(referral.json()["to_department_id"], eye_id)
+
+                referral_replay = await client.post(
+                    "/api/v1/referrals",
+                    json={
+                        "patient_id": patient.json()["id"],
+                        "to_department_id": eye_id,
+                        "reason": "Blurred vision",
+                        "priority": "urgent",
+                    },
+                    headers={
+                        **headers,
+                        "Idempotency-Key": "test:department:referral",
+                    },
+                )
+                self.assertEqual(referral_replay.status_code, 200, referral_replay.text)
+                self.assertEqual(referral_replay.json()["id"], referral.json()["id"])
 
                 accepted = await client.put(
                     f"/api/v1/referrals/{referral.json()['id']}/accept",

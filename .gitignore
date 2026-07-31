@@ -87,3 +87,6 @@ dist/
 resources/
 AI.py
 temp_req.txt
+.doc_tools/
+tmp/
+app/static/tenants/

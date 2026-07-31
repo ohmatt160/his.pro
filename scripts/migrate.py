@@ -1,4 +1,4 @@
-"""Bootstrap legacy databases once, then apply Alembic migrations normally."""
+"""Bootstrap fresh or legacy databases, then apply Alembic migrations."""
 
 import subprocess
 import sys
@@ -40,12 +40,28 @@ def main() -> None:
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
 
-    if "alembic_version" not in existing_tables:
-        Base.metadata.create_all(bind=engine)
-        ensure_database_schema_current(engine)
+    if not existing_tables:
+        # A real empty database must follow the full migration history. Tables
+        # that predate Alembic coverage are added from metadata afterwards.
+        run_alembic("upgrade", "head")
+    elif "alembic_version" not in existing_tables:
+        required_legacy_tables = {"facilities", "users"}
+        missing = required_legacy_tables - existing_tables
+        if missing:
+            raise RuntimeError(
+                "Refusing to stamp an unknown database as the HIS.Pro legacy "
+                f"baseline; missing tables: {', '.join(sorted(missing))}"
+            )
         run_alembic("stamp", BASELINE_REVISION)
+        run_alembic("upgrade", "head")
+    else:
+        run_alembic("upgrade", "head")
 
-    run_alembic("upgrade", "head")
+    # Some early modules were introduced with create_all() before they had an
+    # Alembic revision. This is additive only and runs after migrations so it
+    # cannot pre-create tables owned by newer revisions.
+    Base.metadata.create_all(bind=engine)
+    ensure_database_schema_current(engine)
 
 
 if __name__ == "__main__":

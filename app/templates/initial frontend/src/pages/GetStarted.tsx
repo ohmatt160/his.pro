@@ -35,6 +35,7 @@ const GetStarted = () => {
     fullName: "",
     email: "",
     phone: "",
+    onboardingToken: "",
     password: "",
     confirmPassword: "",
     country: "",
@@ -122,6 +123,7 @@ const GetStarted = () => {
         fullName: form.fullName,
         email: form.email,
         phone: form.phone,
+        onboardingToken: form.onboardingToken,
         adminPassword: form.password,
         selectedModules,
       },
@@ -394,6 +396,27 @@ const GetStarted = () => {
                     placeholder="+254 700 000 000"
                     value={form.phone}
                     onChange={(event) => updateForm("phone", event.target.value)}
+                    className="h-12 border-border/60 bg-background focus:border-primary"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="onboardingToken"
+                    className="flex items-center gap-2 text-sm font-medium"
+                  >
+                    <Lock className="h-4 w-4 text-primary" /> Pilot Invitation
+                    Code
+                  </Label>
+                  <Input
+                    id="onboardingToken"
+                    type="password"
+                    autoComplete="one-time-code"
+                    placeholder="Required for production onboarding"
+                    value={form.onboardingToken}
+                    onChange={(event) =>
+                      updateForm("onboardingToken", event.target.value)
+                    }
                     className="h-12 border-border/60 bg-background focus:border-primary"
                   />
                 </div>

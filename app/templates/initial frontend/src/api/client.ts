@@ -1,3 +1,5 @@
+import { createIdempotencyKey } from "../lib/idempotency";
+
 export type AuthUser = {
   id?: string;
   facilityId?: string;
@@ -115,6 +117,17 @@ const withCsrfHeader = (headers: Headers, method?: string) => {
   const csrfToken = getCookie("hispro_csrf_token");
   if (csrfToken && !headers.has("X-CSRF-Token")) {
     headers.set("X-CSRF-Token", decodeURIComponent(csrfToken));
+  }
+  return headers;
+};
+
+const withIdempotencyHeader = (headers: Headers, method?: string) => {
+  const normalizedMethod = (method || "GET").toUpperCase();
+  if (
+    ["POST", "PUT", "PATCH", "DELETE"].includes(normalizedMethod) &&
+    !headers.has("Idempotency-Key")
+  ) {
+    headers.set("Idempotency-Key", createIdempotencyKey("hispro-write"));
   }
   return headers;
 };
@@ -259,6 +272,7 @@ const isAuthRefreshable = (path: string, options: ApiRequestOptions) =>
   !path.includes("/auth/login") &&
   !path.includes("/auth/register") &&
   !path.includes("/auth/ensure") &&
+  !path.includes("/auth/onboard") &&
   !path.includes("/auth/refresh") &&
   !path.includes("/auth/logout");
 
@@ -312,6 +326,7 @@ const isJsonBody = (body: unknown) =>
 const prepareRequest = (options: ApiRequestOptions) => {
   const headers = toHeaders(options.headers, options.authToken);
   withCsrfHeader(headers, options.method);
+  withIdempotencyHeader(headers, options.method);
   const body = options.body;
 
   if (isJsonBody(body)) {
@@ -348,7 +363,9 @@ export const request = async <T>(
   if (response.status === 401 && isAuthRefreshable(path, options)) {
     const refreshedToken = await refreshAccessToken();
     if (refreshedToken) {
-      const retryHeaders = toHeaders(options.headers, refreshedToken);
+      const retryHeaders = new Headers(headers);
+      retryHeaders.set("Authorization", `Bearer ${refreshedToken}`);
+      withCsrfHeader(retryHeaders, options.method);
       response = await fetch(url, {
         ...fetchOptions,
         headers: retryHeaders,

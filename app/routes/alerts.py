@@ -3,7 +3,7 @@ Alert Routes - FastAPI Version
 Converted from Flask-RESTx alert_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 from sqlalchemy import or_
@@ -20,11 +20,13 @@ from app.models.user import User
 from app.models.alert import Alert
 from app.services.audit_log_service import AuditLogService
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
+from app.utils.idempotency import IdempotencyConflictError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/alerts", tags=["alerts"])
-ALERT_VIEW_ROLES = ('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH')
+ALERT_VIEW_ROLES = ('ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'RECEPTIONIST', 'PHARMACIST', 'LAB_TECH', 'BILLING')
 ALERT_CREATE_ROLES = ('ADMIN', 'BRANCH_ADMIN', 'DOCTOR')
 
 
@@ -105,6 +107,8 @@ async def get_alerts(
 async def create_alert(
     data: AlertCreate,
     request: Request,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required(*ALERT_CREATE_ROLES)),
     db: Session = Depends(get_db)
 ):
@@ -126,6 +130,28 @@ async def create_alert(
 
     expires_at = _parse_expiry(data.expires_at)
 
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="alerts.create",
+            idempotency_key=idempotency_key,
+            payload=data.model_dump(),
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        alert = db_session.query(Alert).filter_by(
+            id=claim.record.resource_id,
+            facility_slug=facility_slug,
+        ).first()
+        if not alert:
+            raise HTTPException(status_code=409, detail="Idempotency replay target missing")
+        response.status_code = status.HTTP_200_OK
+        return _alert_response(alert)
+
     alert = Alert(
         facility_slug=facility_slug,
         alert_type=data.alert_type,
@@ -135,8 +161,7 @@ async def create_alert(
         expires_at=expires_at
     )
     db_session.add(alert)
-    db_session.commit()
-    db_session.refresh(alert)
+    db_session.flush()
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -150,7 +175,18 @@ async def create_alert(
             "title": alert.title,
         },
         request=request,
+        commit=False,
+        raise_on_error=True,
+        session=db_session,
     )
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="alert",
+        resource_id=alert.id,
+        response_status=status.HTTP_201_CREATED,
+    )
+    db_session.commit()
+    db_session.refresh(alert)
     publish_tenant_event(
         event_type="alert.created",
         facility_slug=facility_slug,
@@ -167,6 +203,8 @@ async def create_alert(
 async def create_role_alert(
     data: RoleAlertCreate,
     request: Request,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required(*ALERT_CREATE_ROLES)),
     db: Session = Depends(get_db)
 ):
@@ -174,6 +212,34 @@ async def create_role_alert(
     facility_slug = current_user.facility_slug
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
+
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="alerts.role.create",
+            idempotency_key=idempotency_key,
+            payload=data.model_dump(),
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        resource_ids = claim.record.resource_ids or [claim.record.resource_id]
+        alerts = (
+            db_session.query(Alert)
+            .filter(
+                Alert.facility_slug == facility_slug,
+                Alert.id.in_(resource_ids),
+            )
+            .order_by(Alert.created_at.asc())
+            .all()
+        )
+        if len(alerts) != len(resource_ids):
+            raise HTTPException(status_code=409, detail="Idempotency replay targets missing")
+        response.status_code = status.HTTP_200_OK
+        return [_alert_response(alert) for alert in alerts]
 
     recipients = db_session.query(User).filter_by(
         facility_slug=facility_slug,
@@ -200,9 +266,7 @@ async def create_role_alert(
         )
         db_session.add(alert)
         alerts.append(alert)
-    db_session.commit()
-    for alert in alerts:
-        db_session.refresh(alert)
+    db_session.flush()
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -212,7 +276,19 @@ async def create_role_alert(
         facility_slug=facility_slug,
         details={"recipient_role": data.recipient_role, "count": len(alerts), "title": data.title},
         request=request,
+        commit=False,
+        raise_on_error=True,
+        session=db_session,
     )
+    WriteIdempotencyService.complete_many(
+        claim.record,
+        resource_type="alert",
+        resource_ids=[alert.id for alert in alerts],
+        response_status=status.HTTP_201_CREATED,
+    )
+    db_session.commit()
+    for alert in alerts:
+        db_session.refresh(alert)
     for alert in alerts:
         publish_tenant_event(
             event_type="alert.created",
@@ -350,10 +426,20 @@ async def mark_all_as_read(
     if not facility_slug:
         raise HTTPException(status_code=400, detail="User is not associated with a facility")
 
-    alerts = _visible_alert_query(current_user).filter(Alert.is_read == False).all()
-    for alert in alerts:
-        alert.mark_as_read()
-        db_session.add(alert)
+    now = datetime.utcnow()
+    updated = (
+        db_session.query(Alert)
+        .filter(
+            Alert.facility_slug == facility_slug,
+            or_(Alert.expires_at == None, Alert.expires_at > now),
+            or_(Alert.recipient_id == current_user.id, Alert.recipient_id == None),
+            Alert.is_read == False,
+        )
+        .update(
+            {Alert.is_read: True, Alert.read_at: now},
+            synchronize_session=False,
+        )
+    )
     db_session.commit()
     publish_tenant_event(
         event_type="alert.read_all",
@@ -361,7 +447,7 @@ async def mark_all_as_read(
         user_id=current_user.id,
         modules=["alerts"],
     )
-    return MessageResponse(message=f"Marked {len(alerts)} alert(s) as read")
+    return MessageResponse(message=f"Marked {updated} alert(s) as read")
 
 
 @router.put("/{alert_id}/unread", response_model=AlertResponse)

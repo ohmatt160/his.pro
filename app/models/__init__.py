@@ -22,6 +22,9 @@ from app.models.order_workflow import OrderWorkflowEvent
 from app.models.staff_chat import ChatConversation, ChatMessage
 from app.models.referral import Referral
 from app.models.hospital_listing import HospitalListing
+from app.models.integration_outbox import IntegrationOutbox
+from app.models.background_job import BackgroundJob
+from app.models.write_idempotency import WriteIdempotencyRecord
 
 # Export all models
 __all__ = [
@@ -59,4 +62,6 @@ __all__ = [
     'ChatMessage',
     'Referral',
     'HospitalListing',
+    'IntegrationOutbox',
+    'BackgroundJob',
 ]

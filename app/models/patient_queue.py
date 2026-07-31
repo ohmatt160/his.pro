@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Index
+from sqlalchemy import Column, String, Integer, DateTime, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 
@@ -11,6 +11,20 @@ class PatientQueue(BaseModel):
         Index('idx_patient_queues_facility_branch_status', 'facility_slug', 'branch_id', 'status'),
         Index('idx_patient_queues_facility_created', 'facility_slug', 'created_at'),
         Index('idx_patient_queues_facility_patient', 'facility_slug', 'patient_id'),
+        Index(
+            'uq_patient_queues_active_patient',
+            'facility_slug',
+            'patient_id',
+            unique=True,
+            postgresql_where=text("status IN ('waiting', 'in_progress')"),
+            sqlite_where=text("status IN ('waiting', 'in_progress')"),
+        ),
+        Index(
+            'uq_patient_queues_facility_idempotency',
+            'facility_slug',
+            'idempotency_key',
+            unique=True,
+        ),
     )
 
     facility_id = Column(String(36), ForeignKey('facilities.id'), nullable=True, index=True)
@@ -22,6 +36,8 @@ class PatientQueue(BaseModel):
     status = Column(String(50), default='waiting', index=True)  # waiting/in_progress/completed/no_show
     queue_number = Column(Integer, nullable=False)
     priority = Column(String(20), default='normal')  # normal/urgent
+    idempotency_key = Column(String(200), nullable=True)
+    idempotency_payload_hash = Column(String(64), nullable=True)
     checked_in_at = Column(DateTime, nullable=True)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)

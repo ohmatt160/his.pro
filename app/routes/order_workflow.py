@@ -44,6 +44,8 @@ async def list_order_workflow_events(
     order_type: Optional[str] = Query(None),
     order_id: Optional[str] = Query(None),
     event_type: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(100, ge=1, le=200),
     current_user: User = Depends(role_required("ADMIN", "DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST")),
     db: Session = Depends(get_db),
 ):
@@ -61,5 +63,10 @@ async def list_order_workflow_events(
     if event_type:
         query = query.filter_by(event_type=event_type)
 
-    events = query.order_by(OrderWorkflowEvent.occurred_at.desc()).limit(300).all()
+    events = (
+        query.order_by(OrderWorkflowEvent.occurred_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
     return [_response(event) for event in events]

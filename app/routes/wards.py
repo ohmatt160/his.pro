@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.extensions import db_session, get_db
@@ -19,10 +19,12 @@ from app.schemas.wards import (
 )
 from app.services.patient_notification_service import PatientNotificationService
 from app.services.realtime_service import publish_tenant_event
+from app.services.write_idempotency_service import WriteIdempotencyService
 from app.utils.branch_scope import belongs_to_branch, user_branch_id
 from app.utils.dependencies import role_required
 from app.utils.pagination import apply_pagination
 from app.utils.validators import Validators
+from app.utils.idempotency import IdempotencyConflictError
 
 router = APIRouter(prefix="/wards", tags=["wards"])
 
@@ -33,12 +35,21 @@ def _require_facility(current_user: User) -> str:
     return current_user.facility_slug
 
 
-def _get_patient(patient_id: str, facility_slug: str, current_user: User | None = None) -> Patient:
-    patient = db_session.query(Patient).filter_by(
+def _get_patient(
+    patient_id: str,
+    facility_slug: str,
+    current_user: User | None = None,
+    *,
+    for_update: bool = False,
+) -> Patient:
+    query = db_session.query(Patient).filter_by(
         id=patient_id,
         facility_slug=facility_slug,
         is_active=True,
-    ).first()
+    )
+    if for_update:
+        query = query.with_for_update()
+    patient = query.first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
     branch_id = None if not current_user or current_user.role == "ADMIN" else user_branch_id(current_user)
@@ -47,18 +58,29 @@ def _get_patient(patient_id: str, facility_slug: str, current_user: User | None 
     return patient
 
 
-def _get_bed(bed_id: str, facility_slug: str) -> WardBed:
-    bed = db_session.query(WardBed).filter_by(id=bed_id, facility_slug=facility_slug).first()
+def _get_bed(bed_id: str, facility_slug: str, *, for_update: bool = False) -> WardBed:
+    query = db_session.query(WardBed).filter_by(id=bed_id, facility_slug=facility_slug)
+    if for_update:
+        query = query.with_for_update()
+    bed = query.first()
     if not bed:
         raise HTTPException(status_code=404, detail="Ward bed not found")
     return bed
 
 
-def _get_admission(admission_id: str, facility_slug: str) -> WardAdmission:
-    admission = db_session.query(WardAdmission).filter_by(
+def _get_admission(
+    admission_id: str,
+    facility_slug: str,
+    *,
+    for_update: bool = False,
+) -> WardAdmission:
+    query = db_session.query(WardAdmission).filter_by(
         id=admission_id,
         facility_slug=facility_slug,
-    ).first()
+    )
+    if for_update:
+        query = query.with_for_update()
+    admission = query.first()
     if not admission:
         raise HTTPException(status_code=404, detail="Admission not found")
     return admission
@@ -229,11 +251,36 @@ async def list_admissions(
 @router.post("/admissions", response_model=WardAdmissionResponse, status_code=status.HTTP_201_CREATED)
 async def admit_patient(
     data: WardAdmissionCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
-    _get_patient(data.patient_id, facility_slug, current_user)
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="wards.admission.create",
+            idempotency_key=idempotency_key,
+            payload=data.model_dump(),
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    if claim.replay:
+        admission = _get_admission(claim.record.resource_id, facility_slug)
+        _get_patient(str(admission.patient_id), facility_slug, current_user)
+        response.status_code = status.HTTP_200_OK
+        return _admission_response(admission)
+
+    patient = _get_patient(
+        data.patient_id,
+        facility_slug,
+        current_user,
+        for_update=True,
+    )
 
     existing = db_session.query(WardAdmission).filter_by(
         facility_slug=facility_slug,
@@ -243,7 +290,12 @@ async def admit_patient(
     if existing:
         raise HTTPException(status_code=400, detail="Patient already has an active admission")
 
-    bed = _get_bed(data.bed_id, facility_slug) if data.bed_id else None
+    bed = _get_bed(data.bed_id, facility_slug, for_update=True) if data.bed_id else None
+    if bed and current_user.role != "ADMIN" and user_branch_id(current_user):
+        raise HTTPException(
+            status_code=403,
+            detail="Branch-scoped staff cannot assign facility-level beds",
+        )
     if bed and bed.status != "AVAILABLE":
         raise HTTPException(status_code=400, detail="Ward bed is not available")
 
@@ -265,6 +317,13 @@ async def admit_patient(
         db_session.add(bed)
 
     db_session.add(admission)
+    db_session.flush()
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="ward_admission",
+        resource_id=admission.id,
+        response_status=status.HTTP_201_CREATED,
+    )
     db_session.commit()
     db_session.refresh(admission)
     _publish_ward_event("ward.admission_created", admission)
@@ -316,12 +375,31 @@ async def update_admission(
 async def add_observation(
     admission_id: str,
     data: NursingObservationCreate,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
-    admission = _get_admission(admission_id, facility_slug)
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="wards.observation.create",
+            idempotency_key=idempotency_key,
+            payload={"admission_id": admission_id, **data.model_dump()},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    admission = _get_admission(admission_id, facility_slug, for_update=True)
     _get_patient(str(admission.patient_id), facility_slug, current_user)
+    if claim.replay:
+        if claim.record.resource_id != str(admission.id):
+            raise HTTPException(status_code=409, detail="Idempotency replay target mismatch")
+        response.status_code = status.HTTP_200_OK
+        return _admission_response(admission)
     if admission.status != "ACTIVE":
         raise HTTPException(status_code=400, detail="Cannot update a closed admission")
 
@@ -340,6 +418,12 @@ async def add_observation(
     admission.observations = observations
     admission.nursing_notes = notes
     db_session.add(admission)
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="ward_admission",
+        resource_id=admission.id,
+        response_status=status.HTTP_200_OK,
+    )
     db_session.commit()
     db_session.refresh(admission)
     _publish_ward_event("ward.observation_added", admission)
@@ -349,12 +433,40 @@ async def add_observation(
 @router.post("/admissions/{admission_id}/discharge", response_model=WardAdmissionResponse)
 async def discharge_patient(
     admission_id: str,
+    response: Response,
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required("ADMIN", "BRANCH_ADMIN", "DOCTOR", "NURSE")),
     db: Session = Depends(get_db),
 ):
     facility_slug = _require_facility(current_user)
-    admission = _get_admission(admission_id, facility_slug)
+    try:
+        claim = WriteIdempotencyService.claim(
+            facility_slug=facility_slug,
+            facility_id=current_user.facility_id,
+            actor_id=current_user.id,
+            operation="wards.admission.discharge",
+            idempotency_key=idempotency_key,
+            payload={"admission_id": admission_id},
+        )
+    except IdempotencyConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+    admission = _get_admission(admission_id, facility_slug, for_update=True)
     _get_patient(str(admission.patient_id), facility_slug, current_user)
+    if claim.replay:
+        if claim.record.resource_id != str(admission.id):
+            raise HTTPException(status_code=409, detail="Idempotency replay target mismatch")
+        response.status_code = status.HTTP_200_OK
+        return _admission_response(admission)
+    if admission.status == "DISCHARGED":
+        WriteIdempotencyService.complete(
+            claim.record,
+            resource_type="ward_admission",
+            resource_id=admission.id,
+            response_status=status.HTTP_200_OK,
+        )
+        db_session.commit()
+        return _admission_response(admission)
     if admission.status != "ACTIVE":
         raise HTTPException(status_code=400, detail="Admission is already closed")
 
@@ -375,6 +487,12 @@ async def discharge_patient(
         source_type="ward_admission",
         source_id=admission.id,
         metadata={"ward_name": admission.ward_name, "discharged_at": admission.discharged_at.isoformat()},
+    )
+    WriteIdempotencyService.complete(
+        claim.record,
+        resource_type="ward_admission",
+        resource_id=admission.id,
+        response_status=status.HTTP_200_OK,
     )
     db_session.commit()
     db_session.refresh(admission)

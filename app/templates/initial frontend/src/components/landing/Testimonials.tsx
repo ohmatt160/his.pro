@@ -1,24 +1,21 @@
 import { motion } from "framer-motion";
-import { Star } from "lucide-react";
+import { CreditCard, FlaskConical, Stethoscope } from "lucide-react";
 
-const testimonials = [
+const careTeams = [
   {
-    quote: "HIS.Pro transformed how we manage patient flow. Our waiting times dropped by 40% in the first month.",
-    name: "Dr. Amina Yusuf",
-    title: "Medical Director, City Clinic",
-    initials: "AY",
+    icon: Stethoscope,
+    team: "Clinical team",
+    workflow: "Review the patient timeline, document encounters, order diagnostics, and follow results from one patient context.",
   },
   {
-    quote: "The modular approach is genius. We started with OPD and Pharmacy, then added Lab when we were ready.",
-    name: "James Okonkwo",
-    title: "Admin Manager, MedCare Kenya",
-    initials: "JO",
+    icon: FlaskConical,
+    team: "Diagnostics and pharmacy",
+    workflow: "Receive authorized orders, update fulfillment status, and return results or dispensing activity to the care team.",
   },
   {
-    quote: "Finally, a system built for modern healthcare realities. Fast, reliable, and affordable.",
-    name: "Dr. Sarah Mensah",
-    title: "CEO, HealthFirst Ghana",
-    initials: "SM",
+    icon: CreditCard,
+    team: "Reception and billing",
+    workflow: "Register patients once, coordinate appointments and queues, issue invoices, and record traceable payments.",
   },
 ];
 
@@ -26,36 +23,23 @@ const Testimonials = () => (
   <section className="py-24">
     <div className="container mx-auto px-4">
       <div className="text-center max-w-2xl mx-auto mb-16">
-        <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
-          What Healthcare Professionals{" "}
-          <span className="text-gradient">Say</span>
+        <h2 className="text-3xl font-extrabold sm:text-4xl">
+          One patient journey, clear responsibilities
         </h2>
       </div>
       <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-        {testimonials.map((t, i) => (
+        {careTeams.map((item, i) => (
           <motion.div
-            key={t.name}
+            key={item.team}
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: i * 0.1, duration: 0.4 }}
-            className="glass-card rounded-xl p-6"
+            className="border-t-2 border-teal-700 px-1 py-6"
           >
-            <div className="flex gap-1 mb-4">
-              {[...Array(5)].map((_, j) => (
-                <Star key={j} className="h-4 w-4 fill-cta-warm text-cta-warm" />
-              ))}
-            </div>
-            <p className="text-foreground leading-relaxed mb-6 italic">"{t.quote}"</p>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full gradient-hero flex items-center justify-center text-primary-foreground text-sm font-bold">
-                {t.initials}
-              </div>
-              <div>
-                <p className="text-sm font-bold text-foreground">{t.name}</p>
-                <p className="text-xs text-muted-foreground">{t.title}</p>
-              </div>
-            </div>
+            <item.icon className="mb-5 h-7 w-7 text-teal-700" />
+            <h3 className="mb-3 text-lg font-bold text-foreground">{item.team}</h3>
+            <p className="leading-relaxed text-muted-foreground">{item.workflow}</p>
           </motion.div>
         ))}
       </div>

@@ -6,6 +6,7 @@ Create Date: 2026-06-22 00:00:00.000000
 """
 
 from alembic import op
+from sqlalchemy import inspect
 
 
 revision = "6a2d8f7c9b10"
@@ -100,6 +101,21 @@ def _create_index_if_columns_exist(index_name: str, table_name: str, columns: st
         part.strip().split()[0]
         for part in columns.split(",")
     ]
+    bind = op.get_bind()
+    if bind.dialect.name != "postgresql":
+        inspector = inspect(bind)
+        if table_name not in inspector.get_table_names():
+            return
+        existing_columns = {
+            column["name"] for column in inspector.get_columns(table_name)
+        }
+        if all(column in existing_columns for column in column_names):
+            op.execute(
+                f"CREATE INDEX IF NOT EXISTS {index_name} "
+                f"ON {table_name} ({columns})"
+            )
+        return
+
     column_checks = " AND ".join(
         f"EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '{table_name}' AND column_name = '{column}')"
         for column in column_names

@@ -1,4 +1,3 @@
-import { Heart } from "lucide-react";
 import { Link } from "react-router-dom";
 import logo from "@/lib/assets/logo.png";
 
@@ -6,15 +5,15 @@ const footerLinks = {
   Product: [
     { label: "Features", href: "/#features" },
     { label: "Modules", href: "/#modules" },
-    { label: "Pricing", href: "/#pricing" },
+    { label: "Deployment", href: "/#deployment" },
   ],
   Company: [
-    { label: "About", href: "/#about" },
-    { label: "Contact", href: "/#contact" },
+    { label: "Deployment", href: "/#deployment" },
+    { label: "Launch access", href: "/get-started" },
   ],
   Support: [
-    { label: "Help Center", href: "/#support" },
-    { label: "Status", href: "/#status" },
+    { label: "Find workspace", href: "/login" },
+    { label: "Clinical workflow", href: "/#workflow" },
   ],
   Legal: [
     { label: "Terms of Service", href: "/terms" },
@@ -28,13 +27,13 @@ const Footer = () => (
     <div className="container mx-auto px-4">
       <div className="grid grid-cols-2 md:grid-cols-5 gap-8 mb-12">
         <div className="col-span-2 md:col-span-1">
-          <a href="#" className="inline-flex items-center gap-3">
-            <img src={logo} alt="HIS.Pro" className="h-12 w-auto object-contain" />
+          <Link to="/" className="inline-flex items-center gap-3">
+            <img src={logo} alt="" className="h-12 w-auto object-contain" />
             <span className="text-2xl font-extrabold leading-none">
               <span className="text-gradient">HIS</span>
               <span className="text-foreground">.Pro</span>
             </span>
-          </a>
+          </Link>
           <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
             The modular cloud HIS platform built for modern healthcare.
           </p>
@@ -55,9 +54,7 @@ const Footer = () => (
         ))}
       </div>
       <div className="border-t border-border pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground flex items-center gap-1.5">
-          Made with <Heart className="h-3.5 w-3.5 text-destructive fill-destructive" /> for Global Healthcare
-        </p>
+        <p className="text-sm text-muted-foreground">Healthcare operations with accountable access.</p>
         <p className="text-sm text-muted-foreground">
           © {new Date().getFullYear()} HIS.Pro. All rights reserved.
         </p>

@@ -58,4 +58,13 @@ class User(BaseModel):
 
     @staticmethod
     def get_roles():
-        return ['ADMIN', 'BRANCH_ADMIN', 'DOCTOR', 'NURSE', 'LAB_TECH', 'PHARMACIST', 'RECEPTIONIST']
+        return [
+            'ADMIN',
+            'BRANCH_ADMIN',
+            'DOCTOR',
+            'NURSE',
+            'LAB_TECH',
+            'PHARMACIST',
+            'RECEPTIONIST',
+            'BILLING',
+        ]

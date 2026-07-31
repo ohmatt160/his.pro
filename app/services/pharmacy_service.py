@@ -1,6 +1,8 @@
 from datetime import date, datetime
+from sqlalchemy.exc import IntegrityError
 from app.models.pharmacy import Medication, PharmacyInventory, Prescription, PrescriptionItem
-from app.extensions import db
+from app.extensions import db, db_session
+from app.utils.idempotency import verify_idempotent_replay
 
 class PharmacyService:
     """Pharmacy service class"""
@@ -20,7 +22,10 @@ class PharmacyService:
     @staticmethod
     def create_medication(data):
         """Create a new medication"""
-        if Medication.query.filter_by(code=data['code']).first():
+        if Medication.query.filter_by(
+            code=data['code'],
+            facility_slug=data.get('facility_slug'),
+        ).first():
             return None, "Medication code already exists"
         
         medication = Medication(
@@ -33,6 +38,7 @@ class PharmacyService:
             strength=data.get('strength'),
             price=data.get('price', 0),
             reorder_level=data.get('reorder_level', 10),
+            facility_id=data.get('facility_id'),
             facility_slug=data.get('facility_slug')
         )
         medication.save()
@@ -65,26 +71,39 @@ class PharmacyService:
     # ==================== Inventory ====================
 
     @staticmethod
-    def add_inventory(medication_id, facility_slug, data):
+    def add_inventory(medication_id, facility_slug, data, *, commit=True):
         """Add inventory for a medication"""
-        # Verify medication belongs to facility
-        medication = Medication.query.filter_by(id=medication_id, facility_slug=facility_slug).first()
+        # Lock the medication row so two workers cannot both calculate stock
+        # from the same starting quantity or race to create the inventory row.
+        medication_query = Medication.query.filter_by(
+            id=medication_id,
+            facility_slug=facility_slug,
+        )
+        if db_session.bind and db_session.bind.dialect.name == "postgresql":
+            medication_query = medication_query.with_for_update()
+        medication = medication_query.first()
         if not medication:
             return None, "Medication not found in this facility"
 
         # Check if inventory exists
-        inventory = PharmacyInventory.query.filter_by(medication_id=medication_id).first()
+        inventory_query = PharmacyInventory.query.filter_by(medication_id=medication_id)
+        if db_session.bind and db_session.bind.dialect.name == "postgresql":
+            inventory_query = inventory_query.with_for_update()
+        inventory = inventory_query.first()
 
         if inventory:
-            # Update existing inventory
             inventory.quantity += data.get('quantity', 0)
             inventory.expiry_date = PharmacyService._parse_date(data.get('expiry_date')) or inventory.expiry_date
             inventory.batch_number = data.get('batch_number', inventory.batch_number)
             inventory.location = data.get('location', inventory.location)
-            inventory.save()
+            db_session.add(inventory)
+            if commit:
+                db_session.commit()
+            else:
+                db_session.flush()
+            db_session.refresh(inventory)
             return inventory, None
 
-        # Create new inventory
         inventory = PharmacyInventory(
             medication_id=medication_id,
             quantity=data.get('quantity', 0),
@@ -92,8 +111,38 @@ class PharmacyService:
             batch_number=data.get('batch_number'),
             location=data.get('location')
         )
-        inventory.save()
-        return inventory, None
+        db_session.add(inventory)
+        try:
+            if commit:
+                db_session.commit()
+            else:
+                db_session.flush()
+            db_session.refresh(inventory)
+            return inventory, None
+        except IntegrityError:
+            if not commit:
+                raise
+            # Compatibility fallback for databases where row locking is not
+            # available. Preserve the receipt against the winning row.
+            db_session.rollback()
+            inventory_query = PharmacyInventory.query.filter_by(
+                medication_id=medication_id
+            )
+            if db_session.bind and db_session.bind.dialect.name == "postgresql":
+                inventory_query = inventory_query.with_for_update()
+            inventory = inventory_query.first()
+            if not inventory:
+                raise
+            inventory.quantity += data.get('quantity', 0)
+            inventory.expiry_date = (
+                PharmacyService._parse_date(data.get('expiry_date'))
+                or inventory.expiry_date
+            )
+            inventory.batch_number = data.get('batch_number', inventory.batch_number)
+            inventory.location = data.get('location', inventory.location)
+            db_session.commit()
+            db_session.refresh(inventory)
+            return inventory, None
 
     @staticmethod
     def get_inventory(medication_id, facility_slug=None):
@@ -124,8 +173,15 @@ class PharmacyService:
     # ==================== Prescriptions ====================
     
     @staticmethod
-    def create_prescription(data, prescribed_by_id):
+    def create_prescription(data, prescribed_by_id, idempotency_key=None, payload_hash=None):
         """Create a new prescription with items"""
+        existing = Prescription.query.filter_by(
+            facility_slug=data.get('facility_slug'),
+            idempotency_key=idempotency_key,
+        ).first()
+        if existing:
+            return verify_idempotent_replay(existing, payload_hash), False
+
         prescription = Prescription(
             patient_id=data['patient_id'],
             prescribed_by=prescribed_by_id,
@@ -133,22 +189,37 @@ class PharmacyService:
             department_id=data.get('department_id'),
             branch_id=data.get('branch_id') or data.get('department_id'),
             notes=data.get('notes'),
-            prescription_date=datetime.utcnow()
+            prescription_date=datetime.utcnow(),
+            idempotency_key=idempotency_key,
+            idempotency_payload_hash=payload_hash,
         )
-        prescription.save()
-        
-        # Add prescription items
-        for item_data in data.get('items', []):
-            item = PrescriptionItem(
-                prescription_id=prescription.id,
-                medication_id=item_data['medication_id'],
-                quantity=item_data['quantity'],
-                dosage=item_data.get('dosage'),
-                instructions=item_data.get('instructions')
-            )
-            item.save()
-        
-        return prescription
+        try:
+            db_session.add(prescription)
+            db_session.flush()
+            for item_data in data.get('items', []):
+                db_session.add(PrescriptionItem(
+                    prescription_id=prescription.id,
+                    medication_id=item_data['medication_id'],
+                    quantity=item_data['quantity'],
+                    dosage=item_data.get('dosage'),
+                    instructions=item_data.get('instructions')
+                ))
+            db_session.commit()
+        except IntegrityError:
+            db_session.rollback()
+            existing = Prescription.query.filter_by(
+                facility_slug=data.get('facility_slug'),
+                idempotency_key=idempotency_key,
+            ).first()
+            if not existing:
+                raise
+            return verify_idempotent_replay(existing, payload_hash), False
+        except Exception:
+            db_session.rollback()
+            raise
+
+        db_session.refresh(prescription)
+        return prescription, True
     
     @staticmethod
     def get_prescription_by_id(prescription_id):
@@ -174,7 +245,10 @@ class PharmacyService:
     @staticmethod
     def dispense_prescription(prescription_id, dispensed_by_id, facility_slug=None):
         """Dispense a prescription"""
-        prescription = Prescription.query.get(prescription_id)
+        query = Prescription.query.filter_by(id=prescription_id)
+        if db_session.bind and db_session.bind.dialect.name == "postgresql":
+            query = query.with_for_update()
+        prescription = query.first()
         if not prescription:
             return None, "Prescription not found"
 
@@ -183,24 +257,31 @@ class PharmacyService:
         
         if prescription.status != 'PENDING':
             return None, "Prescription cannot be dispensed"
-        
-        # Check and deduct inventory for each item
+
+        medication_ids = [item.medication_id for item in prescription.items]
+        inventory_query = PharmacyInventory.query.filter(
+            PharmacyInventory.medication_id.in_(medication_ids)
+        )
+        if db_session.bind and db_session.bind.dialect.name == "postgresql":
+            inventory_query = inventory_query.with_for_update()
+        inventory_by_medication = {
+            row.medication_id: row for row in inventory_query.all()
+        }
         for item in prescription.items:
-            if not PharmacyService.check_stock(item.medication_id, item.quantity):
+            inventory = inventory_by_medication.get(item.medication_id)
+            if not inventory or inventory.quantity < item.quantity:
+                db_session.rollback()
                 return None, f"Insufficient stock for medication {item.medication_id}"
-        
-        # Deduct inventory
+
         for item in prescription.items:
-            PharmacyService.deduct_inventory(item.medication_id, item.quantity)
+            inventory_by_medication[item.medication_id].quantity -= item.quantity
             item.is_dispensed = True
-            item.save()
-        
-        # Update prescription status
+
         prescription.status = 'DISPENSED'
         prescription.dispensed_by = dispensed_by_id
         prescription.dispensed_date = datetime.utcnow()
-        prescription.save()
-        
+        db_session.commit()
+        db_session.refresh(prescription)
         return prescription, None
     
     @staticmethod

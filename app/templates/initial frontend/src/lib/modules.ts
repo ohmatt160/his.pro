@@ -32,7 +32,8 @@ export type ModuleAccessRole =
   | "nurse"
   | "reception"
   | "pharmacist"
-  | "lab";
+  | "lab"
+  | "billing";
 
 export type FacilityModule = {
   id: FacilityModuleId;
@@ -199,7 +200,7 @@ export const moduleRoleAccess: Record<FacilityModuleId, ModuleAccessRole[]> = {
   nursing: ["admin", "branch_admin", "doctor", "nurse"],
   lab: ["admin", "branch_admin", "doctor", "lab"],
   pharmacy: ["admin", "branch_admin", "doctor", "pharmacist"],
-  billing: ["admin", "branch_admin", "reception"],
+  billing: ["admin", "branch_admin", "reception", "billing"],
   radiology: ["admin", "branch_admin", "doctor"],
   inventory: ["admin", "pharmacist"],
   reports: ["admin", "branch_admin", "doctor", "nurse", "reception"],

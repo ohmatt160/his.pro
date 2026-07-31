@@ -1,5 +1,6 @@
 import { useEffect, useState, type ElementType } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   Activity,
@@ -33,7 +34,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/context/AuthContext";
 import {
+  getBranchLoginPath,
+  getBranchStaffPortalPath,
   getFacilityLoginPath,
+  getStaffPortalPath,
   getStaffRoleLabel,
   type StaffRole,
 } from "@/lib/facility-staff";
@@ -192,6 +196,7 @@ export const routeKeyForPortalLabel = (
   if (role === "nurse") return "wards";
   if (role === "reception") return "queue";
   if (role === "pharmacist") return "pharmacy";
+  if (role === "billing") return "billing";
   return "laboratory";
 };
 
@@ -202,8 +207,8 @@ const portalPathForRouteKey = (
 ) =>
   key === "portal"
     ? branchSlug
-      ? `/${facilitySlug}/branches/${branchSlug}/portal`
-      : `/portal/${facilitySlug}`
+      ? getBranchStaffPortalPath(facilitySlug, branchSlug)
+      : getStaffPortalPath(facilitySlug)
     : getWorkspaceRoutePath(facilitySlug, key, branchSlug);
 
 export const canUsePortalRoute = ({
@@ -1030,6 +1035,54 @@ const roleConfigs: Record<Exclude<StaffRole, "admin">, RoleConfig> = {
       { label: "Messages", icon: MessageSquare, badge: "1" },
     ],
   },
+  billing: {
+    subtitle:
+      "Create invoices, collect payments, and follow outstanding balances from a finance-only workspace.",
+    searchPlaceholder: "Search invoices, payments...",
+    queueTitle: "Outstanding Accounts",
+    queueCountLabel: "payments requiring attention",
+    primaryAction: {
+      label: "Review Billing",
+      icon: Receipt,
+    },
+    quickActions: [
+      {
+        label: "Create Billing Invoice",
+        icon: Receipt,
+        color: "bg-primary/10 text-primary",
+      },
+      {
+        label: "Record Payment",
+        icon: TrendingUp,
+        color: "bg-emerald-500/10 text-emerald-600",
+      },
+      {
+        label: "Outstanding Payments",
+        icon: ClipboardList,
+        color: "bg-amber-500/10 text-amber-600",
+      },
+      {
+        label: "Claims",
+        icon: Shield,
+        color: "bg-cyan-500/10 text-cyan-600",
+      },
+    ],
+    queueItems: [],
+    stats: [],
+    recentActivity: [],
+    alerts: [],
+    accessModules: ["Billing & Claims"],
+    sidebarMain: [
+      { label: "My Dashboard", icon: LayoutDashboard },
+      { label: "Billing", icon: Receipt },
+      { label: "Payments", icon: TrendingUp },
+      { label: "Claims", icon: Shield },
+    ],
+    sidebarTools: [
+      { label: "Messages", icon: MessageSquare },
+      { label: "Alerts", icon: Bell },
+    ],
+  },
 };
 
 export const routeForPortalLabel = (
@@ -1043,7 +1096,7 @@ export const routeForPortalLabel = (
 
 const StaffPortal = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const { user, logout } = useAuth();
   const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null>(null);
   const [tasks, setTasks] = useState<WorkTask[]>([]);
@@ -1073,7 +1126,7 @@ const StaffPortal = () => {
     }
 
     if (!user || user.facilitySlug !== facilitySlug) {
-      navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login` : getFacilityLoginPath(facilitySlug), { replace: true });
+      navigate(branchSlug ? getBranchLoginPath(facilitySlug, branchSlug) : getFacilityLoginPath(facilitySlug), { replace: true });
       return;
     }
 
@@ -1216,7 +1269,7 @@ const StaffPortal = () => {
 
   const handleLogout = () => {
     logout();
-    navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login` : getFacilityLoginPath(facilitySlug), { replace: true });
+    navigate(branchSlug ? getBranchLoginPath(facilitySlug, branchSlug) : getFacilityLoginPath(facilitySlug), { replace: true });
   };
 
   return (

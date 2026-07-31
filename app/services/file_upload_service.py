@@ -4,12 +4,17 @@ Converted from Flask-based service to framework-agnostic
 """
 
 import os
+import logging
+import socket
+import struct
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import quote
 
 # Use absolute path based on current file location
 BASE_DIR = Path(__file__).resolve().parent.parent.parent  # goes to workspace root
+logger = logging.getLogger(__name__)
 
 
 class FileUploadService:
@@ -70,7 +75,12 @@ class FileUploadService:
             folder = FileUploadService.sanitize_folder(folder)
         except ValueError as exc:
             return False, str(exc)
-        base_upload_root = (BASE_DIR / 'app' / 'static').resolve()
+        configured_root = os.getenv("FILE_UPLOAD_DIR")
+        base_upload_root = (
+            Path(configured_root)
+            if configured_root
+            else BASE_DIR / "app" / "private_uploads" / "files"
+        ).resolve()
         upload_folder = (base_upload_root / folder).resolve()
         if base_upload_root not in upload_folder.parents and upload_folder != base_upload_root:
             raise ValueError("Invalid upload folder")
@@ -83,8 +93,13 @@ class FileUploadService:
         parts = [part for part in folder.split('/') if part]
         if any(part in {'.', '..'} for part in parts):
             raise ValueError("Invalid upload folder")
-        safe = [part for part in parts if part.replace('-', '').replace('_', '').isalnum()]
-        return '/'.join(safe) if safe else 'uploads'
+        if len(parts) > 8 or any(
+            len(part) > 100
+            or not part.replace('-', '').replace('_', '').isalnum()
+            for part in parts
+        ):
+            raise ValueError("Invalid upload folder")
+        return '/'.join(parts) if parts else 'uploads'
 
     @staticmethod
     def _extension(filename):
@@ -118,14 +133,48 @@ class FileUploadService:
 
     @staticmethod
     def scan_for_malware(content):
-        """Hook for malware scanning; detects EICAR locally and can require a scanner in prod."""
+        """Scan bytes with clamd's INSTREAM protocol, failing closed when required."""
         if b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE" in content:
             return False, "Malware signature detected"
 
-        if os.getenv("MALWARE_SCAN_REQUIRED", "").lower() == "true":
-            return False, "Malware scanner is not configured"
+        required = os.getenv("MALWARE_SCAN_REQUIRED", "").lower() == "true"
+        host = os.getenv("CLAMAV_HOST", "").strip()
+        if not host:
+            if required:
+                return False, "Malware scanner is not configured"
+            return True, None
 
-        return True, None
+        try:
+            port = int(os.getenv("CLAMAV_PORT", "3310"))
+            timeout = float(os.getenv("CLAMAV_TIMEOUT_SECONDS", "10"))
+            with socket.create_connection((host, port), timeout=timeout) as scanner:
+                scanner.sendall(b"zINSTREAM\0")
+                for offset in range(0, len(content), 64 * 1024):
+                    chunk = content[offset:offset + 64 * 1024]
+                    scanner.sendall(struct.pack("!I", len(chunk)))
+                    scanner.sendall(chunk)
+                scanner.sendall(struct.pack("!I", 0))
+
+                response = bytearray()
+                while len(response) < 4096:
+                    chunk = scanner.recv(1024)
+                    if not chunk:
+                        break
+                    response.extend(chunk)
+                    if b"\0" in chunk:
+                        break
+
+            result = bytes(response).decode("utf-8", errors="replace").strip("\0\r\n ")
+            if result.endswith("OK"):
+                return True, None
+            if "FOUND" in result:
+                return False, "Malware signature detected"
+            raise RuntimeError("Unexpected malware scanner response")
+        except Exception:
+            logger.warning("Malware scanner request failed", exc_info=True)
+            if required:
+                return False, "Malware scanning is temporarily unavailable"
+            return True, None
 
     @staticmethod
     def upload_file(file, folder='uploads', allowed_extensions=None):
@@ -142,7 +191,7 @@ class FileUploadService:
         except ValueError as exc:
             return False, str(exc)
         ext = FileUploadService._extension(file.filename)
-        content = file.file.read()
+        content = file.file.read(FileUploadService.MAX_FILE_SIZE + 1)
         if len(content) > FileUploadService.MAX_FILE_SIZE:
             return False, "File is too large"
 
@@ -167,8 +216,8 @@ class FileUploadService:
         # Get file size
         file_size = os.path.getsize(filepath)
 
-        # Generate URL (static path)
-        file_url = f"/static/{folder}/{filename}"
+        encoded_folder = quote(folder, safe="")
+        file_url = f"/api/v1/files/content/{filename}?folder={encoded_folder}"
 
         return True, {
             'filename': filename,
@@ -249,7 +298,10 @@ class FileUploadService:
             'filename': filename,
             'size': file_stat.st_size,
             'modified_at': datetime.fromtimestamp(file_stat.st_mtime).isoformat(),
-            'url': f"/static/{folder}/{filename}"
+            'url': (
+                f"/api/v1/files/content/{filename}"
+                f"?folder={quote(FileUploadService.sanitize_folder(folder), safe='')}"
+            )
         }
 
     @staticmethod

@@ -1,47 +1,131 @@
 # HIS Pro + OhmattOS Integration
 
-HIS Pro treats OhmattOS as an optional platform dependency. Clinical workflows
-must continue locally when OhmattOS is disabled or unavailable.
+HIS Pro treats OhmattOS as an optional platform dependency. Clinical writes
+remain local and authoritative when OhmattOS is disabled or unavailable.
 
-## Environment Flags
+## Trust Model
 
-- `OHMATTOS_ENABLED`
-- `OHMATTOS_URL`
-- `OHMATTOS_API_KEY`
-- `OHMATTOS_APP_ID`
-- `OHMATTOS_TIMEOUT_SECONDS`
-- `OHMATTOS_JOBS_ENABLED`
-- `OHMATTOS_NOTIFICATIONS_ENABLED`
-- `OHMATTOS_ANALYTICS_ENABLED`
-- `OHMATTOS_LOGS_ENABLED`
-- `OHMATTOS_STORAGE_ENABLED`
+Ordinary HIS Pro calls use OAuth 2.0 client credentials with
+`private_key_jwt` client authentication.
 
-All feature flags default to off.
+1. HIS Pro resolves and authorizes the user, hospital, and branch locally.
+2. The hospital's immutable `Facility.id` becomes the requested `tenant_id`.
+3. HIS Pro signs a 60-second client assertion with its private key.
+4. OhmattOS authenticates the client and checks that the requested tenant and
+   scopes exist in its application-tenant allow-list.
+5. OhmattOS issues a tenant-scoped access token for no more than five minutes.
+6. OhmattOS derives application and tenant ownership from that verified token.
 
-## Current Integration
+HIS Pro never sends `app_id` or `tenant_id` inside a service payload. OAuth
+Token Exchange is reserved for a future delegation flow carrying an existing
+user or service identity; it is not used for this machine-to-machine flow.
 
-- Background jobs are executed locally and mirrored to OhmattOS as sanitized job
-  metadata when `OHMATTOS_JOBS_ENABLED=true`.
-- Patient SMS/email notification requests are queued locally and optionally sent
-  to OhmattOS when `OHMATTOS_NOTIFICATIONS_ENABLED=true`.
-- Sensitive API actions can be mirrored as sanitized analytics events when
-  `OHMATTOS_ANALYTICS_ENABLED=true`.
-- Unhandled request exceptions can be reported to OhmattOS logs when
-  `OHMATTOS_LOGS_ENABLED=true`.
+## Client Assertion
 
-## Notification Contract
-
-HIS Pro submits both email and SMS through:
-
-```text
-POST /api/v1/notifications/send
-```
-
-Email content uses the exact shape consumed by the OhmattOS worker:
+The assertion uses `RS256` and contains:
 
 ```json
 {
-  "app_id": "<his-pro-app-id>",
+  "iss": "hispro-production",
+  "sub": "hispro-production",
+  "aud": "https://ohmattos.fly.dev/api/v1/auth/token",
+  "iat": 0,
+  "nbf": 0,
+  "exp": 0,
+  "jti": "<unique-assertion-id>"
+}
+```
+
+OhmattOS must validate the exact token-endpoint audience, `iss == sub ==
+client_id`, registered `kid`, algorithm allow-list, maximum assertion age, and
+single use of `jti`.
+
+Each service client also has an explicit tenant grant. A valid HIS Pro signing
+key cannot mint a token for a hospital until OhmattOS has an active
+`service_client_tenants` row for that client and hospital.
+
+## Token Request
+
+```text
+POST /api/v1/auth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+client_id=hispro-production
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=<signed-jwt>
+tenant_id=<immutable-hospital-uuid>
+scope=notifications:send
+audience=ohmattos-api
+```
+
+The token response must echo the external hospital UUID as `tenant_id` (or
+`external_tenant_id`) and return `expires_in <= 300`. HIS Pro rejects a tenant
+mismatch, a longer lifetime, a non-Bearer token, redirects, and an off-origin
+token endpoint.
+
+OhmattOS signs the access JWT with `typ=at+jwt`, publishes its public key at
+`/api/v1/.well-known/jwks.json`, and includes `application_id`, the external
+hospital `tenant_id`, the internal `tenant_ref`, exact scope, audience, and a
+unique token `jti`.
+
+## Runtime Configuration
+
+Required when `OHMATTOS_ENABLED=true`:
+
+- `OHMATTOS_URL`
+- `OHMATTOS_TOKEN_URL`
+- `OHMATTOS_CLIENT_ID`
+- `OHMATTOS_CLIENT_PRIVATE_KEY_FILE`
+- `OHMATTOS_CLIENT_KEY_ID`
+- `OHMATTOS_CLIENT_SIGNING_ALG`
+- `OHMATTOS_TOKEN_AUDIENCE`
+- `OHMATTOS_API_AUDIENCE`
+
+The private key must be mounted from a secret manager or backed by a KMS/HSM.
+The current client supports a mounted PEM. Moving signing behind a KMS adapter
+is required where non-exportable keys are available. `OHMATTOS_API_KEY` is
+rejected in production.
+
+Optional mTLS settings:
+
+- `OHMATTOS_MTLS_CERT_FILE`
+- `OHMATTOS_MTLS_KEY_FILE`
+- `OHMATTOS_CA_BUNDLE`
+
+Both mTLS identity files must be configured together. mTLS constrains access
+token use, but it does not make a stolen client-signing key harmless.
+
+## Transactional Outbox
+
+External work is written to `integration_outbox` in the same database
+transaction as the hospital action. FastAPI request workers never wait for
+OhmattOS.
+
+Run one or more independent dispatchers:
+
+```bash
+python scripts/process_integration_outbox.py
+```
+
+PostgreSQL dispatchers claim rows with `FOR UPDATE SKIP LOCKED`, a bounded
+lease, exponential retry with jitter, and dead-letter state. A crash after
+remote acceptance may replay a row, so OhmattOS idempotency remains mandatory.
+
+The unique local boundary is:
+
+```text
+(destination, facility_id, idempotency_key)
+```
+
+Thus two hospitals may use the same business key without sharing a record.
+The same key is forwarded to OhmattOS for notifications, jobs, analytics, and
+logs.
+
+## Notification Payload
+
+```json
+{
   "user_id": "patient:<opaque-patient-id>",
   "channel_type": "email",
   "template_id": null,
@@ -54,54 +138,40 @@ Email content uses the exact shape consumed by the OhmattOS worker:
 }
 ```
 
-SMS content uses:
+The access token supplies ownership. The payload contains no application ID,
+tenant ID, facility slug, branch ID, source record metadata, IP address, or
+user agent.
 
-```json
-{
-  "app_id": "<his-pro-app-id>",
-  "user_id": "patient:<opaque-patient-id>",
-  "channel_type": "sms",
-  "template_id": null,
-  "idempotency_key": "hispro:patient-notification:<notification-id>",
-  "content": {
-    "to_number": "+2348012345678",
-    "body": "Your prescription is ready."
-  }
-}
-```
+## OhmattOS Enforcement Gate
 
-HIS Pro does not send `facility_slug`, source record IDs, invoice metadata, or
-other clinical context in the provider content. The app service key and
-OhmattOS app scope provide the application boundary.
+Do not enable production flags until OhmattOS:
 
-To create portal, SMS, and email notifications for supported patient events:
+- Authenticates `private_key_jwt` and prevents assertion `jti` replay.
+- Checks `(application_id, external_tenant_id, scope, active)` before issuance.
+- Signs five-minute, audience-restricted access tokens.
+- Derives application and tenant context exclusively from verified tokens.
+- Constrains notifications, jobs, analytics, logs, storage, exports, delivery
+  status, and idempotency by `(application_id, tenant_id)`.
+- Applies equivalent isolation inside workers and object-storage keys.
+- Supports key rotation, emergency revocation, issuance auditing, anomaly
+  detection, and per-client/per-tenant limits.
+- Passes cross-application, cross-tenant, replay, duplicate, outage, and
+  concurrent-worker tests.
+
+Register or revoke the HIS Pro client grant for a hospital with:
 
 ```text
-HISPRO_PATIENT_NOTIFICATION_CHANNELS=PORTAL,SMS,EMAIL
+POST   /api/v1/apps/{app_id}/service-clients/hispro-production/tenants/{facility_uuid}
+DELETE /api/v1/apps/{app_id}/service-clients/hispro-production/tenants/{facility_uuid}
 ```
 
-Before setting `OHMATTOS_NOTIFICATIONS_ENABLED=true`:
-
-1. Rotate any OhmattOS key that has appeared in source or chat history.
-2. Configure the rotated key and matching HIS Pro app ID only in backend secrets.
-3. Configure SendGrid and Twilio credentials in the OhmattOS worker environment.
-4. Run both the OhmattOS API and worker processes.
-5. Verify one synthetic email and SMS reaches `queued`, then `sent`, before using patient data.
-6. Keep production delivery disabled until the HIS Pro transactional outbox and signed delivery-status callback are complete.
+Keep `OHMATTOS_JOBS_ENABLED=false` until HIS Pro submits a job type the
+OhmattOS worker actually supports. A local Python task name is not a remotely
+executable job.
 
 ## Clinical Boundary
 
-HIS Pro keeps patient records, clinical orders, branch isolation, hospital RBAC,
-clinical audit, patient invoices, and patient data migration rules.
-
-OhmattOS should own platform primitives: durable workers, provider integrations,
-notifications, object storage, app analytics, error aggregation, app billing,
-feature flags, rate-limit rules, and platform observability.
-
-## Safety Rules
-
-- Do not send raw patient records to OhmattOS analytics/logs.
-- Do not rely on OhmattOS for clinical authorization decisions.
-- Do not let OhmattOS execute arbitrary HIS Pro Python jobs until a signed
-  callback/worker contract exists.
-- Keep local fallback behavior for critical hospital operations.
+HIS Pro retains patient records, clinical authorization, hospital and branch
+RBAC, audit authority, patient billing, and migration rules. OhmattOS may
+provide delivery and platform primitives, but it never decides whether a user
+may access a clinical record.

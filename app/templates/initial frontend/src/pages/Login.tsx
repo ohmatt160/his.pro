@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowRight,
@@ -17,25 +18,32 @@ import { Label } from "@/components/ui/label";
 import logo from "@/lib/assets/logo.png";
 import { useAuth } from "@/context/AuthContext";
 import {
+  getBranchLoginPath,
   getFacilityLoginLink,
   getFacilityLoginPath,
   getStaffPortalPath,
 } from "@/lib/facility-staff";
 import {
   createFacilitySlug,
+  getFacilityPlatformLink,
   getWorkspaceDashboardPath,
   getFacilityWorkspace,
+  type SavedFacilityWorkspace,
 } from "@/lib/facility-workspace";
+import {
+  getCanonicalSubdomainFromHostname,
+  getCanonicalTenantUrl,
+} from "@/lib/tenant-routing";
 
 const features = [
-  { icon: Shield, text: "256-bit encrypted sessions" },
+  { icon: Shield, text: "Protected session controls" },
   { icon: Layers, text: "Role-based access control" },
   { icon: Users, text: "Multi-department workspace" },
 ];
 
 const Login = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const [searchParams] = useSearchParams();
   const { user, login, logout, sessionMessage, clearSessionMessage } = useAuth();
   const [workspaceInput, setWorkspaceInput] = useState("");
@@ -44,11 +52,9 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [workspace, setWorkspace] = useState<
-    | { facilityName: string; country: string; fullName: string; email: string; phone: string; selectedModules: string[] }
-    | null
-    | undefined
-  >(undefined);
+  const [workspace, setWorkspace] = useState<SavedFacilityWorkspace | null | undefined>(
+    undefined
+  );
 
   useEffect(() => {
     if (!facilitySlug) {
@@ -80,33 +86,66 @@ const Login = () => {
     setLoginValue("");
     setPassword("");
     setError("");
-    navigate(branchSlug ? `/${facilitySlug}/branches/${branchSlug}/login?switch=1` : `/${facilitySlug}/login?switch=1`, { replace: true });
+    const loginPath = branchSlug
+      ? getBranchLoginPath(facilitySlug, branchSlug)
+      : getFacilityLoginPath(facilitySlug);
+    navigate(`${loginPath}?switch=1`, { replace: true });
   };
 
-  const facilityLink = facilitySlug ? getFacilityLoginLink(facilitySlug) : "";
+  const facilityLink = facilitySlug
+    ? workspace?.canonicalSubdomain
+      ? getFacilityPlatformLink(facilitySlug, workspace.canonicalSubdomain)
+      : getFacilityLoginLink(facilitySlug)
+    : "";
 
-  const parsedSlug = useMemo(() => {
+  const workspaceTarget = useMemo(() => {
     const trimmed = workspaceInput.trim();
 
     if (!trimmed) {
-      return "";
+      return { directUrl: "", slug: "" };
     }
 
-    const withoutOrigin = trimmed.replace(/^https?:\/\/[^/]+/i, "");
-    const segments = withoutOrigin.split("/").filter(Boolean);
-    const lastSegment = segments.at(-1) ?? trimmed;
+    if (/^https?:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        const canonicalSubdomain = getCanonicalSubdomainFromHostname(url.hostname);
+        if (canonicalSubdomain) {
+          return {
+            directUrl: getCanonicalTenantUrl(canonicalSubdomain, "/login"),
+            slug: "",
+          };
+        }
 
-    return createFacilitySlug(lastSegment);
+        const segments = url.pathname.split("/").filter(Boolean);
+        const routePrefix = segments[0];
+        const slug = ["dashboard", "hospital", "login", "portal", "workspace-ready"].includes(
+          routePrefix
+        )
+          ? segments[1]
+          : segments[0];
+        return {
+          directUrl: "",
+          slug: slug ? createFacilitySlug(slug) : "",
+        };
+      } catch {
+        return { directUrl: "", slug: "" };
+      }
+    }
+
+    return { directUrl: "", slug: createFacilitySlug(trimmed) };
   }, [workspaceInput]);
+  const parsedSlug = workspaceTarget.slug;
 
   const handleWorkspaceContinue = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!parsedSlug) {
+    if (!parsedSlug && !workspaceTarget.directUrl) {
       return;
     }
 
-    navigate(getFacilityLoginPath(parsedSlug));
+    window.location.assign(
+      workspaceTarget.directUrl || getFacilityLoginLink(parsedSlug)
+    );
   };
 
   const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -274,7 +313,7 @@ const Login = () => {
                 <Button
                   type="submit"
                   className="gradient-cta h-11 w-full gap-2 border-0 text-sm font-semibold text-primary-foreground shadow-lg"
-                  disabled={!parsedSlug}
+                  disabled={!parsedSlug && !workspaceTarget.directUrl}
                 >
                   Continue <ArrowRight className="h-4 w-4" />
                 </Button>

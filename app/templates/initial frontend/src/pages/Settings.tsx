@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import {
   ArrowLeft,
   Building2,
@@ -41,6 +42,7 @@ import {
   getWorkspaceDashboardPath,
   getWorkspaceRoutePath,
 } from "@/lib/facility-workspace";
+import { getBranchLoginLink } from "@/lib/facility-staff";
 import { moduleCatalog, normalizeModules, type FacilityModuleId } from "@/lib/modules";
 import {
   addSettledError,
@@ -51,6 +53,7 @@ import {
 
 type Facility = {
   id: string;
+  canonical_subdomain?: string;
   name: string;
   slug: string;
   type: string;
@@ -161,7 +164,7 @@ type SettingsResource = "facility" | "profile";
 
 const Settings = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
   const { user, logoutEverywhere } = useAuth();
   const [facility, setFacility] = useState<Facility | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -317,6 +320,7 @@ const Settings = () => {
         phone: updated.phone || profile?.phone || "",
         selectedModules,
         facilitySlug: updated.slug,
+        canonicalSubdomain: updated.canonical_subdomain || updated.slug,
         createdAt: new Date().toISOString(),
       });
       setModulesStatus("Modules saved.");
@@ -753,9 +757,9 @@ const Settings = () => {
                             <p className="text-xs text-muted-foreground">
                               Public services: {(department.services || []).length || 0}
                             </p>
-                            {department.login_url_path && (
+                            {department.slug && (
                               <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">
-                                Branch login: {`${window.location.origin}${department.login_url_path}`}
+                                Branch login: {getBranchLoginLink(facilitySlug, department.slug)}
                               </p>
                             )}
                           </div>

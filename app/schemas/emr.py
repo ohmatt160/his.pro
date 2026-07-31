@@ -42,6 +42,10 @@ class MedicalRecordResponse(BaseModel):
     lab_orders: Optional[List[dict]]
     follow_up_date: Optional[str]
     notes: Optional[str]
+    status: str = "ACTIVE"
+    void_reason: Optional[str] = None
+    voided_at: Optional[str] = None
+    voided_by: Optional[str] = None
     created_by: str
     facility_slug: Optional[str]
     created_at: str

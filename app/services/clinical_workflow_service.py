@@ -75,7 +75,11 @@ class ClinicalWorkflowService:
             if ClinicalWorkflowService._existing_lab_order(record, marker):
                 continue
 
-            test = ClinicalWorkflowService._ensure_lab_test(test_name)
+            test = ClinicalWorkflowService._ensure_lab_test(
+                test_name,
+                record.facility_slug,
+                record.facility_id,
+            )
             lab_order = LabOrder(
                 patient_id=record.patient_id,
                 test_id=test.id,
@@ -222,12 +226,22 @@ class ClinicalWorkflowService:
         return [prescription]
 
     @staticmethod
-    def _ensure_lab_test(name: str) -> LabTest:
-        code = ClinicalWorkflowService._code("LAB", name)
-        test = db_session.query(LabTest).filter_by(code=code).first()
+    def _ensure_lab_test(name: str, facility_slug: str, facility_id: str | None = None) -> LabTest:
+        code = ClinicalWorkflowService._code("LAB", f"{facility_slug}-{name}")
+        test = db_session.query(LabTest).filter_by(
+            code=code,
+            facility_slug=facility_slug,
+        ).first()
         if test:
             return test
-        test = LabTest(name=name, code=code, category="Consultation", is_active=True)
+        test = LabTest(
+            name=name,
+            code=code,
+            category="Consultation",
+            is_active=True,
+            facility_id=facility_id,
+            facility_slug=facility_slug,
+        )
         db_session.add(test)
         db_session.flush()
         return test

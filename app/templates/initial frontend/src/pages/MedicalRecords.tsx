@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
   ClipboardPlus,
   ClipboardList,
+  Ban,
+  Eye,
   FileHeart,
   HeartPulse,
+  Pencil,
   Plus,
   Search,
   Stethoscope,
@@ -34,6 +38,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
+import { createIdempotencyKey } from "@/lib/idempotency";
 import {
   addSettledError,
   hasResourceErrors,
@@ -41,6 +46,7 @@ import {
   type ResourceErrors,
 } from "@/lib/resource-loading";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { useAuth } from "@/context/AuthContext";
 
 type Patient = {
   id: string;
@@ -63,6 +69,9 @@ type MedicalRecord = {
   treatment_plan?: string | null;
   follow_up_date?: string | null;
   notes?: string | null;
+  status: "ACTIVE" | "VOIDED" | string;
+  void_reason?: string | null;
+  voided_at?: string | null;
   created_at: string;
 };
 
@@ -88,14 +97,38 @@ const toList = (value: string) =>
     .map((item) => item.trim())
     .filter(Boolean);
 
+const recordToForm = (record: MedicalRecord) => ({
+  patient_id: record.patient_id,
+  chief_complaint: record.chief_complaint || "",
+  temperature: String(record.vital_signs?.temperature || ""),
+  blood_pressure: String(record.vital_signs?.blood_pressure || ""),
+  pulse: String(record.vital_signs?.pulse || ""),
+  respiratory_rate: String(record.vital_signs?.respiratory_rate || ""),
+  symptoms: (record.symptoms || []).join(", "),
+  diagnosis: (record.diagnosis || []).join(", "),
+  treatment_plan: record.treatment_plan || "",
+  follow_up_date: record.follow_up_date || "",
+  notes: record.notes || "",
+});
+
 const MedicalRecords = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "" } = useParams();
+  const { facilitySlug = "", branchSlug = "" } = useTenantParams();
+  const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [records, setRecords] = useState<MedicalRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [viewingRecord, setViewingRecord] = useState<MedicalRecord | null>(null);
+  const [editingRecord, setEditingRecord] = useState<MedicalRecord | null>(null);
+  const [voidingRecord, setVoidingRecord] = useState<MedicalRecord | null>(null);
+  const [voidReason, setVoidReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const saveRef = useRef(false);
+  const createKeyRef = useRef("");
+  const voidRef = useRef(false);
   const [form, setForm] = useState(emptyRecordForm);
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<MedicalRecordResource>>({});
@@ -175,8 +208,21 @@ const MedicalRecords = () => {
     setError("");
   };
 
-  const createRecord = async (event: FormEvent<HTMLFormElement>) => {
+  const closeRecordForm = () => {
+    if (saving) {
+      return;
+    }
+    setShowCreate(false);
+    setEditingRecord(null);
+    setForm(emptyRecordForm);
+    setError("");
+  };
+
+  const saveRecord = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saveRef.current) {
+      return;
+    }
     setError("");
 
     if (!form.patient_id || !form.chief_complaint.trim()) {
@@ -184,27 +230,79 @@ const MedicalRecords = () => {
       return;
     }
 
+    const payload = {
+      patient_id: form.patient_id,
+      chief_complaint: form.chief_complaint.trim(),
+      vital_signs: {
+        temperature: form.temperature.trim(),
+        blood_pressure: form.blood_pressure.trim(),
+        pulse: form.pulse.trim(),
+        respiratory_rate: form.respiratory_rate.trim(),
+      },
+      symptoms: toList(form.symptoms),
+      diagnosis: toList(form.diagnosis),
+      treatment_plan: form.treatment_plan.trim() || undefined,
+      follow_up_date: form.follow_up_date || undefined,
+      notes: form.notes.trim() || undefined,
+    };
+
+    saveRef.current = true;
+    setSaving(true);
     try {
-      await apiClient.post<MedicalRecord>("/emr", {
-        patient_id: form.patient_id,
-        chief_complaint: form.chief_complaint.trim(),
-        vital_signs: {
-          temperature: form.temperature.trim(),
-          blood_pressure: form.blood_pressure.trim(),
-          pulse: form.pulse.trim(),
-          respiratory_rate: form.respiratory_rate.trim(),
-        },
-        symptoms: toList(form.symptoms),
-        diagnosis: toList(form.diagnosis),
-        treatment_plan: form.treatment_plan.trim() || undefined,
-        follow_up_date: form.follow_up_date || undefined,
-        notes: form.notes.trim() || undefined,
-      });
+      if (editingRecord) {
+        const { patient_id: _patientId, ...updates } = payload;
+        await apiClient.put<MedicalRecord>(`/emr/${editingRecord.id}`, updates);
+      } else {
+        createKeyRef.current ||= createIdempotencyKey("medical-record");
+        await apiClient.request<MedicalRecord>("/emr", {
+          method: "POST",
+          headers: { "Idempotency-Key": createKeyRef.current },
+          body: payload,
+        });
+      }
       setForm(emptyRecordForm);
       setShowCreate(false);
+      setEditingRecord(null);
+      createKeyRef.current = "";
       await loadRecords();
     } catch (recordError) {
       setError(recordError instanceof Error ? recordError.message : "Medical record creation failed.");
+    } finally {
+      saveRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const voidRecord = async () => {
+    if (!voidingRecord || voidRef.current) {
+      return;
+    }
+    const reason = voidReason.trim();
+    if (reason.length < 5) {
+      setError("Enter a reason of at least 5 characters.");
+      return;
+    }
+
+    voidRef.current = true;
+    setVoiding(true);
+    setError("");
+    try {
+      await apiClient.request(
+        `/emr/${voidingRecord.id}?reason=${encodeURIComponent(reason)}`,
+        { method: "DELETE" }
+      );
+      setVoidingRecord(null);
+      setVoidReason("");
+      await loadRecords();
+    } catch (recordError) {
+      setError(
+        recordError instanceof Error
+          ? recordError.message
+          : "Medical record could not be voided."
+      );
+    } finally {
+      voidRef.current = false;
+      setVoiding(false);
     }
   };
 
@@ -226,7 +324,13 @@ const MedicalRecords = () => {
             </p>
           </div>
           <Button
-            onClick={() => setShowCreate(true)}
+            onClick={() => {
+              setForm(emptyRecordForm);
+              setEditingRecord(null);
+              setError("");
+              createKeyRef.current = createIdempotencyKey("medical-record");
+              setShowCreate(true);
+            }}
             className="gradient-cta gap-2 border-0 text-primary-foreground"
           >
             <Plus className="h-4 w-4" /> New Record
@@ -278,7 +382,11 @@ const MedicalRecords = () => {
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.03 }}
-                    className="grid gap-3 rounded-xl border border-border/60 p-4 transition-colors hover:border-primary/30 lg:grid-cols-[1.1fr_1fr_1fr_.8fr_auto]"
+                    className={`grid gap-3 rounded-xl border p-4 transition-colors lg:grid-cols-[1.1fr_1fr_1fr_.8fr_auto] ${
+                      record.status === "VOIDED"
+                        ? "border-destructive/30 bg-destructive/5"
+                        : "border-border/60 hover:border-primary/30"
+                    }`}
                   >
                     <div>
                       <p className="font-semibold text-foreground">
@@ -287,6 +395,11 @@ const MedicalRecords = () => {
                       <p className="text-xs text-muted-foreground">
                         {record.chief_complaint || "No complaint recorded"}
                       </p>
+                      {record.status === "VOIDED" && (
+                        <span className="mt-1 inline-flex rounded bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">
+                          Voided
+                        </span>
+                      )}
                     </div>
                     <Info
                       icon={HeartPulse}
@@ -306,11 +419,34 @@ const MedicalRecords = () => {
                     <p className="text-sm text-muted-foreground">
                       {record.follow_up_date ? `Follow-up ${record.follow_up_date}` : "No follow-up"}
                     </p>
-                    <Button asChild variant="outline" size="sm" className="gap-2 self-start">
-                      <Link to={getWorkspaceRoutePath(facilitySlug, `patients/${record.patient_id}/timeline`, branchSlug || undefined)}>
-                        <ClipboardList className="h-4 w-4" /> Timeline
-                      </Link>
-                    </Button>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Button type="button" variant="outline" size="icon" title="View record" onClick={() => setViewingRecord(record)}>
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      {record.status !== "VOIDED" && (
+                        <Button type="button" variant="outline" size="icon" title="Edit record" onClick={() => {
+                          setForm(recordToForm(record));
+                          setEditingRecord(record);
+                          setError("");
+                        }}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {record.status !== "VOIDED" && ["admin", "branch_admin"].includes(user?.role || "") && (
+                        <Button type="button" variant="outline" size="icon" className="text-destructive hover:text-destructive" title="Void record" onClick={() => {
+                          setError("");
+                          setVoidReason("");
+                          setVoidingRecord(record);
+                        }}>
+                          <Ban className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button asChild variant="outline" size="icon" title="Patient timeline">
+                        <Link to={getWorkspaceRoutePath(facilitySlug, `patients/${record.patient_id}/timeline`, branchSlug || undefined)}>
+                          <ClipboardList className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                    </div>
                   </motion.div>
                 ))}
               </div>
@@ -327,16 +463,23 @@ const MedicalRecords = () => {
         </div>
       </main>
 
-      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+      <Dialog
+        open={showCreate || Boolean(editingRecord)}
+        onOpenChange={(open) => !open && closeRecordForm()}
+      >
         <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>New Medical Record</DialogTitle>
-            <DialogDescription>Create a clinical entry for a patient.</DialogDescription>
+            <DialogTitle>{editingRecord ? "Edit Medical Record" : "New Medical Record"}</DialogTitle>
+            <DialogDescription>
+              {editingRecord
+                ? "Update this clinical entry. Every change is audit logged."
+                : "Create a clinical entry for a patient."}
+            </DialogDescription>
           </DialogHeader>
-          <form onSubmit={createRecord} className="grid gap-4 pt-2 sm:grid-cols-2">
+          <form onSubmit={saveRecord} className="grid gap-4 pt-2 sm:grid-cols-2">
             <div>
               <Label>Patient *</Label>
-              <Select value={form.patient_id} onValueChange={(value) => updateForm("patient_id", value)}>
+              <Select disabled={Boolean(editingRecord)} value={form.patient_id} onValueChange={(value) => updateForm("patient_id", value)}>
                 <SelectTrigger className="mt-1.5">
                   <SelectValue placeholder="Select patient" />
                 </SelectTrigger>
@@ -366,8 +509,80 @@ const MedicalRecords = () => {
               <Textarea className="mt-1.5" value={form.notes} onChange={(event) => updateForm("notes", event.target.value)} />
             </div>
             {error && <FormError message={error} />}
-            <DialogActions onCancel={() => setShowCreate(false)} submitLabel="Create Record" />
+            <DialogActions
+              disabled={saving}
+              onCancel={closeRecordForm}
+              submitLabel={
+                saving
+                  ? "Saving..."
+                  : editingRecord
+                    ? "Save Changes"
+                    : "Create Record"
+              }
+            />
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(viewingRecord)} onOpenChange={(open) => !open && setViewingRecord(null)}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Clinical Record</DialogTitle>
+            <DialogDescription>
+              {viewingRecord ? patientNames[viewingRecord.patient_id] || "Patient" : "Patient"}
+            </DialogDescription>
+          </DialogHeader>
+          {viewingRecord && (
+            <div className="space-y-4 text-sm">
+              {viewingRecord.status === "VOIDED" && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-destructive">
+                  Voided: {viewingRecord.void_reason || "No reason recorded"}
+                </div>
+              )}
+              <RecordDetail label="Chief complaint" value={viewingRecord.chief_complaint} />
+              <RecordDetail label="Symptoms" value={(viewingRecord.symptoms || []).join(", ")} />
+              <RecordDetail label="Diagnosis" value={(viewingRecord.diagnosis || []).join(", ")} />
+              <RecordDetail label="Treatment plan" value={viewingRecord.treatment_plan} />
+              <RecordDetail label="Notes" value={viewingRecord.notes} />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(voidingRecord)}
+        onOpenChange={(open) => {
+          if (!open && !voiding) {
+            setVoidingRecord(null);
+            setVoidReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Void Medical Record</DialogTitle>
+            <DialogDescription>
+              The entry will remain in the audit history and cannot be edited afterward.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Label htmlFor="void-reason">Reason</Label>
+            <Textarea
+              id="void-reason"
+              value={voidReason}
+              onChange={(event) => setVoidReason(event.target.value)}
+              placeholder="Explain why this record must be voided"
+            />
+            {error && <FormError message={error} />}
+            <div className="flex gap-3">
+              <Button type="button" variant="outline" className="flex-1" disabled={voiding} onClick={() => setVoidingRecord(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" className="flex-1" disabled={voiding || voidReason.trim().length < 5} onClick={voidRecord}>
+                {voiding ? "Voiding..." : "Void Record"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -449,17 +664,32 @@ const Field = ({
 const DialogActions = ({
   onCancel,
   submitLabel,
+  disabled,
 }: {
   onCancel: () => void;
   submitLabel: string;
+  disabled?: boolean;
 }) => (
   <div className="flex gap-3 sm:col-span-2">
-    <Button type="button" variant="outline" className="flex-1" onClick={onCancel}>
+    <Button type="button" variant="outline" className="flex-1" disabled={disabled} onClick={onCancel}>
       Cancel
     </Button>
-    <Button type="submit" className="gradient-cta flex-1 border-0 text-primary-foreground">
+    <Button type="submit" disabled={disabled} className="gradient-cta flex-1 border-0 text-primary-foreground">
       {submitLabel}
     </Button>
+  </div>
+);
+
+const RecordDetail = ({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) => (
+  <div>
+    <p className="text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+    <p className="mt-1 whitespace-pre-wrap text-foreground">{value || "Not recorded"}</p>
   </div>
 );
 

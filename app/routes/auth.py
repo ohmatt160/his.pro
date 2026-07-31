@@ -3,12 +3,14 @@ Authentication Routes - FastAPI Version
 Converted from Flask-RESTx auth_resource.py
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 import logging
 import os
+import hmac
 import uuid
 
 from app.schemas.users import (
@@ -19,7 +21,9 @@ from app.schemas.users import (
     UserResponse,
     UserSessionResponse,
 )
+from app.schemas.facilities import FacilityOnboardingCreate, FacilityOnboardingResponse
 from app.services.auth_service import AuthService
+from app.services.audit_log_service import AuditLogService
 from app.services.session_service import SessionService
 from app.utils.validators import Validators
 from app.middleware.jwt import JWT_ACCESS_TOKEN_EXPIRES, JWT_REFRESH_TOKEN_EXPIRES, verify_token
@@ -171,6 +175,42 @@ def sanitize_registration_data(user_data: UserRegister) -> dict:
         data['last_name'] = Validators.sanitize_string(data['last_name'])
     return data
 
+
+def sanitize_public_owner_registration(user_data: UserRegister) -> dict:
+    """Public signup may create only an unattached facility owner."""
+    data = sanitize_registration_data(user_data)
+    if str(data.get("role") or "").upper() != "ADMIN":
+        raise HTTPException(
+            status_code=400,
+            detail="Public registration is only available for facility owners",
+        )
+    if data.get("facility_slug"):
+        raise HTTPException(
+            status_code=400,
+            detail="A facility cannot be selected during public registration",
+        )
+    data["role"] = "ADMIN"
+    data["facility_slug"] = None
+    return data
+
+
+def require_owner_onboarding_access(request: Request) -> None:
+    """Keep production onboarding invitation-only until email verification ships."""
+    app_env = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")).lower()
+    if app_env not in {"production", "staging"}:
+        return
+    if os.getenv("PUBLIC_SIGNUP_ENABLED", "").lower() == "true":
+        return
+
+    expected = os.getenv("ONBOARDING_TOKEN", "")
+    provided = request.headers.get("x-onboarding-token", "")
+    if expected and provided and hmac.compare_digest(expected, provided):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail="Facility onboarding requires an invitation",
+    )
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserRegister,
@@ -182,8 +222,9 @@ async def register_user(
     Register a new user
     """
     try:
+        require_owner_onboarding_access(request)
         # Sanitize input fields
-        data = sanitize_registration_data(user_data)
+        data = sanitize_public_owner_registration(user_data)
         
         logger.info("[Register] Creating user %s", data.get("username"))
         
@@ -233,7 +274,8 @@ async def ensure_user(
     Create a setup user if it does not exist, or authenticate the existing user.
     """
     try:
-        data = sanitize_registration_data(user_data)
+        require_owner_onboarding_access(request)
+        data = sanitize_public_owner_registration(user_data)
         existing_user = db.query(User).filter_by(username=data['username']).first()
 
         if existing_user:
@@ -264,6 +306,138 @@ async def ensure_user(
     except Exception as e:
         logger.error("[Ensure] Exception: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail="Setup authentication failed")
+
+
+@router.post("/onboard", response_model=FacilityOnboardingResponse)
+async def onboard_facility(
+    payload: FacilityOnboardingCreate,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    """Atomically create a facility and its first administrator."""
+    require_owner_onboarding_access(request)
+    from app.models.facility import Facility
+    from app.routes.facilities import (
+        attach_user_to_facility,
+        build_facility_response,
+        create_facility_record,
+    )
+
+    owner = payload.owner
+    owner_data = sanitize_public_owner_registration(
+        UserRegister(
+            username=owner.username,
+            email=owner.email,
+            password=owner.password,
+            role="ADMIN",
+            first_name=owner.first_name,
+            last_name=owner.last_name,
+        )
+    )
+    facility_slug = Validators.generate_slug(
+        Validators.sanitize_string(payload.facility.name)
+    )
+    existing_user = (
+        db.query(User)
+        .filter(
+            or_(
+                User.username == owner_data["username"],
+                User.email == owner_data["email"],
+            )
+        )
+        .first()
+    )
+    existing_facility = db.query(Facility).filter_by(slug=facility_slug).first()
+
+    try:
+        if existing_user:
+            same_owner = (
+                existing_user.username == owner_data["username"]
+                and existing_user.email == owner_data["email"]
+                and existing_user.role == "ADMIN"
+                and existing_user.is_active
+                and existing_user.check_password(owner_data["password"])
+            )
+            if not same_owner:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Owner account or facility name is unavailable",
+                )
+
+            if existing_facility:
+                owns_facility = (
+                    str(existing_user.facility_id or "") == str(existing_facility.id)
+                    and existing_user.facility_slug == existing_facility.slug
+                )
+                if not owns_facility:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Owner account or facility name is unavailable",
+                    )
+                token_response = build_token_response(existing_user, request)
+                db.commit()
+                _set_auth_cookies(response, token_response)
+                return FacilityOnboardingResponse(
+                    **token_response.model_dump(),
+                    facility=build_facility_response(existing_facility),
+                )
+
+            if existing_user.facility_id or existing_user.facility_slug:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Owner account already belongs to another facility",
+                )
+            user = existing_user
+        else:
+            if existing_facility:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Owner account or facility name is unavailable",
+                )
+            user, error = AuthService.register_user(owner_data, db)
+            if error:
+                raise HTTPException(status_code=400, detail=error)
+
+        facility = create_facility_record(payload.facility, commit=False)
+        attach_user_to_facility(user, facility, commit=False)
+        request.state.tenant_id = str(facility.id)
+        request.state.facility_slug = facility.slug
+        audit_log = AuditLogService.log_action(
+            user_id=user.id,
+            action="CREATE_FACILITY_WORKSPACE",
+            resource_type="facility",
+            resource_id=facility.id,
+            facility_slug=facility.slug,
+            details={"facility_type": facility.type},
+            request=request,
+            commit=False,
+        )
+        if not audit_log:
+            raise RuntimeError("Facility onboarding audit could not be written")
+
+        token_response = build_token_response(user, request)
+        db.commit()
+        db.refresh(user)
+        db.refresh(facility)
+        _set_auth_cookies(response, token_response)
+        return FacilityOnboardingResponse(
+            **token_response.model_dump(),
+            facility=build_facility_response(facility),
+        )
+    except HTTPException:
+        db.rollback()
+        raise
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Owner account or facility name is unavailable",
+        )
+    except Exception:
+        db.rollback()
+        logger.exception("[Onboard] Facility onboarding failed")
+        raise HTTPException(status_code=500, detail="Facility onboarding failed")
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -410,6 +584,8 @@ async def logout_everywhere(
 @router.get("/sessions", response_model=list[UserSessionResponse])
 async def list_sessions(
     request: Request,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: Session = Depends(get_db),
 ):
@@ -424,6 +600,8 @@ async def list_sessions(
         db.query(UserSession)
         .filter_by(user_id=str(user_id), is_active=True)
         .order_by(UserSession.last_seen_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
         .all()
     )
 

@@ -1,4 +1,11 @@
 import { apiClient, type AuthUser } from "@/api/client";
+import {
+  getCanonicalTenantUrl,
+  getCurrentBranchSlugFromPath,
+  getTenantPath,
+  isCanonicalTenantHost,
+  isValidCanonicalSubdomain,
+} from "@/lib/tenant-routing";
 
 export type StaffRole =
   | "admin"
@@ -7,7 +14,8 @@ export type StaffRole =
   | "nurse"
   | "reception"
   | "pharmacist"
-  | "lab";
+  | "lab"
+  | "billing";
 
 export type FacilityStaffAccount = {
   staffRecordId: string;
@@ -105,6 +113,11 @@ const roleMetadata: Record<
     prefix: "LAB",
     department: "Laboratory",
   },
+  billing: {
+    label: "Billing Officer",
+    prefix: "BIL",
+    department: "Revenue & Billing",
+  },
 };
 
 export const staffRoles = Object.keys(roleMetadata) as StaffRole[];
@@ -160,51 +173,63 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
 };
 
 export const getFacilityLoginPath = (facilitySlug: string) =>
-  `/${facilitySlug}`;
+  getTenantPath("/login", `/${facilitySlug}`);
 
 export const getFacilityLoginLink = (facilitySlug: string) => {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://his.pro";
 
-  return `${origin}${getFacilityLoginPath(facilitySlug)}`;
+  return isCanonicalTenantHost()
+    ? `${origin}/login`
+    : isValidCanonicalSubdomain(facilitySlug)
+      ? getCanonicalTenantUrl(facilitySlug, "/login")
+      : `${origin}/${encodeURIComponent(facilitySlug)}`;
 };
 
 export const getBranchLoginPath = (facilitySlug: string, branchSlug: string) =>
-  `/${facilitySlug}/branches/${branchSlug}/login`;
+  getTenantPath(
+    `/branches/${branchSlug}/login`,
+    `/${facilitySlug}/branches/${branchSlug}/login`
+  );
 
 export const getBranchLoginLink = (facilitySlug: string, branchSlug: string) => {
   const origin =
     typeof window !== "undefined" ? window.location.origin : "https://his.pro";
 
-  return `${origin}${getBranchLoginPath(facilitySlug, branchSlug)}`;
-};
-
-const getCurrentBranchSlug = (facilitySlug: string) => {
-  if (typeof window === "undefined" || !facilitySlug) {
-    return "";
-  }
-
-  const match = window.location.pathname.match(
-    new RegExp(`^/${facilitySlug}/branches/([^/]+)(?:/|$)`)
-  );
-  return match?.[1] || "";
+  return isCanonicalTenantHost()
+    ? `${origin}/branches/${branchSlug}/login`
+    : isValidCanonicalSubdomain(facilitySlug)
+      ? getCanonicalTenantUrl(facilitySlug, `/branches/${branchSlug}/login`)
+      : `${origin}/${encodeURIComponent(facilitySlug)}/branches/${encodeURIComponent(branchSlug)}/login`;
 };
 
 export const getStaffPortalPath = (facilitySlug: string) =>
-  getCurrentBranchSlug(facilitySlug)
-    ? getBranchStaffPortalPath(facilitySlug, getCurrentBranchSlug(facilitySlug))
-    : `/portal/${facilitySlug}`;
+  getCurrentBranchSlugFromPath(facilitySlug)
+    ? getBranchStaffPortalPath(
+        facilitySlug,
+        getCurrentBranchSlugFromPath(facilitySlug)
+      )
+    : getTenantPath("/portal", `/portal/${facilitySlug}`);
 
 export const getBranchStaffPortalPath = (facilitySlug: string, branchSlug: string) =>
-  `/${facilitySlug}/branches/${branchSlug}/portal`;
+  getTenantPath(
+    `/branches/${branchSlug}/portal`,
+    `/${facilitySlug}/branches/${branchSlug}/portal`
+  );
 
 export const getStaffAccessPath = (facilitySlug: string) =>
-  getCurrentBranchSlug(facilitySlug)
-    ? getBranchStaffAccessPath(facilitySlug, getCurrentBranchSlug(facilitySlug))
-    : `/dashboard/${facilitySlug}/staff`;
+  getCurrentBranchSlugFromPath(facilitySlug)
+    ? getBranchStaffAccessPath(
+        facilitySlug,
+        getCurrentBranchSlugFromPath(facilitySlug)
+      )
+    : getTenantPath("/dashboard/staff", `/dashboard/${facilitySlug}/staff`);
 
 export const getBranchStaffAccessPath = (facilitySlug: string, branchSlug: string) =>
-  `/${facilitySlug}/branches/${branchSlug}/dashboard/staff`;
+  getTenantPath(
+    `/branches/${branchSlug}/dashboard/staff`,
+    `/${facilitySlug}/branches/${branchSlug}/dashboard/staff`
+  );
 
 export const authenticateStaff = async ({
   facilitySlug,

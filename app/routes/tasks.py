@@ -19,7 +19,7 @@ async def get_tasks(
     role: Optional[str] = Query(None, max_length=50),
     limit: int = Query(50, ge=1, le=200),
     current_user: User = Depends(
-        role_required("ADMIN", "DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST")
+        role_required("ADMIN", "DOCTOR", "NURSE", "LAB_TECH", "PHARMACIST", "RECEPTIONIST", "BILLING")
     ),
     db: Session = Depends(get_db),
 ):

@@ -1,11 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useTenantParams } from "@/context/TenantRoutingContext";
 import {
   Activity,
+  Archive,
   ArrowLeft,
   BedDouble,
   CalendarDays,
   ClipboardList,
+  Edit3,
   FileHeart,
   FlaskConical,
   Pill,
@@ -16,12 +19,42 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useAuth } from "@/context/AuthContext";
+import { invalidatePatientOptions } from "@/api/patients";
+import {
+  archivePatientRecord,
   formatTimelineDate,
   getPatientTimeline,
   timelineModuleLabels,
   timelineModuleTone,
   type PatientTimelineEvent,
   type PatientTimelinePatient,
+  updatePatientRecord,
 } from "@/lib/patient-timeline";
 import { getWorkspaceRoutePath } from "@/lib/facility-workspace";
 
@@ -35,13 +68,37 @@ const moduleIcons: Record<string, React.ElementType> = {
   nursing: BedDouble,
 };
 
+const emptyEditForm = {
+  first_name: "",
+  last_name: "",
+  date_of_birth: "",
+  gender: "OTHER",
+  phone: "",
+  email: "",
+  address: "",
+  blood_type: "",
+  emergency_contact_name: "",
+  emergency_contact_phone: "",
+};
+
+const bloodTypes = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
+
 const PatientTimeline = () => {
   const navigate = useNavigate();
-  const { facilitySlug = "", branchSlug = "", patientId = "" } = useParams();
+  const { user } = useAuth();
+  const { facilitySlug = "", branchSlug = "", patientId = "" } = useTenantParams();
   const [patient, setPatient] = useState<PatientTimelinePatient | null>(null);
   const [events, setEvents] = useState<PatientTimelineEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [editOpen, setEditOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [actionError, setActionError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const savingRef = useRef(false);
+  const archivingRef = useRef(false);
 
   useEffect(() => {
     if (!patientId) {
@@ -79,6 +136,102 @@ const PatientTimeline = () => {
     patient?.full_name ||
     [patient?.first_name, patient?.last_name].filter(Boolean).join(" ") ||
     "Patient";
+  const canEdit = Boolean(
+    user && ["admin", "branch_admin", "reception", "doctor"].includes(user.role)
+  );
+  const canArchive = Boolean(
+    user && ["admin", "branch_admin"].includes(user.role)
+  );
+
+  const openEdit = () => {
+    if (!patient) return;
+    setEditForm({
+      first_name: patient.first_name || "",
+      last_name: patient.last_name || "",
+      date_of_birth: patient.date_of_birth || "",
+      gender: patient.gender || "OTHER",
+      phone: patient.phone || "",
+      email: patient.email || "",
+      address: patient.address || "",
+      blood_type: patient.blood_type || "",
+      emergency_contact_name: patient.emergency_contact_name || "",
+      emergency_contact_phone: patient.emergency_contact_phone || "",
+    });
+    setActionError("");
+    setEditOpen(true);
+  };
+
+  const savePatient = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (savingRef.current || !patientId) return;
+    if (
+      !editForm.first_name.trim() ||
+      !editForm.last_name.trim() ||
+      !editForm.date_of_birth
+    ) {
+      setActionError("First name, last name, and date of birth are required.");
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+    setActionError("");
+    try {
+      const updated = await updatePatientRecord(patientId, {
+        first_name: editForm.first_name.trim(),
+        last_name: editForm.last_name.trim(),
+        date_of_birth: editForm.date_of_birth,
+        gender: editForm.gender,
+        phone: editForm.phone.trim(),
+        email: editForm.email.trim(),
+        address: editForm.address.trim(),
+        blood_type: editForm.blood_type || undefined,
+        emergency_contact_name: editForm.emergency_contact_name.trim(),
+        emergency_contact_phone: editForm.emergency_contact_phone.trim(),
+      });
+      setPatient(updated);
+      invalidatePatientOptions();
+      setEditOpen(false);
+    } catch (saveError) {
+      setActionError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Patient details could not be updated."
+      );
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  const archivePatient = async () => {
+    if (archivingRef.current || !patientId) return;
+    archivingRef.current = true;
+    setArchiving(true);
+    setActionError("");
+    try {
+      await archivePatientRecord(patientId);
+      invalidatePatientOptions();
+      navigate(
+        getWorkspaceRoutePath(
+          facilitySlug,
+          "patients",
+          branchSlug || undefined
+        ),
+        { replace: true }
+      );
+    } catch (archiveError) {
+      setActionError(
+        archiveError instanceof Error
+          ? archiveError.message
+          : "Patient record could not be archived."
+      );
+      setArchiveOpen(false);
+    } finally {
+      archivingRef.current = false;
+      setArchiving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -93,13 +246,23 @@ const PatientTimeline = () => {
               <ArrowLeft className="h-4 w-4" /> Patients
             </Button>
             <h1 className="text-2xl font-extrabold tracking-tight">
-              Patient Timeline
+              Patient Record
             </h1>
             <p className="text-sm text-muted-foreground">
-              Cross-module history for {patientName}.
+              Demographics and longitudinal care history for {patientName}.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            {canEdit && (
+              <Button type="button" variant="outline" className="gap-2" onClick={openEdit} disabled={!patient}>
+                <Edit3 className="h-4 w-4" /> Edit
+              </Button>
+            )}
+            {canArchive && (
+              <Button type="button" variant="outline" className="gap-2 text-destructive hover:text-destructive" onClick={() => setArchiveOpen(true)} disabled={!patient}>
+                <Archive className="h-4 w-4" /> Archive
+              </Button>
+            )}
             <Button asChild variant="outline">
               <Link to={getWorkspaceRoutePath(facilitySlug, "records", branchSlug || undefined)}>Records</Link>
             </Button>
@@ -132,6 +295,16 @@ const PatientTimeline = () => {
                 <ProfileRow label="Gender" value={patient?.gender || "-"} />
                 <ProfileRow label="Blood Type" value={patient?.blood_type || "-"} />
                 <ProfileRow label="Phone" value={patient?.phone || "-"} />
+                <ProfileRow label="Email" value={patient?.email || "-"} />
+                <ProfileRow label="Address" value={patient?.address || "-"} />
+                <ProfileRow
+                  label="Emergency"
+                  value={
+                    [patient?.emergency_contact_name, patient?.emergency_contact_phone]
+                      .filter(Boolean)
+                      .join(" · ") || "-"
+                  }
+                />
               </div>
             </CardContent>
           </Card>
@@ -191,6 +364,81 @@ const PatientTimeline = () => {
           </Card>
         </section>
       </main>
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          if (!saving) {
+            setEditOpen(open);
+            if (!open) setActionError("");
+          }
+        }}
+      >
+        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit patient details</DialogTitle>
+            <DialogDescription>
+              Update demographic and contact information. Clinical events remain unchanged.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={savePatient} className="grid gap-4 pt-2 sm:grid-cols-2">
+            <EditField label="First Name" value={editForm.first_name} onChange={(first_name) => setEditForm((current) => ({ ...current, first_name }))} required />
+            <EditField label="Last Name" value={editForm.last_name} onChange={(last_name) => setEditForm((current) => ({ ...current, last_name }))} required />
+            <EditField label="Date of Birth" type="date" value={editForm.date_of_birth} onChange={(date_of_birth) => setEditForm((current) => ({ ...current, date_of_birth }))} required />
+            <div>
+              <Label>Gender</Label>
+              <Select value={editForm.gender} onValueChange={(gender) => setEditForm((current) => ({ ...current, gender }))}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MALE">Male</SelectItem>
+                  <SelectItem value="FEMALE">Female</SelectItem>
+                  <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <EditField label="Phone" value={editForm.phone} onChange={(phone) => setEditForm((current) => ({ ...current, phone }))} />
+            <EditField label="Email" type="email" value={editForm.email} onChange={(email) => setEditForm((current) => ({ ...current, email }))} />
+            <EditField label="Address" value={editForm.address} onChange={(address) => setEditForm((current) => ({ ...current, address }))} />
+            <div>
+              <Label>Blood Type</Label>
+              <Select value={editForm.blood_type || "none"} onValueChange={(value) => setEditForm((current) => ({ ...current, blood_type: value === "none" ? "" : value }))}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not recorded</SelectItem>
+                  {bloodTypes.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <EditField label="Emergency Contact" value={editForm.emergency_contact_name} onChange={(emergency_contact_name) => setEditForm((current) => ({ ...current, emergency_contact_name }))} />
+            <EditField label="Emergency Phone" value={editForm.emergency_contact_phone} onChange={(emergency_contact_phone) => setEditForm((current) => ({ ...current, emergency_contact_phone }))} />
+            {actionError && (
+              <p className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:col-span-2">{actionError}</p>
+            )}
+            <div className="flex gap-3 sm:col-span-2">
+              <Button type="button" variant="outline" className="flex-1" disabled={saving} onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button type="submit" className="flex-1" disabled={saving}>{saving ? "Saving..." : "Save changes"}</Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={archiveOpen} onOpenChange={(open) => !archiving && setArchiveOpen(open)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this patient record?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The patient will disappear from active workflows, but clinical and audit history will be retained. This is safer than permanent deletion.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {actionError && <p className="text-sm text-destructive">{actionError}</p>}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={archiving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={archiving} onClick={(event) => { event.preventDefault(); void archivePatient(); }} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {archiving ? "Archiving..." : "Archive patient"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
@@ -237,6 +485,25 @@ const ProfileRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between gap-3">
     <span className="text-muted-foreground">{label}</span>
     <span className="text-right font-medium text-foreground">{value}</span>
+  </div>
+);
+
+const EditField = ({
+  label,
+  value,
+  onChange,
+  type = "text",
+  required,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+}) => (
+  <div>
+    <Label>{label}{required ? " *" : ""}</Label>
+    <Input className="mt-1.5" type={type} value={value} required={required} onChange={(event) => onChange(event.target.value)} />
   </div>
 );
 

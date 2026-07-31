@@ -9,7 +9,12 @@ export type PatientTimelinePatient = {
   gender?: string | null;
   phone?: string | null;
   email?: string | null;
+  address?: string | null;
   blood_type?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
+  medical_history?: Record<string, unknown> | null;
+  is_active: boolean;
 };
 
 export type PatientTimelineEvent = {
@@ -31,6 +36,27 @@ export type PatientTimelineResponse = {
 
 export const getPatientTimeline = (patientId: string) =>
   apiClient.get<PatientTimelineResponse>(`/patients/${patientId}/timeline`);
+
+export type PatientDemographicUpdate = {
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  gender?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  blood_type?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+};
+
+export const updatePatientRecord = (
+  patientId: string,
+  data: PatientDemographicUpdate
+) => apiClient.put<PatientTimelinePatient>(`/patients/${patientId}`, data);
+
+export const archivePatientRecord = (patientId: string) =>
+  apiClient.del<{ message: string }>(`/patients/${patientId}`);
 
 export const formatTimelineDate = (value: string) => {
   if (!value) {
