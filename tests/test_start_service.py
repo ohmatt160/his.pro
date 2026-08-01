@@ -42,17 +42,27 @@ class StartServiceTests(unittest.TestCase):
                 "BUNDLED_BACKGROUND_WORKER": "true",
             },
             clear=False,
-        ), patch.object(start_service, "_run_migrations") as migrations, patch.object(
+        ), patch.object(
+            start_service,
+            "_validate_runtime_configuration",
+        ) as validate, patch.object(
+            start_service,
+            "_run_migrations",
+        ) as migrations, patch.object(
             start_service,
             "_start_process",
             side_effect=start_process,
-        ) as starter, patch.object(start_service, "_stop_process") as stopper, patch.object(
+        ) as starter, patch.object(
+            start_service,
+            "_stop_process",
+        ) as stopper, patch.object(
             start_service.signal,
             "signal",
         ):
             result = start_service.main()
 
         self.assertEqual(result, 0)
+        validate.assert_called_once_with()
         migrations.assert_called_once_with()
         self.assertEqual(starter.call_count, 2)
         self.assertEqual(
@@ -81,6 +91,9 @@ class StartServiceTests(unittest.TestCase):
             clear=False,
         ), patch.object(
             start_service,
+            "_validate_runtime_configuration",
+        ), patch.object(
+            start_service,
             "_start_process",
             side_effect=start_process,
         ), patch.object(start_service, "_stop_process"), patch.object(
@@ -90,6 +103,24 @@ class StartServiceTests(unittest.TestCase):
             result = start_service.main()
 
         self.assertEqual(result, 7)
+
+    def test_invalid_configuration_stops_before_migrations_or_workers(self):
+        with patch.object(
+            start_service,
+            "_validate_runtime_configuration",
+            side_effect=RuntimeError("unsafe"),
+        ), patch.object(
+            start_service,
+            "_run_migrations",
+        ) as migrations, patch.object(
+            start_service,
+            "_start_process",
+        ) as starter, patch.object(start_service.signal, "signal"):
+            with self.assertRaisesRegex(RuntimeError, "unsafe"):
+                start_service.main()
+
+        migrations.assert_not_called()
+        starter.assert_not_called()
 
     def test_background_worker_direct_entrypoint_resolves_app_package(self):
         result = subprocess.run(

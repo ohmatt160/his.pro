@@ -46,6 +46,17 @@ def _gunicorn_command() -> list[str]:
     ]
 
 
+def _validate_runtime_configuration() -> None:
+    from app.services.ohmattos_client import ohmattos_client
+    from app.utils.production_config import validate_production_configuration
+
+    validate_production_configuration()
+    app_env = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")).lower()
+    ohmattos_client.validate_configuration(
+        production=app_env in {"production", "staging"}
+    )
+
+
 def _run_migrations() -> None:
     print("[STARTUP] Applying database migrations", flush=True)
     subprocess.run(
@@ -88,6 +99,8 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, _request_shutdown)
     signal.signal(signal.SIGINT, _request_shutdown)
+
+    _validate_runtime_configuration()
 
     if _is_true("RUN_MIGRATIONS_ON_START"):
         _run_migrations()
