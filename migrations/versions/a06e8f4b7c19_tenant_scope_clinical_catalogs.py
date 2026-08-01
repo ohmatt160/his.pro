@@ -104,6 +104,11 @@ def _drop_global_code_uniqueness(table_name: str) -> None:
         if index.get("unique")
         and tuple(index.get("column_names") or ()) == ("code",)
     ]
+    constraint_names = {
+        constraint["name"]
+        for constraint in matching_constraints
+        if constraint.get("name")
+    }
 
     if matching_constraints:
         with op.batch_alter_table(
@@ -117,8 +122,17 @@ def _drop_global_code_uniqueness(table_name: str) -> None:
                 )
 
     for index in matching_indexes:
-        if index.get("name"):
-            op.drop_index(index["name"], table_name=table_name)
+        index_name = index.get("name")
+        # PostgreSQL reports a UNIQUE constraint's backing index from both
+        # inspector methods. Dropping the constraint already removes that
+        # index, so issuing DROP INDEX afterwards fails the whole migration.
+        if (
+            not index_name
+            or index.get("duplicates_constraint")
+            or index_name in constraint_names
+        ):
+            continue
+        op.drop_index(index_name, table_name=table_name)
 
 
 def _copy_lab_catalog_per_facility() -> None:
