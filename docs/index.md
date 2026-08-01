@@ -28,6 +28,7 @@ worker, and deployment code. It does not claim features that are only planned.
 | [Hospital Manual - PDF](../output/pdf/HIS_PRO_HOSPITAL_OPERATIONS_MANUAL.pdf) | Hospital leadership and staff | Fixed-layout customer operations manual |
 | [OhmattOS Integration](ohmattos_integration.md) | Platform and integration teams | Current client-credentials/outbox contract and feature flags |
 | [Tenant URL Migration](TENANT_URL_MIGRATION.md) | DevOps, support | Canonical subdomains and legacy URL redirects |
+| [Hugging Face Staging](HUGGING_FACE_STAGING.md) | DevOps, staging operators | Single-container startup and required Space variables/secrets |
 | [Complete App Roadmap](HIS_PRO_COMPLETE_APP_ROADMAP.md) | Product and engineering | Tickable completion roadmap |
 
 ## Status Labels

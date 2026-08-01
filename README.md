@@ -23,6 +23,11 @@ general availability remains **NO-GO** until the evidence in
 [Launch Readiness](docs/12_LAUNCH_READINESS.md) is complete. Invitation-only
 controlled pilots require explicit security and hospital approval.
 
+Hugging Face staging operators should follow the
+[Space deployment checklist](docs/HUGGING_FACE_STAGING.md); production security
+checks intentionally fail closed when required secrets or shared services are
+missing.
+
 ## Stack
 
 - FastAPI 0.104.1 and Pydantic 2
