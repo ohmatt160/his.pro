@@ -1,3 +1,10 @@
+---
+title: HIS.Pro
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # HIS.Pro
 
 HIS.Pro is a multi-tenant hospital information system built with FastAPI,
