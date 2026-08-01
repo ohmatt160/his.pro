@@ -332,15 +332,19 @@ def create_app() -> FastAPI:
             health_status["status"] = "unhealthy"
         if redis_client:
             try:
-                redis_client.ping()
-                health_status["redis"] = "connected"
                 if is_production and os.getenv("BACKGROUND_JOB_WORKER_ENABLED", "").lower() == "true":
                     worker_heartbeat = redis_client.get("hispro:worker:background_jobs")
+                    # The heartbeat GET proves Redis connectivity too, avoiding
+                    # a redundant paid command on every health probe.
+                    health_status["redis"] = "connected"
                     health_status["background_worker"] = (
                         "connected" if worker_heartbeat else "missing heartbeat"
                     )
                     if not worker_heartbeat:
                         health_status["status"] = "unhealthy"
+                else:
+                    redis_client.ping()
+                    health_status["redis"] = "connected"
             except Exception:
                 health_status["redis"] = "error"
                 if is_production:

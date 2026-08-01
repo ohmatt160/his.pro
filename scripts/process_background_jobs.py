@@ -20,9 +20,28 @@ if str(ROOT_DIR) not in sys.path:
 from app.services.background_jobs import background_jobs
 
 
-def _heartbeat(client, worker_id: str) -> None:
+def _heartbeat(client, worker_id: str, *, ttl_seconds: int) -> None:
     if client is not None:
-        client.set("hispro:worker:background_jobs", worker_id, ex=30)
+        client.set(
+            "hispro:worker:background_jobs",
+            worker_id,
+            ex=ttl_seconds,
+        )
+
+
+def _heartbeat_settings() -> tuple[float, int]:
+    try:
+        interval = float(os.getenv("BACKGROUND_JOB_HEARTBEAT_SECONDS", "10"))
+    except ValueError:
+        interval = 10.0
+    interval = max(interval, 1.0)
+
+    try:
+        configured_ttl = int(os.getenv("BACKGROUND_JOB_HEARTBEAT_TTL_SECONDS", "30"))
+    except ValueError:
+        configured_ttl = 30
+    ttl = max(configured_ttl, int(interval * 2) + 1)
+    return interval, ttl
 
 
 def main() -> None:
@@ -40,10 +59,19 @@ def main() -> None:
         if redis_url
         else None
     )
+    heartbeat_interval, heartbeat_ttl = _heartbeat_settings()
+    next_heartbeat_at = 0.0
 
     try:
         while True:
-            _heartbeat(heartbeat_client, worker_id)
+            now = time.monotonic()
+            if now >= next_heartbeat_at:
+                _heartbeat(
+                    heartbeat_client,
+                    worker_id,
+                    ttl_seconds=heartbeat_ttl,
+                )
+                next_heartbeat_at = now + heartbeat_interval
             processed = background_jobs.run_available(
                 worker_id=worker_id,
                 batch_size=args.batch_size,
