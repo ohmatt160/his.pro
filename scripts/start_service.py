@@ -49,7 +49,7 @@ def _gunicorn_command() -> list[str]:
 def _run_migrations() -> None:
     print("[STARTUP] Applying database migrations", flush=True)
     subprocess.run(
-        [sys.executable, "scripts/migrate.py"],
+        [sys.executable, "-m", "scripts.migrate"],
         cwd=ROOT_DIR,
         check=True,
     )
@@ -95,7 +95,7 @@ def main() -> int:
     worker = None
     if _is_true("BUNDLED_BACKGROUND_WORKER"):
         worker = _start_process(
-            [sys.executable, "scripts/process_background_jobs.py"],
+            [sys.executable, "-m", "scripts.process_background_jobs"],
             "background worker",
         )
 

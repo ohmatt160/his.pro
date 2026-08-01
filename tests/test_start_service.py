@@ -1,8 +1,14 @@
 import os
+from pathlib import Path
+import subprocess
+import sys
 import unittest
 from unittest.mock import Mock, patch
 
 from scripts import start_service
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
 class StartServiceTests(unittest.TestCase):
@@ -49,6 +55,10 @@ class StartServiceTests(unittest.TestCase):
         self.assertEqual(result, 0)
         migrations.assert_called_once_with()
         self.assertEqual(starter.call_count, 2)
+        self.assertEqual(
+            starter.call_args_list[0].args[0],
+            [sys.executable, "-m", "scripts.process_background_jobs"],
+        )
         self.assertEqual(stopper.call_count, 2)
 
     def test_worker_exit_stops_the_service(self):
@@ -80,6 +90,22 @@ class StartServiceTests(unittest.TestCase):
             result = start_service.main()
 
         self.assertEqual(result, 7)
+
+    def test_background_worker_direct_entrypoint_resolves_app_package(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/process_background_jobs.py",
+                "--help",
+            ],
+            cwd=ROOT_DIR,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--batch-size", result.stdout)
 
 
 if __name__ == "__main__":

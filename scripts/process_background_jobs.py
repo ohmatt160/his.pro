@@ -4,11 +4,18 @@ from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import socket
+import sys
 import time
 import uuid
 
 import redis
+
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from app.services.background_jobs import background_jobs
 

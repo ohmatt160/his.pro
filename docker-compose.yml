@@ -91,7 +91,7 @@ services:
     build:
       context: .
       target: runtime
-    command: ["python", "scripts/migrate.py"]
+    command: ["python", "-m", "scripts.migrate"]
     environment: *app-environment
     depends_on:
       db:
@@ -125,7 +125,7 @@ services:
     build:
       context: .
       target: runtime
-    command: ["python", "scripts/process_background_jobs.py"]
+    command: ["python", "-m", "scripts.process_background_jobs"]
     environment: *app-environment
     depends_on:
       migrate:
@@ -143,7 +143,7 @@ services:
     build:
       context: .
       target: runtime
-    command: ["python", "scripts/process_integration_outbox.py"]
+    command: ["python", "-m", "scripts.process_integration_outbox"]
     environment: *app-environment
     depends_on:
       migrate:
