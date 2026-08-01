@@ -7,7 +7,7 @@
 - PostgreSQL 16 for production
 - Redis 7.4 for production coordination/realtime
 - ClamAV 1.5 for required upload scanning
-- Wildcard DNS/TLS for the configured `TENANT_BASE_DOMAIN`
+- Optional wildcard DNS/TLS when `TENANT_BASE_DOMAIN` is configured
 - Docker/Compose for the reference container topology
 
 SQLite is supported for development and tests only. Production validation rejects
@@ -97,13 +97,16 @@ release evidence and must not be inferred from a successful build.
 | `FRONTEND_URL` | Primary exact frontend origin |
 | `ALLOWED_ORIGINS` | Comma-separated exact credentialed origins |
 | `ALLOWED_ORIGIN_REGEX` | Optional tightly reviewed tenant origin pattern |
-| `TENANT_BASE_DOMAIN` | DNS suffix for canonical facility hosts; no scheme or path |
-| `PUBLIC_APP_ORIGIN` | Exact HTTPS origin for generic product/login pages |
+| `TENANT_BASE_DOMAIN` | Optional DNS suffix for canonical facility hosts; no scheme or path |
+| `PUBLIC_APP_ORIGIN` | Optional exact HTTPS origin for generic product/login pages; Vercel system URL is the fallback |
 
-Never use `*` for credentialed production CORS. Tenant wildcard DNS and TLS are an
-edge concern; CORS still needs a bounded tenant-origin policy and
-reserved-subdomain protection. The Vercel build injects `TENANT_BASE_DOMAIN`
-into the browser bundle so browser links and server redirects share one value.
+Never use `*` for credentialed production CORS. Without a custom domain, tenant
+workspaces use the Vercel origin with a slug path such as
+`/sunrise-medical/login`. Tenant identity still comes from the immutable facility
+record and every protected API query remains tenant-scoped. If a wildcard domain
+is later enabled, CORS needs a bounded tenant-origin policy and reserved-subdomain
+protection. The Vercel build injects the optional `TENANT_BASE_DOMAIN` into the
+browser bundle so generated links use one validated value.
 
 ### Database And Pooling
 

@@ -72,18 +72,25 @@ This works functionally but can block an event-loop worker under slow database
 calls. Moving synchronous handlers to threadpool-backed `def` endpoints or
 adopting SQLAlchemy async sessions is a scalability recommendation.
 
-## Canonical Tenant Routing
+## Tenant Routing
 
-The intended hospital URL is:
+Before a custom domain is available, the supported hospital login URL is:
+
+```text
+https://<vercel-project>.vercel.app/<facility-slug>/login
+```
+
+After wildcard DNS/TLS is configured, the canonical URL becomes:
 
 ```text
 https://<canonical-subdomain>.<tenant-base-domain>/dashboard
 ```
 
-`TENANT_BASE_DOMAIN` supplies the deployment-specific suffix; it is not compiled
-as a HIS.Pro product constant. The subdomain resolves to an immutable facility UUID at the HIS.Pro boundary.
-Legacy slug-in-path links continue to resolve and redirect to the canonical host.
-The backend then authorizes user, facility UUID, and branch before querying data.
+`TENANT_BASE_DOMAIN` is optional and supplies the deployment-specific suffix; it
+is not compiled as a HIS.Pro product constant. In either URL mode, the slug or
+subdomain resolves to an immutable facility UUID at the HIS.Pro boundary. The
+backend then authorizes user, facility UUID, role, and branch before querying data.
+Path URLs remain valid compatibility entry points after a custom domain is added.
 
 ```mermaid
 sequenceDiagram

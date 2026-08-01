@@ -5,51 +5,6 @@
     "framework": "vite",
 
     "rewrites": [
-        {
-            "source": "/:facilitySlug/branches/:branchSlug/:rest*",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=branch&__hispro_branch=:branchSlug&__hispro_rest=:rest*"
-        },
-        {
-            "source": "/dashboard/:facilitySlug/:rest*",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=dashboard&__hispro_rest=:rest*"
-        },
-        {
-            "source": "/dashboard/:facilitySlug",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=dashboard"
-        },
-        {
-            "source": "/portal/:facilitySlug",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=portal"
-        },
-        {
-            "source": "/login/:facilitySlug",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=login"
-        },
-        {
-            "source": "/:facilitySlug/login",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=login"
-        },
-        {
-            "source": "/workspace-ready/:facilitySlug",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=workspace-ready"
-        },
-        {
-            "source": "/hospital/:facilitySlug",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=hospital"
-        },
-        {
-            "source": "/:facilitySlug((?!api$|assets$|dashboard$|dpa$|get-started$|hospital$|login$|portal$|privacy$|setting-up$|terms$|workspace-ready$)[a-z0-9][a-z0-9-]{0,99})",
-            "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=login"
-        },
         { "source": "/api/v1/:path*", "destination": "/api/proxy?path=:path*" },
         { "source": "/((?!api/).*)", "destination": "/index.html" }
     ],

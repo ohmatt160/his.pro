@@ -29,8 +29,10 @@ the FastAPI dependencies repeat authorization server-side.
 
 ## Route Families
 
-On a canonical tenant host such as `sunrise-medical.his.pro`, workspace routes
-do not contain the facility slug:
+Without a custom domain, a facility login uses a path such as
+`/sunrise-medical/login`; authenticated routes retain the facility slug in their
+registered compatibility paths. On a configured canonical tenant host such as
+`sunrise-medical.example.com`, workspace routes do not contain the facility slug:
 
 - `/login`
 - `/dashboard`
@@ -38,9 +40,9 @@ do not contain the facility slug:
 - `/branches/:branchSlug/dashboard/...`
 - `/portal`
 
-Legacy routes such as `/dashboard/:facilitySlug` and
-`/:facilitySlug/branches/:branchSlug/dashboard` remain registered for compatibility
-and are normalized/redirected to canonical routes when the tenant host is known.
+Routes such as `/dashboard/:facilitySlug` and
+`/:facilitySlug/branches/:branchSlug/dashboard` remain registered for path mode
+and long-lived compatibility. They are normalized when the tenant host is known.
 
 ## Public And Onboarding Pages
 

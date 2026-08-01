@@ -101,7 +101,7 @@ export const getFacilityPlatformLink = (
 
   return !isLocal && tenantBaseDomain && isValidCanonicalSubdomain(canonicalSubdomain)
     ? getCanonicalTenantUrl(canonicalSubdomain, "/login", tenantBaseDomain)
-    : `${origin}/${facilitySlug}`;
+    : `${origin}/${encodeURIComponent(facilitySlug)}/login`;
 };
 
 const getWorkspaceStorageKey = (facilitySlug: string) =>

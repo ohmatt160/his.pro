@@ -115,18 +115,26 @@ promised until reconciled.
 Public owner signup remains disabled until email verification is released. Do not
 publish a general onboarding code or send it through an insecure group channel.
 
-### Canonical Hospital URL
+### Hospital URL
 
-The approved format is:
+Before HIS.Pro has a custom domain, the approved format is:
+
+```text
+https://<vercel-project>.vercel.app/<hospital-slug>/login
+```
+
+After a wildcard domain is configured, the canonical format is:
 
 ```text
 https://<hospital-subdomain>.<tenant-base-domain>
 ```
 
-For example, a deployment configured with `TENANT_BASE_DOMAIN=his.pro` issues
-`https://sunrise-medical.his.pro`. The suffix may differ by deployment.
+For example, a deployment configured with `TENANT_BASE_DOMAIN=example.com` issues
+`https://sunrise-medical.example.com`. The suffix differs by deployment and must
+never be guessed from a generated hosting URL.
 
-Old supported links redirect to the canonical URL. Users should update bookmarks.
+Old supported path links remain valid. Users should update bookmarks after the
+custom-domain migration is announced.
 If a link shows another hospital subdomain, stop and contact the administrator.
 
 ### Modules

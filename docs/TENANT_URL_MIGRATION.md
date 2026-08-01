@@ -1,18 +1,24 @@
 # HIS Pro Tenant URL Migration Runbook
 
-Status: implementation verified; production DNS, TLS, deployment, and smoke tests remain.
+Status: path-based Vercel mode implemented; custom-domain DNS/TLS rollout remains.
 
 ## Goal
 
-Move every existing facility to:
+Keep every existing facility reachable before a custom domain exists at:
+
+```text
+https://<vercel-project>.vercel.app/<facility-slug>/login
+```
+
+Then, after wildcard DNS/TLS is available, move generated links to:
 
 ```text
 https://<canonical-subdomain>.<tenant-base-domain>
 ```
 
 without changing the facility's account, users, branches, records, or immutable
-tenant identity. Existing URLs remain compatibility entry points and redirect to
-the canonical hostname after server-side facility validation.
+tenant identity. Existing path URLs remain compatibility entry points throughout
+the migration.
 
 ## Identity Invariants
 
@@ -35,34 +41,30 @@ label derived from the immutable facility UUID.
 The application compatibility sync also performs an additive backfill for legacy
 SQLite development databases. Production deployments must use Alembic.
 
-## Legacy URL Behavior
+## Path URL Behavior
 
-The current frontend and V2 support legacy path forms on the configured product
-frontend hostnames. Examples:
+The current frontend and V2 support tenant paths on the Vercel project hostname.
+Examples:
 
 ```text
-https://his.pro/login/sunrise-medical
-https://his.pro/dashboard/sunrise-medical/patients
+https://his-pro.vercel.app/sunrise-medical/login
+https://his-pro.vercel.app/dashboard/sunrise-medical/patients
 ```
 
-After validating the facility through the backend, they redirect to:
+These routes are served by the SPA and resolve the facility through the backend.
+They do not depend on `TENANT_BASE_DOMAIN`. After a custom wildcard is configured,
+newly generated links use:
 
 ```text
 https://sunrise-medical.his.pro/login
 https://sunrise-medical.his.pro/dashboard/patients
 ```
 
-Valid existing path-based facilities receive `308 Permanent Redirect`. Unknown facilities
-receive a non-cacheable `307` to the generic workspace login instead of a `404`.
-This prevents a temporary lookup failure or typo from becoming a permanently
-cached negative redirect.
-
-The redirect destination is constructed only under the validated
-`TENANT_BASE_DOMAIN` suffix. The request `Host` header cannot select or alter the
-destination. The backend resolves the immutable facility row while returning
-only its slug and canonical routing label. The handler verifies both values,
-route segments, and HTTP method. Internal routing parameters are stripped. This
-prevents open redirects, tenant substitution, and configuration leakage.
+Path links remain available rather than redirecting to an unsupported nested
+`vercel.app` hostname. Unknown facilities show the unavailable-workspace state.
+The backend resolves the immutable facility row, while authenticated operations
+verify the token's facility and branch scope. A route slug is never sufficient
+authorization for data access.
 
 ## Session Behavior
 
@@ -78,33 +80,38 @@ token embedded in the URL.
 
 ## Production Rollout
 
+### Phase 1: No Custom Domain
+
 1. Take a verified database backup and rehearse restore.
 2. Deploy the backend code and run `alembic upgrade head` before serving the new frontend.
 3. Verify every active facility has one unique, valid canonical subdomain.
-4. Configure wildcard DNS and TLS for the tenant domain on the frontend platform,
-   for example `*.his.pro`.
-5. Configure `TENANT_BASE_DOMAIN=his.pro`, `PUBLIC_APP_ORIGIN`, and the private
-   backend proxy credentials in the Vercel project. The Vite build receives the
-   validated tenant suffix from this same server-side setting.
-6. Deploy the current frontend and V2 artifacts as applicable.
-7. Smoke-test login, refresh, logout, dashboard, branch routes, patient portal,
-   WebSocket authorization, and a cross-tenant denial on canonical hostnames.
-8. Test representative legacy path URLs and verify the exact canonical `Location` header.
-9. Keep the old domains and path routes online as long-lived redirect entry points.
-10. Monitor redirect status, resolver latency, lookup failures, loops, and tenant
-    mismatch denials without placing PHI in logs or metric labels.
+4. Leave `TENANT_BASE_DOMAIN` unset and deploy the current frontend or V2 artifact.
+5. Ensure Vercel system environment variables are exposed, or set the exact
+   `PUBLIC_APP_ORIGIN` explicitly.
+6. Smoke-test login, refresh, logout, dashboard, branch routes, patient portal,
+   WebSocket authorization, and cross-tenant denial using path URLs.
+
+### Phase 2: Custom Wildcard Domain
+
+1. Acquire the domain and configure wildcard DNS and TLS on the frontend platform.
+2. Set `TENANT_BASE_DOMAIN` to that verified suffix and set `PUBLIC_APP_ORIGIN` to
+   the generic product origin.
+3. Deploy and test canonical login, dashboard, branches, cookies, CORS, WebSockets,
+   and representative path compatibility links.
+4. Announce the new links while keeping path routes available during migration.
+5. Monitor resolver latency, lookup failures, loops, and tenant mismatch denials
+   without placing PHI in logs or metric labels.
 
 The generated `his-pro.vercel.app` project hostname is a deployment entry point,
 not a wildcard domain owned by HIS.Pro. A hostname such as
 `sunrise-medical.his-pro.vercel.app` must not be launched unless the hosting
-provider explicitly assigns that wildcard. Use a custom wildcard domain for
-production tenant URLs.
+provider explicitly assigns that wildcard. Until a custom wildcard exists, use
+`his-pro.vercel.app/sunrise-medical/login`.
 
 ## Rollback
 
 - Do not reverse or rewrite facility IDs.
 - Keep the additive canonical column during application rollback.
-- Disable legacy rewrite rules if they misroute, while leaving old paths served by
-  the previous frontend release.
+- Keep path routes served by the SPA if custom-domain routing is rolled back.
 - Correct routing data with an audited migration; never silently reassign a
   canonical hostname from one facility UUID to another.

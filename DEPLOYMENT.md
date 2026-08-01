@@ -47,25 +47,28 @@ Import the repo into Vercel and set the project root directory to:
 app/templates/initial frontend
 ```
 
-Set this Vercel environment variable:
+Set the backend proxy variables in Vercel. The tenant-domain variables are
+optional until a custom wildcard domain exists:
 
 ```env
 VITE_API_BASE_URL=https://your-huggingface-space.hf.space/api/v1
-TENANT_BASE_DOMAIN=his.pro
-PUBLIC_APP_ORIGIN=https://your-vercel-project.vercel.app
+# TENANT_BASE_DOMAIN=yourdomain.com
+# PUBLIC_APP_ORIGIN=https://your-vercel-project.vercel.app
 ```
 
-`TENANT_BASE_DOMAIN` must match a wildcard domain already assigned to the Vercel
-project with working DNS and TLS, for example `*.his.pro`. Do not set it to the
-generated project hostname: owning `his-pro.vercel.app` does not provide
-`*.his-pro.vercel.app` wildcard routing.
+When `TENANT_BASE_DOMAIN` is unset, tenant login links remain on the Vercel project
+origin, for example `https://your-project.vercel.app/sunrise-medical/login`.
+When it is set, it must match a wildcard domain already assigned to the Vercel
+project with working DNS and TLS. Do not set it to the generated project hostname:
+owning `your-project.vercel.app` does not provide `*.your-project.vercel.app`
+wildcard routing.
 
 The frontend and backend are cross-origin in production. Keep the backend URL
 HTTPS, keep `COOKIE_SECURE=true`, and set `ALLOWED_ORIGINS` to the exact Vercel
 domain so HttpOnly auth cookies work with CORS credentials.
 
-The included `vercel.json` handles Vite SPA rewrites so routes like
-`/login/my-facility` and `/dashboard/my-facility` load correctly on refresh.
+The included `vercel.json` handles Vite SPA rewrites so path-based tenant routes
+load correctly on refresh.
 
 ## Production Checks
 

@@ -34,10 +34,6 @@ export default defineConfig(({ mode }) => {
   if (tenantBaseDomain && !isValidTenantBaseDomain(tenantBaseDomain)) {
     throw new Error("TENANT_BASE_DOMAIN must be a DNS name without a scheme or path.");
   }
-  if (process.env.VERCEL && !tenantBaseDomain) {
-    throw new Error("TENANT_BASE_DOMAIN is required for Vercel deployments.");
-  }
-
   return {
     base: "/",
     build: {

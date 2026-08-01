@@ -52,13 +52,11 @@ test.beforeEach(() => {
   delete process.env.VERCEL_URL;
 });
 
-test("does not send every canonical tenant hostname through a legacy redirect", () => {
-  const catchAllTenantRedirects = vercelConfig.rewrites.filter(
-    (rewrite) =>
-      rewrite.source === "/:rest*" &&
-      rewrite.destination.includes("/api/tenant-redirect")
+test("serves path-based tenant routes through the SPA without a domain", () => {
+  const tenantRedirects = vercelConfig.rewrites.filter((rewrite) =>
+    rewrite.destination.includes("/api/tenant-redirect")
   );
-  assert.deepEqual(catchAllTenantRedirects, []);
+  assert.deepEqual(tenantRedirects, []);
 });
 
 test("validates a legacy facility and returns a configured-domain 308", async () => {

@@ -100,6 +100,7 @@ Key documents:
 - Store independent secrets/private keys in a secret manager; never commit `.env`.
 - Keep public signup and every OhmattOS feature flag off until its launch gate closes.
 - Run `python scripts/migrate.py` as a one-shot deployment step before API/workers.
-- Configure `TENANT_BASE_DOMAIN` for a wildcard domain you control, then use
-  canonical tenant hosts such as `https://<hospital>.<tenant-base-domain>`.
+- Until a custom domain exists, use tenant paths such as
+  `https://<project>.vercel.app/<hospital>/login`. Configure
+  `TENANT_BASE_DOMAIN` only after its wildcard DNS/TLS is active.
 - Do not claim compliance certification based on this application alone.

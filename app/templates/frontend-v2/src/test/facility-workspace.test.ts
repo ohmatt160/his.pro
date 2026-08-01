@@ -90,10 +90,10 @@ describe("facility workspace API", () => {
 
   it("generates the workspace URL as a login entry point", () => {
     expect(getFacilityLoginPath("sunrise-medical-centre")).toBe(
-      "/sunrise-medical-centre"
+      "/sunrise-medical-centre/login"
     );
     expect(getFacilityPlatformLink("sunrise-medical-centre")).toBe(
-      "http://localhost:3000/sunrise-medical-centre"
+      "http://localhost:3000/sunrise-medical-centre/login"
     );
   });
 

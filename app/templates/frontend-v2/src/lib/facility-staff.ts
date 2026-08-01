@@ -175,7 +175,7 @@ const mapBackendUser = (user: BackendUser): AuthUser & { role: StaffRole } => {
 };
 
 export const getFacilityLoginPath = (facilitySlug: string) =>
-  getTenantPath("/login", `/${facilitySlug}`);
+  getTenantPath("/login", `/${encodeURIComponent(facilitySlug)}/login`);
 
 export const getFacilityLoginLink = (facilitySlug: string) => {
   const origin =
@@ -186,7 +186,7 @@ export const getFacilityLoginLink = (facilitySlug: string) => {
     ? `${origin}/login`
     : tenantBaseDomain && isValidCanonicalSubdomain(facilitySlug)
       ? getCanonicalTenantUrl(facilitySlug, "/login", tenantBaseDomain)
-      : `${origin}/${encodeURIComponent(facilitySlug)}`;
+      : `${origin}/${encodeURIComponent(facilitySlug)}/login`;
 };
 
 export const getBranchLoginPath = (facilitySlug: string, branchSlug: string) =>
