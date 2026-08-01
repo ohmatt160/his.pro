@@ -29,7 +29,7 @@ the FastAPI dependencies repeat authorization server-side.
 
 ## Route Families
 
-On a canonical tenant host such as `sunrise-medical.app.his.pro`, workspace routes
+On a canonical tenant host such as `sunrise-medical.his.pro`, workspace routes
 do not contain the facility slug:
 
 - `/login`

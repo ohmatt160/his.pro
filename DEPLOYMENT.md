@@ -51,7 +51,14 @@ Set this Vercel environment variable:
 
 ```env
 VITE_API_BASE_URL=https://your-huggingface-space.hf.space/api/v1
+TENANT_BASE_DOMAIN=his.pro
+PUBLIC_APP_ORIGIN=https://your-vercel-project.vercel.app
 ```
+
+`TENANT_BASE_DOMAIN` must match a wildcard domain already assigned to the Vercel
+project with working DNS and TLS, for example `*.his.pro`. Do not set it to the
+generated project hostname: owning `his-pro.vercel.app` does not provide
+`*.his-pro.vercel.app` wildcard routing.
 
 The frontend and backend are cross-origin in production. Keep the backend URL
 HTTPS, keep `COOKIE_SECURE=true`, and set `ALLOWED_ORIGINS` to the exact Vercel

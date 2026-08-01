@@ -17,6 +17,7 @@ export type FacilityBranch = {
 
 export type FacilityDetails = {
   id?: string;
+  canonical_subdomain?: string;
   name: string;
   slug: string;
   type: string;

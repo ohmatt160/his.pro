@@ -49,7 +49,7 @@
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/alerts" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -97,7 +97,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/alerts" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -138,7 +138,7 @@ curl -X POST \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/alerts/actions/mark-all-read" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/actions/mark-all-read" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -175,7 +175,7 @@ curl -X PUT \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/alerts/role" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/role" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -224,7 +224,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/alerts/{alert_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/{alert_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -259,7 +259,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/alerts/{alert_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/{alert_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -303,7 +303,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/alerts/{alert_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/{alert_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -350,7 +350,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/alerts/{alert_id}/read" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/{alert_id}/read" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -395,7 +395,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/alerts/{alert_id}/unread" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/alerts/{alert_id}/unread" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -449,7 +449,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/appointments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/appointments" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -500,7 +500,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/appointments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/appointments" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -548,7 +548,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/appointments/{appointment_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/appointments/{appointment_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -583,7 +583,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/appointments/{appointment_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/appointments/{appointment_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -628,7 +628,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/appointments/{appointment_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/appointments/{appointment_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -683,7 +683,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/audit-logs" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/audit-logs" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -728,7 +728,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/audit-logs/{log_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/audit-logs/{log_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -767,7 +767,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/ensure" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/ensure" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"username":"<username>","email":"staff@example.invalid","password":"<strong-password>","role":"<role>","first_name":"<first_name>","last_name":"<last_name>","facility_slug":"example-hospital"}'
@@ -799,7 +799,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/login" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/login" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"username":"<username>","password":"<strong-password>"}'
@@ -831,7 +831,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/logout" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/logout" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
 
@@ -859,7 +859,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/logout-everywhere" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/logout-everywhere" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
 
@@ -887,7 +887,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/onboard" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/onboard" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"owner":{"username":"<username>","email":"staff@example.invalid","password":"<strong-password>","first_name":"<first_name>","last_name":"<last_name>"},"facility":{"name":"<name>","type":"<type>","country":"<country>","address":"<address>","phone":"+2348000000000","email":"<email>","modules":["<modules>"],"settings":{}}}'
@@ -935,7 +935,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/refresh" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/refresh" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
 
@@ -965,7 +965,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/register" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/register" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"username":"<username>","email":"staff@example.invalid","password":"<strong-password>","role":"<role>","first_name":"<first_name>","last_name":"<last_name>","facility_slug":"example-hospital"}'
@@ -1011,7 +1011,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/auth/sessions"
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/sessions"
 ```
 
 **Example response shape**
@@ -1045,7 +1045,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/auth/verify" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/auth/verify" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
 
@@ -1096,7 +1096,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1147,7 +1147,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1195,7 +1195,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices/{invoice_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices/{invoice_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1240,7 +1240,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices/{invoice_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices/{invoice_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1290,7 +1290,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices/{invoice_id}/payments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices/{invoice_id}/payments" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1336,7 +1336,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/billing/invoices/{invoice_id}/payments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/invoices/{invoice_id}/payments" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1380,7 +1380,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/billing/payments/{payment_id}/receipt" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/payments/{payment_id}/receipt" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1408,7 +1408,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/billing/payments/{payment_id}/receipt" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/billing/payments/{payment_id}/receipt" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -1455,7 +1455,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/consultations" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/consultations" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1512,7 +1512,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/consultations/start" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/consultations/start" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1568,7 +1568,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/consultations/{consultation_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/consultations/{consultation_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1621,7 +1621,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/consultations/{consultation_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/consultations/{consultation_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1677,7 +1677,7 @@ curl -X PUT \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/consultations/{consultation_id}/complete" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/consultations/{consultation_id}/complete" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -1737,7 +1737,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/dashboard/stats" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/dashboard/stats" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1769,7 +1769,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/emr" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/emr" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1826,7 +1826,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/emr" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/emr" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -1883,7 +1883,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/emr/{record_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/emr/{record_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -1918,7 +1918,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/emr/{record_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/emr/{record_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -1971,7 +1971,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/emr/{record_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/emr/{record_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2031,7 +2031,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2074,7 +2074,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2118,7 +2118,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/ensure" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/ensure" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2168,7 +2168,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/resolve-host/{canonical_subdomain}"
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/resolve-host/{canonical_subdomain}"
 ```
 
 **Example response shape**
@@ -2202,7 +2202,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/resolve-workspace/{facility_slug}"
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/resolve-workspace/{facility_slug}"
 ```
 
 **Example response shape**
@@ -2236,7 +2236,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/workspace/{facility_slug}"
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/workspace/{facility_slug}"
 ```
 
 **Example response shape**
@@ -2276,7 +2276,7 @@ curl -X GET \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -2311,7 +2311,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2358,7 +2358,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2408,7 +2408,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_id}/modules" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_id}/modules" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2458,7 +2458,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/branches" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/branches" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2501,7 +2501,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/branches" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/branches" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2546,7 +2546,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -2582,7 +2582,7 @@ curl -X DELETE \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2627,7 +2627,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}/modules" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/branches/{branch_id_or_slug}/modules" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2673,7 +2673,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/clinicians" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/clinicians" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2722,7 +2722,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/data-migrations/import" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/data-migrations/import" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -2752,7 +2752,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/data-migrations/jobs/{job_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/data-migrations/jobs/{job_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2780,7 +2780,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/data-migrations/validate" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/data-migrations/validate" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -2809,7 +2809,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/departments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/departments" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -2837,7 +2837,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/departments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/departments" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2869,7 +2869,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/departments/{dept_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/departments/{dept_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -2905,7 +2905,7 @@ curl -X DELETE \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/departments/{dept_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/departments/{dept_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2936,7 +2936,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/settings" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/settings" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -2988,7 +2988,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/staff" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/staff" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3034,7 +3034,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/staff" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/staff" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3082,7 +3082,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/staff/{login_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/staff/{login_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3127,7 +3127,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{facility_slug}/staff/{login_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{facility_slug}/staff/{login_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3178,7 +3178,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/files" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/files" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3207,7 +3207,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/files/content/{filename}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/files/content/{filename}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3229,7 +3229,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/files/upload" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/files/upload" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -3259,7 +3259,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/files/{filename}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/files/{filename}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -3295,7 +3295,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/files/{filename}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/files/{filename}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3329,7 +3329,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/inventory" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3370,7 +3370,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/inventory" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3420,7 +3420,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/inventory/low-stock" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/low-stock" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3455,7 +3455,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/inventory/reorder" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/reorder" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3492,7 +3492,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/inventory/{item_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/{item_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -3527,7 +3527,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/inventory/{item_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/{item_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3572,7 +3572,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/inventory/{item_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/{item_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3625,7 +3625,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/inventory/{item_id}/stock" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/inventory/{item_id}/stock" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3681,7 +3681,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/orders" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/orders" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3731,7 +3731,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/orders" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/orders" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3778,7 +3778,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/orders/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/orders/{order_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3822,7 +3822,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/orders/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/orders/{order_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3869,7 +3869,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/results/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/results/{order_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3910,7 +3910,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/results/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/results/{order_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -3956,7 +3956,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/tests" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/tests" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -3996,7 +3996,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/tests" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/tests" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4043,7 +4043,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/tests/{test_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/tests/{test_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4087,7 +4087,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/laboratory/tests/{test_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/laboratory/tests/{test_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4130,7 +4130,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/health"
+  "https://<tenant>.<tenant-base-domain>/health"
 ```
 
 **Example response shape:** not constrained by a declared JSON response model.
@@ -4164,7 +4164,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/order-workflow" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/order-workflow" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4204,7 +4204,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/password-reset/change" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/password-reset/change" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4235,7 +4235,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/password-reset/confirm" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/password-reset/confirm" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"token":"<token>","new_password":"<strong-password>"}'
@@ -4265,7 +4265,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/password-reset/forgot" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/password-reset/forgot" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
   --data '{"email":"staff@example.invalid"}'
@@ -4308,7 +4308,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/patient-notifications" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patient-notifications" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4352,7 +4352,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/patient-notifications/{notification_id}/read" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patient-notifications/{notification_id}/read" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -4395,7 +4395,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/patient-notifications/{notification_id}/sent" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patient-notifications/{notification_id}/sent" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4446,7 +4446,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/patients" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4499,7 +4499,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/patients" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4550,7 +4550,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/patients/options" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients/options" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4590,7 +4590,7 @@ curl -X GET \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/patients/{patient_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients/{patient_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -4625,7 +4625,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/patients/{patient_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients/{patient_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4670,7 +4670,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/patients/{patient_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients/{patient_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4718,7 +4718,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/patients/{patient_id}/timeline" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/patients/{patient_id}/timeline" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4780,7 +4780,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/inventory/{medication_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/inventory/{medication_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4823,7 +4823,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/inventory/{medication_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/inventory/{medication_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4868,7 +4868,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/medications" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/medications" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -4909,7 +4909,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/medications" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/medications" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -4957,7 +4957,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/medications/{medication_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/medications/{medication_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5002,7 +5002,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/medications/{medication_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/medications/{medication_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5057,7 +5057,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/prescriptions" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/prescriptions" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5104,7 +5104,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/prescriptions" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/prescriptions" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5150,7 +5150,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/prescriptions/{prescription_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/prescriptions/{prescription_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5185,7 +5185,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/prescriptions/{prescription_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/prescriptions/{prescription_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5228,7 +5228,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/pharmacy/prescriptions/{prescription_id}/dispense" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/pharmacy/prescriptions/{prescription_id}/dispense" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5274,7 +5274,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{slug}/public-profile" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{slug}/public-profile" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5302,7 +5302,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{slug}/public-profile" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{slug}/public-profile" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5334,7 +5334,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{slug}/public-profile/departments/{dept_id}/services" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{slug}/public-profile/departments/{dept_id}/services" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5366,7 +5366,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/facilities/{slug}/public-profile/departments/{dept_id}/staff" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/facilities/{slug}/public-profile/departments/{dept_id}/staff" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5405,7 +5405,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/queue" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5462,7 +5462,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/queue" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5510,7 +5510,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5545,7 +5545,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5590,7 +5590,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5638,7 +5638,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}/checkin" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}/checkin" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5684,7 +5684,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}/complete" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}/complete" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5730,7 +5730,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/queue/{queue_id}/start" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/queue/{queue_id}/start" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -5785,7 +5785,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/radiology" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/radiology" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5836,7 +5836,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/radiology" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/radiology" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5884,7 +5884,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/radiology/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/radiology/{order_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -5929,7 +5929,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/radiology/{order_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/radiology/{order_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -5977,7 +5977,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/radiology/{order_id}/report" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/radiology/{order_id}/report" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -6029,7 +6029,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/referrals" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/referrals" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6078,7 +6078,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/referrals" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/referrals" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -6126,7 +6126,7 @@ curl -X POST \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/referrals/{referral_id}/accept" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/referrals/{referral_id}/accept" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -6172,7 +6172,7 @@ curl -X PUT \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/referrals/{referral_id}/complete" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/referrals/{referral_id}/complete" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -6221,7 +6221,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/reports/departments" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/reports/departments" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6262,7 +6262,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/reports/inventory" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/reports/inventory" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6321,7 +6321,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/reports/operations" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/reports/operations" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6381,7 +6381,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/reports/revenue" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/reports/revenue" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6439,7 +6439,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/reports/summary" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/reports/summary" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6518,7 +6518,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/conversations" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/conversations" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6580,7 +6580,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/chat/conversations" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/conversations" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -6651,7 +6651,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/conversations/{conversation_id}/messages" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/conversations/{conversation_id}/messages" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6703,7 +6703,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/chat/conversations/{conversation_id}/messages" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/conversations/{conversation_id}/messages" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -6753,7 +6753,7 @@ curl -X POST \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/chat/conversations/{conversation_id}/read" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/conversations/{conversation_id}/read" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -6788,7 +6788,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/files/{filename}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/files/{filename}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6810,7 +6810,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/health" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/health" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6839,7 +6839,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/staff" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/staff" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6875,7 +6875,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/chat/unread-count" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/unread-count" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6903,7 +6903,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/chat/upload" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/chat/upload" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -6946,7 +6946,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/suppliers" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/suppliers" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -6993,7 +6993,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/suppliers" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/suppliers" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7039,7 +7039,7 @@ curl -X POST \
 
 ```bash
 curl -X DELETE \
-  "https://<tenant>.app.his.pro/api/v1/suppliers/{supplier_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/suppliers/{supplier_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -7074,7 +7074,7 @@ curl -X DELETE \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/suppliers/{supplier_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/suppliers/{supplier_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7117,7 +7117,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/suppliers/{supplier_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/suppliers/{supplier_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7166,7 +7166,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/tasks" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/tasks" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7213,7 +7213,7 @@ curl -X GET \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/users/me" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/users/me" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7250,7 +7250,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/users/me" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/users/me" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7290,7 +7290,7 @@ curl -X PUT \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/users/me/change-password" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/users/me/change-password" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7327,7 +7327,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/users/{user_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/users/{user_id}" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7371,7 +7371,7 @@ curl -X GET \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/users/{user_id}/activate" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/users/{user_id}/activate" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -7411,7 +7411,7 @@ curl -X PUT \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/wards/admissions" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/admissions" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7462,7 +7462,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/wards/admissions" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/admissions" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7512,7 +7512,7 @@ curl -X POST \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/wards/admissions/{admission_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/admissions/{admission_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7565,7 +7565,7 @@ curl -X PUT \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/wards/admissions/{admission_id}/discharge" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/admissions/{admission_id}/discharge" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>"
 ```
@@ -7616,7 +7616,7 @@ curl -X POST \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/wards/admissions/{admission_id}/observations" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/admissions/{admission_id}/observations" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7669,7 +7669,7 @@ curl -X POST \
 
 ```bash
 curl -X GET \
-  "https://<tenant>.app.his.pro/api/v1/wards/beds" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/beds" \
   -H "Authorization: Bearer <access-token>"
 ```
 
@@ -7706,7 +7706,7 @@ curl -X GET \
 
 ```bash
 curl -X POST \
-  "https://<tenant>.app.his.pro/api/v1/wards/beds" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/beds" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \
@@ -7750,7 +7750,7 @@ curl -X POST \
 
 ```bash
 curl -X PUT \
-  "https://<tenant>.app.his.pro/api/v1/wards/beds/{bed_id}" \
+  "https://<tenant>.<tenant-base-domain>/api/v1/wards/beds/{bed_id}" \
   -H "Authorization: Bearer <access-token>" \
   -H "Idempotency-Key: <unique-operation-key>" \
   -H "Content-Type: application/json" \

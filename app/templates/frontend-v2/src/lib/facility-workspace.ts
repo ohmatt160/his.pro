@@ -3,6 +3,8 @@ import { normalizeModules } from "@/lib/modules";
 import {
   getCanonicalTenantUrl,
   getCurrentBranchSlugFromPath,
+  getPublicAppOrigin,
+  getTenantBaseDomain,
   getTenantPath,
   isValidCanonicalSubdomain,
 } from "@/lib/tenant-routing";
@@ -92,12 +94,13 @@ export const getFacilityPlatformLink = (
   canonicalSubdomain = facilitySlug
 ) => {
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+    typeof window !== "undefined" ? window.location.origin : getPublicAppOrigin();
   const hostname = typeof window !== "undefined" ? window.location.hostname : "";
   const isLocal = hostname === "localhost" || hostname === "127.0.0.1";
+  const tenantBaseDomain = getTenantBaseDomain();
 
-  return !isLocal && isValidCanonicalSubdomain(canonicalSubdomain)
-    ? getCanonicalTenantUrl(canonicalSubdomain, "/login")
+  return !isLocal && tenantBaseDomain && isValidCanonicalSubdomain(canonicalSubdomain)
+    ? getCanonicalTenantUrl(canonicalSubdomain, "/login", tenantBaseDomain)
     : `${origin}/${facilitySlug}`;
 };
 

@@ -4,7 +4,7 @@
 
 ```mermaid
 flowchart TB
-    DNS["*.app.his.pro DNS"] --> EDGE["TLS reverse proxy / load balancer"]
+    DNS["Configured wildcard tenant DNS"] --> EDGE["TLS reverse proxy / load balancer"]
     EDGE --> SPA["React static application"]
     EDGE --> API["FastAPI + Gunicorn/Uvicorn replicas"]
     API --> DB[("PostgreSQL primary")]
@@ -77,10 +77,11 @@ adopting SQLAlchemy async sessions is a scalability recommendation.
 The intended hospital URL is:
 
 ```text
-https://<canonical-subdomain>.app.his.pro/dashboard
+https://<canonical-subdomain>.<tenant-base-domain>/dashboard
 ```
 
-The subdomain resolves to an immutable facility UUID at the HIS.Pro boundary.
+`TENANT_BASE_DOMAIN` supplies the deployment-specific suffix; it is not compiled
+as a HIS.Pro product constant. The subdomain resolves to an immutable facility UUID at the HIS.Pro boundary.
 Legacy slug-in-path links continue to resolve and redirect to the canonical host.
 The backend then authorizes user, facility UUID, and branch before querying data.
 

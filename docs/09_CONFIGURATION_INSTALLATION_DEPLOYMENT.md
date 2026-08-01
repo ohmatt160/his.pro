@@ -7,7 +7,7 @@
 - PostgreSQL 16 for production
 - Redis 7.4 for production coordination/realtime
 - ClamAV 1.5 for required upload scanning
-- Wildcard DNS/TLS for `*.app.his.pro`
+- Wildcard DNS/TLS for the configured `TENANT_BASE_DOMAIN`
 - Docker/Compose for the reference container topology
 
 SQLite is supported for development and tests only. Production validation rejects
@@ -97,10 +97,13 @@ release evidence and must not be inferred from a successful build.
 | `FRONTEND_URL` | Primary exact frontend origin |
 | `ALLOWED_ORIGINS` | Comma-separated exact credentialed origins |
 | `ALLOWED_ORIGIN_REGEX` | Optional tightly reviewed tenant origin pattern |
+| `TENANT_BASE_DOMAIN` | DNS suffix for canonical facility hosts; no scheme or path |
+| `PUBLIC_APP_ORIGIN` | Exact HTTPS origin for generic product/login pages |
 
 Never use `*` for credentialed production CORS. Tenant wildcard DNS and TLS are an
-edge concern; CORS still needs a bounded `https://<valid-subdomain>.app.his.pro`
-policy and reserved-subdomain protection.
+edge concern; CORS still needs a bounded tenant-origin policy and
+reserved-subdomain protection. The Vercel build injects `TENANT_BASE_DOMAIN`
+into the browser bundle so browser links and server redirects share one value.
 
 ### Database And Pooling
 
@@ -219,7 +222,7 @@ docker compose --profile ohmattos up -d integration-outbox-worker
 ## Reverse Proxy, DNS, And TLS
 
 1. Provision an A/AAAA or CNAME target for the edge/load balancer.
-2. Add wildcard DNS for `*.app.his.pro` and the root/product domains.
+2. Add wildcard DNS for `*.<tenant-base-domain>` and the root/product domains.
 3. Issue/rotate a wildcard or automated per-host certificate.
 4. Forward the original host and trusted client IP headers.
 5. Redirect HTTP to HTTPS and legacy HIS.Pro paths to canonical tenant hosts.

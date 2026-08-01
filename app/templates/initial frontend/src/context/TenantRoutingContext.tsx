@@ -2,7 +2,10 @@ import { createContext, useContext, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 import { apiClient } from "@/api/client";
-import { getCanonicalSubdomainFromHostname } from "@/lib/tenant-routing";
+import {
+  getCanonicalSubdomainFromHostname,
+  getPublicAppUrl,
+} from "@/lib/tenant-routing";
 
 type HostResolution = {
   slug: string;
@@ -12,6 +15,12 @@ type HostResolution = {
 type TenantRoutingContextValue = {
   canonicalSubdomain: string;
   facilitySlug: string;
+};
+
+type TenantRouteParams = Record<string, string | undefined> & {
+  routeFacilitySlug: string;
+  facilitySlug: string;
+  branchSlug: string;
 };
 
 const EMPTY_TENANT: TenantRoutingContextValue = {
@@ -28,7 +37,7 @@ const TenantState = ({ title, detail }: { title: string; detail: string }) => (
       <p className="mt-3 text-sm leading-6 text-muted-foreground">{detail}</p>
       <a
         className="mt-6 inline-flex text-sm font-semibold text-primary hover:underline"
-        href="https://his.pro/login"
+        href={getPublicAppUrl("/login")}
       >
         Find your workspace
       </a>
@@ -96,7 +105,7 @@ export const TenantRoutingProvider = ({ children }: { children: ReactNode }) => 
 
 export const useTenantRouting = () => useContext(TenantRoutingContext);
 
-export const useTenantParams = () => {
+export const useTenantParams = (): TenantRouteParams => {
   const params = useParams();
   const tenant = useTenantRouting();
 
@@ -105,5 +114,5 @@ export const useTenantParams = () => {
     routeFacilitySlug: params.facilitySlug || "",
     facilitySlug: tenant.facilitySlug || params.facilitySlug || "",
     branchSlug: params.branchSlug || "",
-  };
+  } as TenantRouteParams;
 };

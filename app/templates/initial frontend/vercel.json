@@ -6,14 +6,6 @@
 
     "rewrites": [
         {
-            "source": "/:rest*",
-            "has": [{
-                "type": "host",
-                "value": "^(?!(?:admin|api|app|assets|auth|cdn|help|mail|static|status|support|www)\\.his\\.pro$)(?<legacyFacility>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)\\.his\\.pro$"
-            }],
-            "destination": "/api/tenant-redirect?__hispro_facility=:legacyFacility&__hispro_kind=preserve&__hispro_rest=:rest*"
-        },
-        {
             "source": "/:facilitySlug/branches/:branchSlug/:rest*",
             "has": [{ "type": "host", "value": "^(?:his\\.pro|www\\.his\\.pro|his-pro(?:-v1-0)?\\.vercel\\.app)$" }],
             "destination": "/api/tenant-redirect?__hispro_facility=:facilitySlug&__hispro_kind=branch&__hispro_branch=:branchSlug&__hispro_rest=:rest*"

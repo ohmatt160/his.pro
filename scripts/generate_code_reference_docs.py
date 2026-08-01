@@ -413,7 +413,10 @@ def curl_example(
     has_body: bool,
     body_example: Any,
 ) -> str:
-    command = [f"curl -X {method}", f'"https://<tenant>.app.his.pro{path}"']
+    command = [
+        f"curl -X {method}",
+        f'"https://<tenant>.<tenant-base-domain>{path}"',
+    ]
     if authenticated:
         command.append('-H "Authorization: Bearer <access-token>"')
     if method in {"POST", "PUT", "PATCH", "DELETE"}:

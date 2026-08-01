@@ -120,8 +120,11 @@ publish a general onboarding code or send it through an insecure group channel.
 The approved format is:
 
 ```text
-https://<hospital-subdomain>.app.his.pro
+https://<hospital-subdomain>.<tenant-base-domain>
 ```
+
+For example, a deployment configured with `TENANT_BASE_DOMAIN=his.pro` issues
+`https://sunrise-medical.his.pro`. The suffix may differ by deployment.
 
 Old supported links redirect to the canonical URL. Users should update bookmarks.
 If a link shows another hospital subdomain, stop and contact the administrator.

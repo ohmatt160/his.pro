@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import handler from "../api/tenant-redirect.js";
 
+const vercelConfig = JSON.parse(
+  readFileSync(new URL("../vercel.json", import.meta.url), "utf8")
+);
 
 const makeResponse = () => ({
   body: undefined,
@@ -23,9 +27,9 @@ const makeResponse = () => ({
   },
 });
 
-const request = (query) => ({
+const request = (query, host = "his-pro.vercel.app") => ({
   method: "GET",
-  headers: { host: "his.pro" },
+  headers: { host },
   query,
 });
 
@@ -42,9 +46,22 @@ const facilityResponse = (overrides = {}) =>
 test.beforeEach(() => {
   process.env.HF_BACKEND_URL = "https://backend.example.test";
   process.env.HF_TOKEN = "private-hf-token";
+  process.env.TENANT_BASE_DOMAIN = "his-pro.vercel.app";
+  process.env.PUBLIC_APP_ORIGIN = "https://his-pro.vercel.app";
+  delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  delete process.env.VERCEL_URL;
 });
 
-test("validates a legacy facility and returns a fixed-domain 308", async () => {
+test("does not send every canonical tenant hostname through a legacy redirect", () => {
+  const catchAllTenantRedirects = vercelConfig.rewrites.filter(
+    (rewrite) =>
+      rewrite.source === "/:rest*" &&
+      rewrite.destination.includes("/api/tenant-redirect")
+  );
+  assert.deepEqual(catchAllTenantRedirects, []);
+});
+
+test("validates a legacy facility and returns a configured-domain 308", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, options) => {
     assert.equal(
@@ -52,25 +69,29 @@ test("validates a legacy facility and returns a fixed-domain 308", async () => {
       "https://backend.example.test/api/v1/facilities/resolve-workspace/sunrise-medical"
     );
     assert.equal(options.headers.authorization, "Bearer private-hf-token");
+    assert.equal(options.headers["x-forwarded-host"], "his-pro.vercel.app");
     return facilityResponse();
   };
 
   try {
     const response = makeResponse();
     await handler(
-      request({
-        __hispro_facility: "sunrise-medical",
-        __hispro_kind: "dashboard",
-        __hispro_rest: "patients/patient-1/timeline",
-        tab: "history",
-      }),
+      request(
+        {
+          __hispro_facility: "sunrise-medical",
+          __hispro_kind: "dashboard",
+          __hispro_rest: "patients/patient-1/timeline",
+          tab: "history",
+        },
+        "attacker.example.test"
+      ),
       response
     );
 
     assert.equal(response.statusCode, 308);
     assert.equal(
       response.headers.get("location"),
-      "https://sunrise-medical.app.his.pro/dashboard/patients/patient-1/timeline?tab=history"
+      "https://sunrise-medical.his-pro.vercel.app/dashboard/patients/patient-1/timeline?tab=history"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -95,7 +116,7 @@ test("normalizes path-based branch URLs from an old tenant hostname", async () =
     assert.equal(response.statusCode, 308);
     assert.equal(
       response.headers.get("location"),
-      "https://sunrise-medical.app.his.pro/branches/lagos/dashboard/laboratory"
+      "https://sunrise-medical.his-pro.vercel.app/branches/lagos/dashboard/laboratory"
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -122,7 +143,7 @@ test("keeps long path-safe branch slugs during migration", async () => {
     assert.equal(response.statusCode, 308);
     assert.equal(
       response.headers.get("location"),
-      `https://sunrise-medical.app.his.pro/branches/${branchSlug}/dashboard`
+      `https://sunrise-medical.his-pro.vercel.app/branches/${branchSlug}/dashboard`
     );
   } finally {
     globalThis.fetch = originalFetch;
@@ -189,9 +210,61 @@ test("does not permanently cache an unknown legacy workspace", async () => {
     assert.equal(response.statusCode, 307);
     assert.equal(
       response.headers.get("location"),
-      "https://his.pro/login?workspace=missing-clinic"
+      "https://his-pro.vercel.app/login?workspace=missing-clinic"
     );
     assert.equal(response.headers.get("cache-control"), "private, no-store");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("supports a custom wildcard tenant domain without code changes", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => facilityResponse();
+  process.env.TENANT_BASE_DOMAIN = "his.pro";
+
+  try {
+    const response = makeResponse();
+    await handler(
+      request({
+        __hispro_facility: "sunrise-medical",
+        __hispro_kind: "login",
+      }),
+      response
+    );
+
+    assert.equal(response.statusCode, 308);
+    assert.equal(
+      response.headers.get("location"),
+      "https://sunrise-medical.his.pro/login"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fails closed when the configured tenant domain contains URL syntax", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetched = false;
+  globalThis.fetch = async () => {
+    fetched = true;
+    return facilityResponse();
+  };
+  process.env.TENANT_BASE_DOMAIN = "his-pro.vercel.app/attacker";
+
+  try {
+    const response = makeResponse();
+    await handler(
+      request({
+        __hispro_facility: "sunrise-medical",
+        __hispro_kind: "login",
+      }),
+      response
+    );
+
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.headers.get("location"), undefined);
+    assert.equal(fetched, false);
   } finally {
     globalThis.fetch = originalFetch;
   }

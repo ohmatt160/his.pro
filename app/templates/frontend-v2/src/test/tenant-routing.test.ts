@@ -1,24 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCanonicalPathForLegacyPath,
   getCanonicalSubdomainFromHostname,
   getCanonicalTenantUrl,
+  getTenantBaseDomain,
   isValidCanonicalSubdomain,
 } from "../lib/tenant-routing";
 
 describe("tenant URL routing", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   it("extracts only one valid tenant label from the configured base domain", () => {
     expect(
       getCanonicalSubdomainFromHostname(
-        "sunrise-medical.app.his.pro",
-        "app.his.pro"
+        "sunrise-medical.his-pro.vercel.app",
+        "his-pro.vercel.app"
       )
     ).toBe("sunrise-medical");
     expect(
-      getCanonicalSubdomainFromHostname("nested.sunrise.app.his.pro", "app.his.pro")
+      getCanonicalSubdomainFromHostname(
+        "nested.sunrise.his-pro.vercel.app",
+        "his-pro.vercel.app"
+      )
     ).toBe("");
     expect(
-      getCanonicalSubdomainFromHostname("sunrise.app.his.pro.evil.test", "app.his.pro")
+      getCanonicalSubdomainFromHostname(
+        "sunrise.his-pro.vercel.app.evil.test",
+        "his-pro.vercel.app"
+      )
     ).toBe("");
   });
 
@@ -29,11 +38,33 @@ describe("tenant URL routing", () => {
     expect(isValidCanonicalSubdomain("a".repeat(64))).toBe(false);
   });
 
-  it("builds a fixed-domain canonical URL", () => {
-    expect(getCanonicalTenantUrl("sunrise-medical", "/dashboard/patients")).toBe(
-      "https://sunrise-medical.app.his.pro/dashboard/patients"
+  it("builds a canonical URL from the deployment domain", () => {
+    expect(
+      getCanonicalTenantUrl(
+        "sunrise-medical",
+        "/dashboard/patients",
+        "his-pro.vercel.app"
+      )
+    ).toBe("https://sunrise-medical.his-pro.vercel.app/dashboard/patients");
+    expect(getCanonicalTenantUrl("sunrise-medical", "/login", "his.pro")).toBe(
+      "https://sunrise-medical.his.pro/login"
     );
-    expect(() => getCanonicalTenantUrl("bad.host", "/login")).toThrow();
+    expect(() =>
+      getCanonicalTenantUrl("bad.host", "/login", "his.pro")
+    ).toThrow();
+    expect(() =>
+      getCanonicalTenantUrl("sunrise-medical", "/login", "bad/domain")
+    ).toThrow();
+  });
+
+  it("reads and validates the configured tenant base domain", () => {
+    vi.stubEnv("VITE_TENANT_BASE_DOMAIN", "Hospitals.Example.Com.");
+    expect(getTenantBaseDomain()).toBe("hospitals.example.com");
+
+    vi.stubEnv("VITE_TENANT_BASE_DOMAIN", "hospitals.example.com/redirect");
+    expect(() => getTenantBaseDomain()).toThrow(
+      "The configured tenant base domain is invalid."
+    );
   });
 
   it.each([

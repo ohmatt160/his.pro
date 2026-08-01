@@ -1,4 +1,3 @@
-const DEFAULT_TENANT_BASE_DOMAIN = "app.his.pro";
 const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const RESERVED_SUBDOMAINS = new Set([
   "admin",
@@ -18,10 +17,70 @@ const RESERVED_SUBDOMAINS = new Set([
 const normalizeHostname = (hostname: string) =>
   hostname.trim().toLowerCase().replace(/\.$/, "");
 
-export const getTenantBaseDomain = () =>
-  normalizeHostname(
-    import.meta.env.VITE_TENANT_BASE_DOMAIN || DEFAULT_TENANT_BASE_DOMAIN
+const isValidTenantBaseDomain = (value: string) => {
+  const normalized = normalizeHostname(value);
+  return (
+    normalized.length <= 253 &&
+    normalized.includes(".") &&
+    normalized.split(".").every((label) => DNS_LABEL_PATTERN.test(label))
   );
+};
+
+export const getTenantBaseDomain = () => {
+  const configured =
+    import.meta.env.VITE_RESOLVED_TENANT_BASE_DOMAIN ||
+    import.meta.env.VITE_TENANT_BASE_DOMAIN ||
+    "";
+  if (!configured) {
+    return "";
+  }
+
+  const normalized = normalizeHostname(configured);
+  if (!isValidTenantBaseDomain(normalized)) {
+    throw new Error("The configured tenant base domain is invalid.");
+  }
+  return normalized;
+};
+
+export const getPublicAppOrigin = () => {
+  const configured =
+    import.meta.env.VITE_RESOLVED_PUBLIC_APP_ORIGIN ||
+    import.meta.env.VITE_PUBLIC_APP_ORIGIN ||
+    "";
+  if (configured) {
+    try {
+      const url = new URL(configured);
+      const localHttp =
+        url.protocol === "http:" &&
+        (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+      if (
+        (url.protocol !== "https:" && !localHttp) ||
+        url.username ||
+        url.password ||
+        (url.pathname !== "/" && url.pathname !== "") ||
+        url.search ||
+        url.hash
+      ) {
+        throw new Error();
+      }
+      return url.origin;
+    } catch {
+      throw new Error("The configured public app origin is invalid.");
+    }
+  }
+
+  const tenantBaseDomain = getTenantBaseDomain();
+  if (tenantBaseDomain) {
+    return `https://${tenantBaseDomain}`;
+  }
+  return typeof window !== "undefined" ? window.location.origin : "";
+};
+
+export const getPublicAppUrl = (path = "/login") => {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const origin = getPublicAppOrigin();
+  return origin ? `${origin}${normalizedPath}` : normalizedPath;
+};
 
 export const isValidCanonicalSubdomain = (value: string) =>
   DNS_LABEL_PATTERN.test(value.trim().toLowerCase()) &&
@@ -33,6 +92,9 @@ export const getCanonicalSubdomainFromHostname = (
 ) => {
   const normalizedHostname = normalizeHostname(hostname);
   const normalizedBaseDomain = normalizeHostname(baseDomain);
+  if (!isValidTenantBaseDomain(normalizedBaseDomain)) {
+    return "";
+  }
   const suffix = `.${normalizedBaseDomain}`;
 
   if (!normalizedHostname.endsWith(suffix)) {
@@ -46,21 +108,29 @@ export const getCanonicalSubdomainFromHostname = (
 export const isCanonicalTenantHost = () =>
   Boolean(getCanonicalSubdomainFromHostname());
 
-export const getCanonicalTenantOrigin = (canonicalSubdomain: string) => {
+export const getCanonicalTenantOrigin = (
+  canonicalSubdomain: string,
+  baseDomain = getTenantBaseDomain()
+) => {
   const normalized = canonicalSubdomain.trim().toLowerCase();
   if (!isValidCanonicalSubdomain(normalized)) {
     throw new Error("A valid facility subdomain is required.");
   }
+  const normalizedBaseDomain = normalizeHostname(baseDomain);
+  if (!isValidTenantBaseDomain(normalizedBaseDomain)) {
+    throw new Error("A valid tenant base domain is required.");
+  }
 
-  return `https://${normalized}.${getTenantBaseDomain()}`;
+  return `https://${normalized}.${normalizedBaseDomain}`;
 };
 
 export const getCanonicalTenantUrl = (
   canonicalSubdomain: string,
-  path = "/login"
+  path = "/login",
+  baseDomain = getTenantBaseDomain()
 ) => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${getCanonicalTenantOrigin(canonicalSubdomain)}${normalizedPath}`;
+  return `${getCanonicalTenantOrigin(canonicalSubdomain, baseDomain)}${normalizedPath}`;
 };
 
 export const getTenantPath = (canonicalPath: string, legacyPath: string) =>

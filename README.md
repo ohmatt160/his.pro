@@ -100,6 +100,6 @@ Key documents:
 - Store independent secrets/private keys in a secret manager; never commit `.env`.
 - Keep public signup and every OhmattOS feature flag off until its launch gate closes.
 - Run `python scripts/migrate.py` as a one-shot deployment step before API/workers.
-- Use canonical tenant hosts such as `https://<hospital>.app.his.pro` and preserve
-  legacy redirects during migration.
+- Configure `TENANT_BASE_DOMAIN` for a wildcard domain you control, then use
+  canonical tenant hosts such as `https://<hospital>.<tenant-base-domain>`.
 - Do not claim compliance certification based on this application alone.

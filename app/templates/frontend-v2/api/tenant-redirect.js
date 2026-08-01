@@ -1,11 +1,66 @@
 const FACILITY_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?$/;
 const SUBDOMAIN_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const DOMAIN_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 const PATH_SEGMENT_PATTERN = /^[a-zA-Z0-9._~-]+$/;
 const MAX_PATH_SEGMENT_LENGTH = 200;
-const TENANT_BASE_DOMAIN = "app.his.pro";
 const INTERNAL_QUERY_PREFIX = "__hispro_";
 
 const firstValue = (value) => (Array.isArray(value) ? value[0] : value || "");
+
+const normalizeBaseDomain = (value) => {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\.$/, "");
+  if (
+    !normalized ||
+    normalized.length > 253 ||
+    !normalized.includes(".") ||
+    !normalized.split(".").every((label) => DOMAIN_LABEL_PATTERN.test(label))
+  ) {
+    return "";
+  }
+  return normalized;
+};
+
+const resolveTenantBaseDomain = () => {
+  const configured =
+    process.env.TENANT_BASE_DOMAIN || process.env.VITE_TENANT_BASE_DOMAIN || "";
+  return normalizeBaseDomain(configured);
+};
+
+const normalizePublicAppOrigin = (value) => {
+  try {
+    const url = new URL(String(value || ""));
+    const localHttp =
+      process.env.NODE_ENV !== "production" &&
+      url.protocol === "http:" &&
+      (url.hostname === "localhost" || url.hostname === "127.0.0.1");
+    if (
+      (url.protocol !== "https:" && !localHttp) ||
+      url.username ||
+      url.password ||
+      (url.pathname !== "/" && url.pathname !== "") ||
+      url.search ||
+      url.hash
+    ) {
+      return "";
+    }
+    return url.origin;
+  } catch {
+    return "";
+  }
+};
+
+const resolvePublicAppOrigin = (tenantBaseDomain) => {
+  const configured =
+    process.env.PUBLIC_APP_ORIGIN || process.env.VITE_PUBLIC_APP_ORIGIN || "";
+  if (configured) {
+    return normalizePublicAppOrigin(configured);
+  }
+
+  const vercelHostname = normalizeBaseDomain(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL || ""
+  );
+  return `https://${vercelHostname || tenantBaseDomain}`;
+};
 
 const decodePathSegment = (value) => {
   try {
@@ -127,6 +182,13 @@ export default async function handler(request, response) {
     return;
   }
 
+  const tenantBaseDomain = resolveTenantBaseDomain();
+  const publicAppOrigin = resolvePublicAppOrigin(tenantBaseDomain);
+  if (!tenantBaseDomain || !normalizePublicAppOrigin(publicAppOrigin)) {
+    response.status(503).json({ message: "Tenant routing is not configured." });
+    return;
+  }
+
   const backendUrl = process.env.HF_BACKEND_URL?.trim().replace(/\/+$/, "");
   const hfToken = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
   if (!backendUrl || !hfToken) {
@@ -140,7 +202,7 @@ export default async function handler(request, response) {
     redirect(
       response,
       307,
-      "https://his.pro/login",
+      `${publicAppOrigin}/login`,
       "private, no-store"
     );
     return;
@@ -154,7 +216,7 @@ export default async function handler(request, response) {
         headers: {
           accept: "application/json",
           authorization: `Bearer ${hfToken}`,
-          "x-forwarded-host": request.headers.host || "",
+          "x-forwarded-host": new URL(publicAppOrigin).host,
           "x-forwarded-proto": "https",
         },
         redirect: "manual",
@@ -163,7 +225,7 @@ export default async function handler(request, response) {
     );
 
     if (upstream.status === 404) {
-      const fallback = new URL("https://his.pro/login");
+      const fallback = new URL("/login", publicAppOrigin);
       fallback.searchParams.set("workspace", facilitySlug);
       redirect(response, 307, fallback.toString(), "private, no-store");
       return;
@@ -191,7 +253,7 @@ export default async function handler(request, response) {
 
     const destination = new URL(
       targetPath,
-      `https://${canonicalSubdomain}.${TENANT_BASE_DOMAIN}`
+      `https://${canonicalSubdomain}.${tenantBaseDomain}`
     );
     appendOriginalQuery(destination, request.query);
     redirect(

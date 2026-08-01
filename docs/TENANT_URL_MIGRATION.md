@@ -7,7 +7,7 @@ Status: implementation verified; production DNS, TLS, deployment, and smoke test
 Move every existing facility to:
 
 ```text
-https://<canonical-subdomain>.app.his.pro
+https://<canonical-subdomain>.<tenant-base-domain>
 ```
 
 without changing the facility's account, users, branches, records, or immutable
@@ -37,31 +37,31 @@ SQLite development databases. Production deployments must use Alembic.
 
 ## Legacy URL Behavior
 
-The current frontend and V2 support the legacy path forms, old tenant hostnames,
-and the known production Vercel hostnames. Examples:
+The current frontend and V2 support legacy path forms on the configured product
+frontend hostnames. Examples:
 
 ```text
 https://his.pro/login/sunrise-medical
 https://his.pro/dashboard/sunrise-medical/patients
-https://sunrise-medical.his.pro/dashboard/patients
 ```
 
 After validating the facility through the backend, they redirect to:
 
 ```text
-https://sunrise-medical.app.his.pro/login
-https://sunrise-medical.app.his.pro/dashboard/patients
+https://sunrise-medical.his.pro/login
+https://sunrise-medical.his.pro/dashboard/patients
 ```
 
-Valid existing facilities receive `308 Permanent Redirect`. Unknown facilities
+Valid existing path-based facilities receive `308 Permanent Redirect`. Unknown facilities
 receive a non-cacheable `307` to the generic workspace login instead of a `404`.
 This prevents a temporary lookup failure or typo from becoming a permanently
 cached negative redirect.
 
-The redirect destination is constructed only under the fixed `app.his.pro`
-suffix. The backend resolves the immutable facility row while returning only its
-slug and canonical routing label. The handler verifies both values, route
-segments, and HTTP method. Internal routing parameters are stripped. This
+The redirect destination is constructed only under the validated
+`TENANT_BASE_DOMAIN` suffix. The request `Host` header cannot select or alter the
+destination. The backend resolves the immutable facility row while returning
+only its slug and canonical routing label. The handler verifies both values,
+route segments, and HTTP method. Internal routing parameters are stripped. This
 prevents open redirects, tenant substitution, and configuration leakage.
 
 ## Session Behavior
@@ -81,15 +81,24 @@ token embedded in the URL.
 1. Take a verified database backup and rehearse restore.
 2. Deploy the backend code and run `alembic upgrade head` before serving the new frontend.
 3. Verify every active facility has one unique, valid canonical subdomain.
-4. Configure wildcard DNS and TLS for `*.app.his.pro` on the frontend platform.
-5. Configure `VITE_TENANT_BASE_DOMAIN=app.his.pro` and the private backend proxy credentials.
+4. Configure wildcard DNS and TLS for the tenant domain on the frontend platform,
+   for example `*.his.pro`.
+5. Configure `TENANT_BASE_DOMAIN=his.pro`, `PUBLIC_APP_ORIGIN`, and the private
+   backend proxy credentials in the Vercel project. The Vite build receives the
+   validated tenant suffix from this same server-side setting.
 6. Deploy the current frontend and V2 artifacts as applicable.
 7. Smoke-test login, refresh, logout, dashboard, branch routes, patient portal,
    WebSocket authorization, and a cross-tenant denial on canonical hostnames.
-8. Test representative legacy URLs and verify the exact canonical `Location` header.
+8. Test representative legacy path URLs and verify the exact canonical `Location` header.
 9. Keep the old domains and path routes online as long-lived redirect entry points.
 10. Monitor redirect status, resolver latency, lookup failures, loops, and tenant
     mismatch denials without placing PHI in logs or metric labels.
+
+The generated `his-pro.vercel.app` project hostname is a deployment entry point,
+not a wildcard domain owned by HIS.Pro. A hostname such as
+`sunrise-medical.his-pro.vercel.app` must not be launched unless the hosting
+provider explicitly assigns that wildcard. Use a custom wildcard domain for
+production tenant URLs.
 
 ## Rollback
 

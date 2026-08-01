@@ -2,6 +2,8 @@ import { apiClient, type AuthUser } from "@/api/client";
 import {
   getCanonicalTenantUrl,
   getCurrentBranchSlugFromPath,
+  getPublicAppOrigin,
+  getTenantBaseDomain,
   getTenantPath,
   isCanonicalTenantHost,
   isValidCanonicalSubdomain,
@@ -177,12 +179,13 @@ export const getFacilityLoginPath = (facilitySlug: string) =>
 
 export const getFacilityLoginLink = (facilitySlug: string) => {
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+    typeof window !== "undefined" ? window.location.origin : getPublicAppOrigin();
+  const tenantBaseDomain = getTenantBaseDomain();
 
   return isCanonicalTenantHost()
     ? `${origin}/login`
-    : isValidCanonicalSubdomain(facilitySlug)
-      ? getCanonicalTenantUrl(facilitySlug, "/login")
+    : tenantBaseDomain && isValidCanonicalSubdomain(facilitySlug)
+      ? getCanonicalTenantUrl(facilitySlug, "/login", tenantBaseDomain)
       : `${origin}/${encodeURIComponent(facilitySlug)}`;
 };
 
@@ -194,12 +197,17 @@ export const getBranchLoginPath = (facilitySlug: string, branchSlug: string) =>
 
 export const getBranchLoginLink = (facilitySlug: string, branchSlug: string) => {
   const origin =
-    typeof window !== "undefined" ? window.location.origin : "https://his.pro";
+    typeof window !== "undefined" ? window.location.origin : getPublicAppOrigin();
+  const tenantBaseDomain = getTenantBaseDomain();
 
   return isCanonicalTenantHost()
     ? `${origin}/branches/${branchSlug}/login`
-    : isValidCanonicalSubdomain(facilitySlug)
-      ? getCanonicalTenantUrl(facilitySlug, `/branches/${branchSlug}/login`)
+    : tenantBaseDomain && isValidCanonicalSubdomain(facilitySlug)
+      ? getCanonicalTenantUrl(
+          facilitySlug,
+          `/branches/${branchSlug}/login`,
+          tenantBaseDomain
+        )
       : `${origin}/${encodeURIComponent(facilitySlug)}/branches/${encodeURIComponent(branchSlug)}/login`;
 };
 

@@ -149,6 +149,8 @@ const Dashboard = () => {
       phone: facility.phone || current?.phone || "",
       selectedModules: normalizeModules(activeBranch ? activeBranch.modules || [] : facility.modules),
       facilitySlug: facility.slug,
+      canonicalSubdomain:
+        facility.canonical_subdomain || current?.canonicalSubdomain || facility.slug,
       createdAt: facility.created_at || current?.createdAt || new Date().toISOString(),
     }));
     setIsLoading(false);
