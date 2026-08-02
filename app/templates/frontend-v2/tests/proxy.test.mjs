@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import handler from "../api/proxy.js";
+import handler, { config } from "../api/proxy.js";
+import legacyHandler, { config as legacyConfig } from "../api/v1/[...path].js";
 
 const makeRequest = ({ method = "POST", headers = {}, path = ["auth", "refresh"], body } = {}) => ({
   method,
@@ -36,6 +37,11 @@ const makeResponse = () => ({
 test.beforeEach(() => {
   process.env.HF_BACKEND_URL = "https://backend.example.test";
   process.env.HF_TOKEN = "private-service-token";
+});
+
+test("uses the hardened proxy for the filesystem API route", () => {
+  assert.equal(legacyHandler, handler);
+  assert.equal(legacyConfig, config);
 });
 
 test("forwards CSRF, idempotency, onboarding, cookies, and user authorization safely", async () => {

@@ -50,6 +50,15 @@ const splitSetCookie = (value) => {
   return value.split(/,(?=\s*[^;,=\s]+=[^;])/g).map((item) => item.trim());
 };
 
+const getSetCookieHeaders = (headers) => {
+  const values =
+    typeof headers.getSetCookie === "function"
+      ? headers.getSetCookie()
+      : [headers.get("set-cookie")];
+
+  return values.flatMap(splitSetCookie);
+};
+
 export default async function handler(request, response) {
   const backendUrl = process.env.HF_BACKEND_URL?.trim().replace(/\/+$/, "");
   const hfToken = process.env.HF_TOKEN || process.env.HUGGINGFACE_TOKEN;
@@ -132,16 +141,17 @@ export default async function handler(request, response) {
       const lowerKey = key.toLowerCase();
       if (
         HOP_BY_HOP_HEADERS.has(lowerKey) ||
-        lowerKey.startsWith("access-control-")
+        lowerKey.startsWith("access-control-") ||
+        lowerKey === "set-cookie"
       ) {
-        return;
-      }
-      if (lowerKey === "set-cookie") {
-        response.setHeader("set-cookie", splitSetCookie(value));
         return;
       }
       response.setHeader(key, value);
     });
+    const setCookieHeaders = getSetCookieHeaders(backendResponse.headers);
+    if (setCookieHeaders.length) {
+      response.setHeader("set-cookie", setCookieHeaders);
+    }
     const isPublicTenantResolution =
       request.method === "GET" &&
       /^facilities\/resolve-host\/[a-z0-9-]+$/.test(path) &&

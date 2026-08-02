@@ -140,9 +140,21 @@ class SecurityHardeningTest(unittest.TestCase):
             "expired-access-user",
             expires_delta=timedelta(seconds=-1),
         )
-        refresh_with_expired_access_header = await client.post(
+        refresh_without_csrf = await client.post(
             "/api/v1/auth/refresh",
             headers={"x-hispro-authorization": f"Bearer {expired_access_token}"},
+        )
+        self.assertEqual(refresh_without_csrf.status_code, 403)
+
+        csrf_token = client.cookies.get("hispro_csrf_token")
+        self.assertTrue(csrf_token)
+        csrf_headers = {"X-CSRF-Token": csrf_token}
+        refresh_with_expired_access_header = await client.post(
+            "/api/v1/auth/refresh",
+            headers={
+                **csrf_headers,
+                "x-hispro-authorization": f"Bearer {expired_access_token}",
+            },
         )
         self.assertEqual(
             refresh_with_expired_access_header.status_code,
@@ -150,6 +162,20 @@ class SecurityHardeningTest(unittest.TestCase):
             refresh_with_expired_access_header.text,
         )
         self.assertIn("access_token", refresh_with_expired_access_header.json())
+
+        rotated_refresh_token = client.cookies.get("hispro_refresh_token")
+        rotated_csrf_token = client.cookies.get("hispro_csrf_token")
+        self.assertTrue(rotated_refresh_token)
+        self.assertTrue(rotated_csrf_token)
+        second_refresh = await client.post(
+            "/api/v1/auth/refresh",
+            headers={"X-CSRF-Token": rotated_csrf_token},
+        )
+        self.assertEqual(second_refresh.status_code, 200, second_refresh.text)
+        self.assertNotEqual(
+            client.cookies.get("hispro_refresh_token"),
+            rotated_refresh_token,
+        )
 
         csrf_token = client.cookies.get("hispro_csrf_token")
         self.assertTrue(csrf_token)

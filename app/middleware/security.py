@@ -102,13 +102,17 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        has_authorization_header = bool(
+        has_user_authorization_header = bool(
             request.headers.get("authorization")
             or request.headers.get("x-hispro-authorization")
         )
-        uses_cookie_auth = not has_authorization_header and bool(
+        has_auth_cookie = bool(
             request.cookies.get("hispro_access_token")
             or request.cookies.get("hispro_refresh_token")
+        )
+        uses_cookie_auth = has_auth_cookie and (
+            request.url.path == "/api/v1/auth/refresh"
+            or not has_user_authorization_header
         )
         if not uses_cookie_auth:
             return await call_next(request)
