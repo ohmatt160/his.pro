@@ -16,6 +16,18 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
+const FORWARDED_REQUEST_HEADERS = [
+  "accept",
+  "accept-language",
+  "content-type",
+  "cookie",
+  "idempotency-key",
+  "user-agent",
+  "x-csrf-token",
+  "x-forwarded-for",
+  "x-onboarding-token",
+];
+
 const readBody = async (request) => {
   const chunks = [];
   for await (const chunk of request) {
@@ -67,7 +79,7 @@ export default async function handler(request, response) {
   }
 
   const headers = new Headers();
-  for (const key of ["accept", "content-type", "cookie", "user-agent", "x-forwarded-for"]) {
+  for (const key of FORWARDED_REQUEST_HEADERS) {
     const value = request.headers[key];
     if (value) {
       headers.set(key, Array.isArray(value) ? value.join(", ") : value);

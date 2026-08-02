@@ -205,6 +205,8 @@ describe("api client", () => {
     expect(result.staff).toEqual([]);
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(getFetchMock().mock.calls[1][0]).toBe("/api/v1/auth/refresh");
+    const refreshHeaders = getFetchMock().mock.calls[1][1].headers as Headers;
+    expect(refreshHeaders.get("X-CSRF-Token")).toBe("csrf-123");
 
     const retryHeaders = getFetchMock().mock.calls[2][1].headers as Headers;
     expect(retryHeaders.get("Authorization")).toBe("Bearer refreshed-token");

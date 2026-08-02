@@ -9,7 +9,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run",
+    "test": "vitest run && node --test tests/tenant-redirect.test.mjs tests/proxy.test.mjs",
     "test:watch": "vitest"
   },
   "dependencies": {

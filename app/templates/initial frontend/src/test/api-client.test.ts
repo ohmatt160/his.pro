@@ -27,6 +27,7 @@ describe("api client", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     window.localStorage.clear();
+    document.cookie = "hispro_csrf_token=; Max-Age=0; path=/";
   });
 
   it("persists and clears auth state", () => {
@@ -166,6 +167,7 @@ describe("api client", () => {
   });
 
   it("refreshes once and retries protected requests after a 401", async () => {
+    document.cookie = "hispro_csrf_token=csrf-123; path=/";
     vi.mocked(fetch)
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ detail: "Token expired" }), {
@@ -191,6 +193,8 @@ describe("api client", () => {
     expect(result.staff).toEqual([]);
     expect(fetch).toHaveBeenCalledTimes(3);
     expect(getFetchMock().mock.calls[1][0]).toBe("/api/v1/auth/refresh");
+    const refreshHeaders = getFetchMock().mock.calls[1][1].headers as Headers;
+    expect(refreshHeaders.get("X-CSRF-Token")).toBe("csrf-123");
 
     const retryHeaders = getFetchMock().mock.calls[2][1].headers as Headers;
     expect(retryHeaders.get("Authorization")).toBe("Bearer refreshed-token");
