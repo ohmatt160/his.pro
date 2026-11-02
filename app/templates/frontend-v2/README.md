@@ -33,8 +33,8 @@ Create a separate Vercel project for this branch and set its Root Directory to
 `app/templates/frontend-v2`. Configure these project environment variables:
 
 - `VITE_API_BASE_URL=/api/v1`
-- `HF_BACKEND_URL=<HTTPS origin of the HIS.Pro staging Space>`
-- `HF_TOKEN=<server-side Hugging Face access token>` when the Space is private
+- `HF_BACKEND_URL=https://ohmatt160-his-pro-staging.hf.space` for the current staging Space
+- `HF_TOKEN=<server-side Hugging Face read token>` (required by the proxy)
 - `VITE_REALTIME_WS_URL=<direct WSS base>` only when staging exposes a direct
   WebSocket endpoint and that endpoint allows this Vercel origin
 
