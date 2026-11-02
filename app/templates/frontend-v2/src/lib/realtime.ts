@@ -17,16 +17,19 @@ export type RealtimeEvent = {
   occurred_at?: string;
 };
 
-const getApiBaseUrl = () => {
-  const configuredUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "");
-  return configuredUrl || "/api/v1";
-};
-
 export const getRealtimeWebSocketUrl = () => {
-  const apiUrl = new URL(getApiBaseUrl(), window.location.origin);
-  const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
-  const path = `${apiUrl.pathname.replace(/\/+$/, "")}/realtime/ws`;
-  return `${protocol}//${apiUrl.host}${path}`;
+  const configuredUrl = import.meta.env.VITE_REALTIME_WS_URL?.trim();
+  if (!configuredUrl) return null;
+
+  try {
+    const socketUrl = new URL(configuredUrl);
+    if (socketUrl.protocol !== "wss:" && socketUrl.protocol !== "ws:") return null;
+    if (socketUrl.username || socketUrl.password || socketUrl.search || socketUrl.hash) return null;
+    socketUrl.pathname = `${socketUrl.pathname.replace(/\/+$/, "")}/realtime/ws`;
+    return socketUrl.toString();
+  } catch {
+    return null;
+  }
 };
 
 export const dispatchRealtimeEvent = (event: RealtimeEvent) => {

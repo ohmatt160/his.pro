@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/context/AuthContext";
+import { apiClient } from "@/api/client";
 import {
   dispatchRealtimeEvent,
   getRealtimeWebSocketUrl,
@@ -32,9 +33,34 @@ const RealtimeBridge = () => {
       }
     };
 
-    const connect = () => {
+    const scheduleReconnect = () => {
+      if (!isActive || reconnectTimer.current) return;
+      const delay = Math.min(1000 * 2 ** reconnectAttempt.current, MAX_RECONNECT_DELAY_MS);
+      reconnectAttempt.current += 1;
+      reconnectTimer.current = window.setTimeout(() => {
+        reconnectTimer.current = null;
+        void connect();
+      }, delay);
+    };
+
+    async function connect() {
       clearReconnect();
-      const socket = new WebSocket(getRealtimeWebSocketUrl());
+      const socketUrl = getRealtimeWebSocketUrl();
+      if (!socketUrl) return;
+
+      let ticket: string;
+      try {
+        const response = await apiClient.post<{ ticket: string }>("/realtime/ticket", {});
+        ticket = response.ticket;
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+      if (!isActive) return;
+
+      const url = new URL(socketUrl);
+      url.searchParams.set("ticket", ticket);
+      const socket = new WebSocket(url.toString());
       socketRef.current = socket;
 
       socket.onopen = () => {
@@ -58,17 +84,9 @@ const RealtimeBridge = () => {
       };
 
       socket.onclose = () => {
-        if (!isActive) {
-          return;
-        }
-        const delay = Math.min(
-          1000 * 2 ** reconnectAttempt.current,
-          MAX_RECONNECT_DELAY_MS
-        );
-        reconnectAttempt.current += 1;
-        reconnectTimer.current = window.setTimeout(connect, delay);
+        scheduleReconnect();
       };
-    };
+    }
 
     connect();
 

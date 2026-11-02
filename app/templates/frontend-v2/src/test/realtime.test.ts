@@ -1,9 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getRealtimeWebSocketUrl,
   invalidateRealtimeQueries,
   realtimeEventMatchesUserScope,
   type RealtimeEvent,
 } from "../lib/realtime";
+
+describe("realtime endpoint configuration", () => {
+  it("does not infer a WebSocket endpoint from the Vercel HTTP proxy", () => {
+    vi.stubEnv("VITE_REALTIME_WS_URL", "");
+    expect(getRealtimeWebSocketUrl()).toBeNull();
+  });
+
+  it("uses only an explicit secure direct endpoint and rejects credentials", () => {
+    vi.stubEnv("VITE_REALTIME_WS_URL", "wss://backend.example.test/api/v1");
+    expect(getRealtimeWebSocketUrl()).toBe("wss://backend.example.test/api/v1/realtime/ws");
+    vi.stubEnv("VITE_REALTIME_WS_URL", "wss://user:secret@backend.example.test/api/v1");
+    expect(getRealtimeWebSocketUrl()).toBeNull();
+  });
+});
 
 const makeQueryClient = () =>
   ({
