@@ -45,6 +45,18 @@ describe("navigation routing", () => {
     expect(roleAllows("doctor", routeRoles.laboratory)).toBe(true);
   });
 
+  it("does not expose the full patient registry to billing-only staff", () => {
+    expect(roleAllows("billing", routeRoles.patients)).toBe(false);
+    expect(roleAllows("billing", routeRoles.billing)).toBe(true);
+    expect(
+      canUsePortalRoute({
+        key: "patients",
+        modules: ["reception", "billing"],
+        role: "billing",
+      })
+    ).toBe(false);
+  });
+
   it("keeps staff portal actions aligned with role and module permissions", () => {
     const modules = ["reception", "records", "consultations", "lab", "pharmacy"];
 

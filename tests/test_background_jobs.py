@@ -4,6 +4,7 @@ import tempfile
 import unittest
 import uuid
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -24,8 +25,12 @@ class BackgroundJobIsolationTest(unittest.TestCase):
         _app, Base, cls.db_session, cls.engine, _httpx = import_isolated_app()
         Base.metadata.create_all(bind=cls.engine)
         from app.services.background_jobs import BackgroundJobService
+        from app.models.background_job import BackgroundJob
+        from app.models.facility import Facility
 
         cls.service = BackgroundJobService(inline=False)
+        cls.BackgroundJob = BackgroundJob
+        cls.Facility = Facility
 
     @classmethod
     def tearDownClass(cls):
@@ -76,6 +81,38 @@ class BackgroundJobIsolationTest(unittest.TestCase):
                 requested_by_user_id=str(uuid.uuid4()),
                 idempotency_key="test:background-job:invalid",
             )
+
+    def test_storage_purge_is_bound_to_a_purged_facility_and_retries_safely(self):
+        facility_id = str(uuid.uuid4())
+        facility = self.Facility(
+            id=facility_id,
+            name="Deleted facility",
+            type="hospital",
+            slug=f"deleted-{facility_id.replace('-', '')[:20]}",
+            canonical_subdomain=f"deleted-{facility_id.replace('-', '')[:20]}",
+            is_active=False,
+            deletion_status="PURGED",
+        )
+        self.db_session.add(facility)
+        self.db_session.commit()
+        job = self.BackgroundJob(
+            name="facility_storage_purge",
+            facility_id=facility_id,
+            requested_by_user_id=str(uuid.uuid4()),
+            idempotency_key=f"test:storage-purge:{facility_id}",
+            payload_json={"facility_slug": "former-hospital"},
+        )
+        with patch(
+            "app.services.file_upload_service.FileUploadService.delete_tenant_files",
+            return_value=True,
+        ) as delete_files:
+            result = self.service._execute(job, self.db_session)
+        delete_files.assert_called_once_with("former-hospital")
+        self.assertEqual(result, {"status": "completed", "files_removed": True})
+
+        job.facility_id = str(uuid.uuid4())
+        with self.assertRaisesRegex(RuntimeError, "ownership"):
+            self.service._execute(job, self.db_session)
 
 
 if __name__ == "__main__":

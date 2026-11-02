@@ -182,7 +182,9 @@ def _can_add_column(column) -> bool:
     if column.primary_key:
         return False
 
-    if not column.nullable and column.default is None and column.server_default is None:
+    # Python-side defaults are not emitted into ALTER TABLE statements. A new
+    # non-null column on an existing database therefore needs a DB-side default.
+    if not column.nullable and column.server_default is None:
         return False
 
     return True

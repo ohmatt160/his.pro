@@ -35,8 +35,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { useAuth } from "@/context/AuthContext";
 import { getWorkspaceDashboardPath, getWorkspaceRoutePath } from "@/lib/facility-workspace";
 import { createIdempotencyKey } from "@/lib/idempotency";
+import { roleAllows, routeRoles } from "@/lib/role-access";
 import {
   addSettledError,
   hasResourceErrors,
@@ -124,6 +126,7 @@ const formatCurrency = (value?: number | null) =>
 const Laboratory = () => {
   const navigate = useNavigate();
   const { facilitySlug = "", branchSlug = "" } = useTenantParams();
+  const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [tests, setTests] = useState<LabTest[]>([]);
   const [orders, setOrders] = useState<LabOrder[]>([]);
@@ -497,13 +500,15 @@ const Laboratory = () => {
           </Card>
         </div>
 
-        <div className="flex justify-end">
-          <Button asChild variant="outline" className="gap-2">
-            <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
-              <Users className="h-4 w-4" /> Patient Registry
-            </Link>
-          </Button>
-        </div>
+        {roleAllows(user?.role, routeRoles.patients) && (
+          <div className="flex justify-end">
+            <Button asChild variant="outline" className="gap-2">
+              <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
+                <Users className="h-4 w-4" /> Patient Registry
+              </Link>
+            </Button>
+          </div>
+        )}
       </main>
 
       <Dialog open={showTestDialog} onOpenChange={setShowTestDialog}>

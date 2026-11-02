@@ -18,6 +18,7 @@ from app.models.base_model import utc_now
 from app.models.facility import Facility
 from app.models.user import User
 from app.services.data_migration_service import DataMigrationService, ParsedMigration
+from app.services.migration_payload_crypto import open_payload, seal_payload
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class BackgroundJobService:
         requested_by_user_id: str,
         idempotency_key: str,
         max_attempts: int = 3,
+        available_at=None,
     ) -> tuple[BackgroundJob, bool]:
         canonical_facility_id = self._canonical_uuid(facility_id, "facility_id")
         canonical_user_id = self._canonical_uuid(
@@ -98,7 +100,7 @@ class BackgroundJobService:
             idempotency_key=idempotency_key,
         ).first()
         if existing:
-            if existing.payload_json != payload:
+            if not self._same_payload(name, existing.payload_json or {}, payload):
                 raise BackgroundJobConflictError(
                     "Idempotency key was already used with a different migration"
                 )
@@ -113,7 +115,7 @@ class BackgroundJobService:
             status="QUEUED",
             attempts=0,
             max_attempts=max_attempts,
-            available_at=utc_now(),
+            available_at=available_at or utc_now(),
         )
         try:
             db_session.add(job)
@@ -128,7 +130,7 @@ class BackgroundJobService:
             ).first()
             if not existing:
                 raise
-            if existing.payload_json != payload:
+            if not self._same_payload(name, existing.payload_json or {}, payload):
                 raise BackgroundJobConflictError(
                     "Idempotency key was already used with a different migration"
                 )
@@ -282,8 +284,18 @@ class BackgroundJobService:
     def migration_payload(parsed: ParsedMigration, facility_slug: str) -> dict:
         return {
             "facility_slug": facility_slug,
-            "parsed": asdict(parsed),
+            "payload_digest": parsed.content_sha256,
+            "sealed_parsed": seal_payload(asdict(parsed)),
         }
+
+    @staticmethod
+    def _same_payload(name: str, existing: dict, incoming: dict) -> bool:
+        if name == "data_migration_import":
+            return (
+                existing.get("facility_slug") == incoming.get("facility_slug")
+                and existing.get("payload_digest") == incoming.get("payload_digest")
+            )
+        return existing == incoming
 
     @staticmethod
     def stats() -> dict:
@@ -316,6 +328,28 @@ class BackgroundJobService:
 
     @staticmethod
     def _execute(job: BackgroundJob, session) -> dict:
+        if job.name == "facility_storage_purge":
+            from app.models.facility import Facility
+            from app.services.file_upload_service import FileUploadService
+
+            facility = session.query(Facility).filter_by(
+                id=job.facility_id,
+                deletion_status="PURGED",
+                is_active=False,
+            ).first()
+            facility_slug = (job.payload_json or {}).get("facility_slug", "")
+            if not facility or not facility_slug:
+                raise RuntimeError("Purged facility storage job ownership could not be verified")
+            deleted = FileUploadService.delete_tenant_files(facility_slug)
+            return {"status": "completed", "files_removed": deleted}
+        if job.name == "facility_deletion_purge":
+            from app.services.facility_lifecycle_service import FacilityLifecycleService
+
+            return FacilityLifecycleService.purge_scheduled_facility(
+                session,
+                facility_id=str(job.facility_id),
+                background_job=job,
+            )
         if job.name != "data_migration_import":
             raise RuntimeError("Unsupported background job")
         payload = dict(job.payload_json or {})
@@ -331,9 +365,10 @@ class BackgroundJobService:
         ).first()
         if not facility or not actor:
             raise RuntimeError("Migration facility or actor no longer exists")
-        parsed_payload = payload.get("parsed")
-        if not isinstance(parsed_payload, dict):
+        sealed_payload = payload.get("sealed_parsed")
+        if not isinstance(sealed_payload, str):
             raise RuntimeError("Migration payload is invalid")
+        parsed_payload = open_payload(sealed_payload)
         parsed = ParsedMigration(**parsed_payload)
         return DataMigrationService.import_parsed(
             parsed,

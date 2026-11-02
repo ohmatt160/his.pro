@@ -4,6 +4,7 @@ Converted from Flask-RESTx facility_resource.py
 """
 
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, Response, UploadFile, status, Query, Body
+from starlette.responses import StreamingResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -19,6 +20,8 @@ from app.schemas.facilities import (
     DepartmentUpdate,
     FacilityResponse,
     FacilityCreate,
+    FacilityDeletionRecovery,
+    FacilityDeletionRequest,
     FacilityUpdate,
     FacilityModulesUpdate,
     FacilitySettingsUpdate,
@@ -38,6 +41,12 @@ from app.services.background_jobs import (
     background_jobs,
 )
 from app.services.data_migration_service import DataMigrationService
+from app.services.data_export_service import DataExportService
+from app.services.facility_lifecycle_service import FacilityLifecycleService
+from app.services.migration_validation_ticket_service import (
+    MigrationValidationTicketError,
+    MigrationValidationTicketService,
+)
 from app.services.realtime_service import publish_tenant_event
 from app.utils.tenant_urls import is_valid_canonical_subdomain, is_valid_facility_slug
 from app.utils.idempotency import require_idempotency_key
@@ -1054,6 +1063,14 @@ async def validate_data_migration(
     require_admin_for_facility(current_user, facility)
     parsed = await DataMigrationService.parse_upload(file, source_system, import_mode)
     result = DataMigrationService.summarize(parsed, db, facility)
+    result["validation_ticket"] = MigrationValidationTicketService.issue(
+        facility_id=facility.id,
+        facility_slug=facility.slug,
+        actor_id=current_user.id,
+        source_system=parsed.source_system,
+        import_mode=parsed.import_mode,
+        content_sha256=parsed.content_sha256,
+    )
 
     AuditLogService.log_action(
         user_id=current_user.id,
@@ -1080,6 +1097,7 @@ async def queue_data_migration_import(
     source_system: str = Form(...),
     import_mode: str = Form(...),
     file: UploadFile = File(...),
+    validation_ticket: str = Form(...),
     idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db),
@@ -1107,9 +1125,39 @@ async def queue_data_migration_import(
         return summary
 
     parsed = await DataMigrationService.parse_upload(file, source_system, import_mode)
+    try:
+        MigrationValidationTicketService.verify(
+            validation_ticket,
+            facility_id=facility.id,
+            facility_slug=facility.slug,
+            actor_id=current_user.id,
+            source_system=parsed.source_system,
+            import_mode=parsed.import_mode,
+            content_sha256=parsed.content_sha256,
+        )
+    except MigrationValidationTicketError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     result = DataMigrationService.summarize(parsed, db, facility)
     payload = BackgroundJobService.migration_payload(parsed, facility.slug)
-    payload["summary"] = result
+    payload["summary"] = {
+        "source_system": result["source_system"],
+        "import_mode": result["import_mode"],
+        "file_name": "Protected migration file",
+        "file_size": result["file_size"],
+        "detected_format": result["detected_format"],
+        "records_detected": result["records_detected"],
+        "accepted_entities": result["accepted_entities"],
+        "entity_summaries": {
+            entity: {
+                "records_detected": summary["records_detected"],
+                "valid": summary["valid"],
+                "duplicates": summary["duplicates"],
+                "errors": [],
+            }
+            for entity, summary in result["entity_summaries"].items()
+        },
+        "warnings": result["warnings"][:20],
+    }
     try:
         job, created = background_jobs.enqueue(
             "data_migration_import",
@@ -1165,6 +1213,136 @@ async def get_data_migration_job(
         "error": job.error,
         "external_job_id": job.external_job_id,
     }
+
+
+@router.get("/{facility_slug}/data-migrations/export")
+async def export_facility_data(
+    facility_slug: str,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    """Build a one-time tenant export without persisting a shared artifact."""
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    try:
+        archive = DataExportService.create_archive(db, facility)
+        AuditLogService.log_action(
+            user_id=current_user.id,
+            action="EXPORT_FACILITY_DATA",
+            resource_type="facility",
+            resource_id=facility.id,
+            facility_slug=facility.slug,
+            details={"entities": len(archive.manifest.get("entities", []))},
+            request=request,
+            commit=False,
+            raise_on_error=True,
+            session=db,
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Facility export failed")
+        raise HTTPException(status_code=503, detail="Facility export is temporarily unavailable") from exc
+
+    return StreamingResponse(
+        DataExportService.iter_archive(archive),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{archive.filename}"',
+            "Cache-Control": "private, no-store, max-age=0",
+            "Pragma": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.post("/{facility_slug}/account-deletion/request")
+async def request_facility_deletion(
+    facility_slug: str,
+    data: FacilityDeletionRequest,
+    request: Request,
+    current_user: User = Depends(role_required('ADMIN')),
+    db: Session = Depends(get_db),
+):
+    facility = get_facility_or_404(facility_slug)
+    require_admin_for_facility(current_user, facility)
+    try:
+        result = FacilityLifecycleService.request_deletion(
+            db,
+            facility=facility,
+            actor=current_user,
+            password=data.password,
+            confirmation_name=data.confirmation_name,
+        )
+        if not result.get("already_requested"):
+            AuditLogService.log_action(
+                user_id=current_user.id,
+                action="REQUEST_FACILITY_DELETION",
+                resource_type="facility",
+                resource_id=facility.id,
+                facility_slug=facility.slug,
+                details={
+                    "scheduled_for": result.get("scheduled_for"),
+                    "retention_days": result.get("retention_days"),
+                },
+                request=request,
+                commit=False,
+                raise_on_error=True,
+                session=db,
+            )
+        db.commit()
+        return result
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Facility deletion request failed")
+        raise HTTPException(status_code=503, detail="Account deletion could not be scheduled") from exc
+
+
+@router.post("/{facility_slug}/account-deletion/cancel")
+async def cancel_facility_deletion(
+    facility_slug: str,
+    data: FacilityDeletionRecovery,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Recover an inactive facility using the secret delivered to its admin."""
+    facility = db.query(Facility).filter(Facility.slug == facility_slug).first()
+    if not facility:
+        raise HTTPException(status_code=400, detail="Recovery link is invalid or has expired")
+    try:
+        result = FacilityLifecycleService.recover_deletion(
+            db,
+            facility=facility,
+            recovery_token=data.recovery_token,
+        )
+        AuditLogService.log_action(
+            user_id=facility.deletion_requested_by_id,
+            action="CANCEL_FACILITY_DELETION",
+            resource_type="facility",
+            resource_id=facility.id,
+            facility_slug=facility.slug,
+            details={},
+            request=request,
+            commit=False,
+            raise_on_error=True,
+            session=db,
+        )
+        db.commit()
+        return result
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        logger.exception("Facility deletion recovery failed")
+        raise HTTPException(status_code=503, detail="Account recovery is temporarily unavailable") from exc
 
 
 @router.get("/{facility_slug}/staff", response_model=List[FacilityStaffResponse])
@@ -1539,27 +1717,44 @@ async def update_facility(
     return build_facility_response(facility)
 
 
-@router.delete("/{facility_id}", response_model=MessageResponse)
+@router.delete("/{facility_id}")
 async def deactivate_facility(
     facility_id: str,
+    data: FacilityDeletionRequest,
+    request: Request,
     current_user: User = Depends(role_required('ADMIN')),
     db: Session = Depends(get_db)
 ):
-    """Deactivate facility (soft delete)"""
+    """Legacy alias for the recoverable account-deletion request."""
     facility = get_current_admin_facility(current_user)
     if facility_id not in {facility.id, facility.slug}:
         raise HTTPException(status_code=404, detail="Facility not found")
-
-    # Check if facility has active users
-    active_users = [u for u in facility.users if u.is_active]
-    if active_users:
-        raise HTTPException(status_code=400, detail="Cannot deactivate facility with active users")
-
-    facility.is_active = False
-    facility.save()
-    db_session.commit()
-
-    return MessageResponse(message="Facility deactivated successfully")
+    try:
+        result = FacilityLifecycleService.request_deletion(
+            db,
+            facility=facility,
+            actor=current_user,
+            password=data.password,
+            confirmation_name=data.confirmation_name,
+        )
+        if not result.get("already_requested"):
+            AuditLogService.log_action(
+                user_id=current_user.id,
+                action="REQUEST_FACILITY_DELETION",
+                resource_type="facility",
+                resource_id=facility.id,
+                facility_slug=facility.slug,
+                details={"scheduled_for": result.get("scheduled_for")},
+                request=request,
+                commit=False,
+                raise_on_error=True,
+                session=db,
+            )
+        db.commit()
+        return result
+    except HTTPException:
+        db.rollback()
+        raise
 
 
 @router.put("/{facility_id}/modules", response_model=FacilityResponse)

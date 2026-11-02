@@ -5,6 +5,7 @@ import unittest
 import asyncio
 import io
 import json
+import hashlib
 from datetime import date
 from pathlib import Path
 
@@ -97,6 +98,7 @@ class DataMigrationServiceTest(unittest.TestCase):
             file_name="migration.csv",
             file_size=100,
             detected_format="csv",
+            content_sha256=hashlib.sha256(b"migration.csv test fixture").hexdigest(),
             rows_by_entity=rows_by_entity,
             warnings=[],
         )

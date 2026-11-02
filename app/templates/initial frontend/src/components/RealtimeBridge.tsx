@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiClient } from "@/api/client";
 import { useAuth } from "@/context/AuthContext";
 import {
   dispatchRealtimeEvent,
@@ -9,6 +10,11 @@ import {
 } from "@/lib/realtime";
 
 const MAX_RECONNECT_DELAY_MS = 30_000;
+
+type RealtimeTicket = {
+  ticket: string;
+  expires_at: string;
+};
 
 const RealtimeBridge = () => {
   const { user, loading } = useAuth();
@@ -31,39 +37,69 @@ const RealtimeBridge = () => {
       }
     };
 
-    const connect = () => {
+    const scheduleReconnect = () => {
+      if (!isActive) {
+        return;
+      }
+      const delay = Math.min(
+        1000 * 2 ** reconnectAttempt.current,
+        MAX_RECONNECT_DELAY_MS
+      );
+      reconnectAttempt.current += 1;
+      reconnectTimer.current = window.setTimeout(connect, delay);
+    };
+
+    const connect = async () => {
       clearReconnect();
-      const socket = new WebSocket(getRealtimeWebSocketUrl());
-      socketRef.current = socket;
+      const endpoint = getRealtimeWebSocketUrl();
+      if (!endpoint) {
+        return;
+      }
 
-      socket.onopen = () => {
-        reconnectAttempt.current = 0;
-      };
-
-      socket.onmessage = (message) => {
-        try {
-          const event = JSON.parse(message.data) as RealtimeEvent;
-          if (event.type === "system.keepalive" || event.type === "system.connected") {
-            return;
-          }
-          dispatchRealtimeEvent(event);
-          invalidateRealtimeQueries(queryClient, event);
-        } catch {
-          // Ignore malformed realtime payloads; the HTTP API remains source of truth.
-        }
-      };
-
-      socket.onclose = () => {
+      try {
+        const { ticket } = await apiClient.post<RealtimeTicket>("/realtime/ticket", {});
         if (!isActive) {
           return;
         }
-        const delay = Math.min(
-          1000 * 2 ** reconnectAttempt.current,
-          MAX_RECONNECT_DELAY_MS
-        );
-        reconnectAttempt.current += 1;
-        reconnectTimer.current = window.setTimeout(connect, delay);
-      };
+
+        const socketUrl = getRealtimeWebSocketUrl(ticket);
+        if (!socketUrl) {
+          return;
+        }
+        const socket = new WebSocket(socketUrl);
+        socketRef.current = socket;
+
+        socket.onopen = () => {
+          reconnectAttempt.current = 0;
+        };
+
+        socket.onmessage = (message) => {
+          try {
+            const event = JSON.parse(message.data) as RealtimeEvent;
+            if (event.type === "system.keepalive" || event.type === "system.connected") {
+              return;
+            }
+            dispatchRealtimeEvent(event);
+            invalidateRealtimeQueries(queryClient, event);
+          } catch {
+            // Ignore malformed realtime payloads; the HTTP API remains source of truth.
+          }
+        };
+
+        socket.onclose = (event) => {
+          if (!isActive) {
+            return;
+          }
+          // Policy violations are authentication/origin failures. Retrying those
+          // forever only creates noise and cannot repair the session.
+          if (event.code === 1008) {
+            return;
+          }
+          scheduleReconnect();
+        };
+      } catch {
+        scheduleReconnect();
+      }
     };
 
     connect();

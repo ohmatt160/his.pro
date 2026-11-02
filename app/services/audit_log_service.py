@@ -3,6 +3,7 @@ import logging
 
 from app.models.audit_log import AuditLog
 from app.extensions import db
+from app.utils.network import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -15,15 +16,7 @@ class AuditLogService:
         if not request:
             return None
 
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip() or None
-
-        real_ip = request.headers.get("x-real-ip")
-        if real_ip:
-            return real_ip.strip() or None
-
-        return request.client.host if request.client else None
+        return client_ip(request)
 
     @staticmethod
     def _request_user_agent(request):

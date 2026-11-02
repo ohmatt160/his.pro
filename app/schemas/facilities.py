@@ -50,6 +50,17 @@ class FacilitySettingsUpdate(BaseModel):
     hospital_type: Literal["single", "multi_clinic"]
 
 
+class FacilityDeletionRequest(BaseModel):
+    """A deliberate, password-confirmed request to delete one tenant."""
+
+    password: str = Field(..., min_length=1, max_length=256)
+    confirmation_name: str = Field(..., min_length=2, max_length=200)
+
+
+class FacilityDeletionRecovery(BaseModel):
+    recovery_token: str = Field(..., min_length=32, max_length=512)
+
+
 class FacilityResponse(BaseModel):
     id: str
     tenant_id: str

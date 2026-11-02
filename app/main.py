@@ -54,6 +54,7 @@ from app.routes.realtime import router as realtime_router
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.cors_force import ForceCORSHeadersMiddleware
 from app.middleware.jwt import JWTMiddleware
+from app.middleware.request_firewall import RequestFirewallMiddleware
 from app.middleware.module_access import ModuleAccessMiddleware
 from app.middleware.security import CSRFMiddleware, InputValidationMiddleware, SecurityHeadersMiddleware
 from app.middleware.audit import AuditMiddleware
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
         'https://www.his.pro',
         'https://his-pro.vercel.app',
         'https://his-pro-v1-0.vercel.app',
+        'https://his-pro-staging.vercel.app',
     ]
     local_origins = [
         'http://localhost:3000',
@@ -293,6 +295,7 @@ def create_app() -> FastAPI:
     app.add_middleware(AuditMiddleware)
     app.add_middleware(ModuleAccessMiddleware)
     app.add_middleware(JWTMiddleware)
+    app.add_middleware(RequestFirewallMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

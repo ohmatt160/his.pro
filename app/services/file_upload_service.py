@@ -7,6 +7,7 @@ import os
 import logging
 import socket
 import struct
+import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,6 +87,30 @@ class FileUploadService:
             raise ValueError("Invalid upload folder")
         upload_folder.mkdir(parents=True, exist_ok=True)
         return str(upload_folder)
+
+    @staticmethod
+    def delete_tenant_files(facility_slug: str) -> bool:
+        """Remove only the private upload namespace belonging to one tenant.
+
+        This is intentionally path-validated before recursive deletion; a tenant
+        slug must never be able to influence the upload root or another tenant.
+        """
+        tenant_folder = FileUploadService.sanitize_folder(f"tenants/{facility_slug}")
+        configured_root = os.getenv("FILE_UPLOAD_DIR")
+        base_upload_root = (
+            Path(configured_root)
+            if configured_root
+            else BASE_DIR / "app" / "private_uploads" / "files"
+        ).resolve()
+        target = (base_upload_root / tenant_folder).resolve()
+        if base_upload_root not in target.parents:
+            raise ValueError("Invalid tenant upload directory")
+        if not target.exists():
+            return False
+        if not target.is_dir():
+            raise ValueError("Tenant upload path is not a directory")
+        shutil.rmtree(target)
+        return True
 
     @staticmethod
     def sanitize_folder(folder='uploads'):

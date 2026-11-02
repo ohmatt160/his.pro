@@ -298,7 +298,8 @@ class SetupEndpointTest(unittest.TestCase):
             profile_event = next(
                 log for log in audit_logs.json() if log["action"] == "UPDATE_PROFILE"
             )
-            self.assertEqual(profile_event["ip_address"], "203.0.113.42")
+            # Untrusted forwarding headers must not override the direct peer IP.
+            self.assertEqual(profile_event["ip_address"], "127.0.0.1")
             self.assertIn("iPhone", profile_event["user_agent"])
 
             disabled_lab_access = await client.get(

@@ -5,6 +5,7 @@ from fastapi import HTTPException, Request, status
 
 from app.extensions import db_session
 from app.models.user_session import UserSession
+from app.utils.network import client_ip
 
 SESSION_INACTIVITY_TIMEOUT_SECONDS = 30 * 60
 REFRESH_SESSION_DAYS = 7
@@ -115,7 +116,4 @@ class SessionService:
     def _client_ip(request: Request | None) -> str | None:
         if not request:
             return None
-        forwarded_for = request.headers.get("x-forwarded-for")
-        if forwarded_for:
-            return forwarded_for.split(",")[0].strip()
-        return request.client.host if request.client else None
+        return client_ip(request)

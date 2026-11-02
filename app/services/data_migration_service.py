@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 import re
@@ -125,6 +126,7 @@ class ParsedMigration:
     file_name: str
     file_size: int
     detected_format: str
+    content_sha256: str
     rows_by_entity: dict[str, list[dict[str, Any]]]
     warnings: list[str]
 
@@ -353,6 +355,7 @@ class DataMigrationService:
             file_name=file_name,
             file_size=len(content),
             detected_format=extension,
+            content_sha256=hashlib.sha256(content).hexdigest(),
             rows_by_entity=rows_by_entity,
             warnings=list(dict.fromkeys(warnings)),
         )
@@ -417,6 +420,7 @@ class DataMigrationService:
             "file_name": parsed.file_name,
             "file_size": parsed.file_size,
             "detected_format": parsed.detected_format,
+            "content_sha256": parsed.content_sha256,
             "records_detected": sum(len(rows) for rows in parsed.rows_by_entity.values()),
             "accepted_entities": [entity for entity, rows in parsed.rows_by_entity.items() if rows],
             "entity_summaries": entity_summaries,

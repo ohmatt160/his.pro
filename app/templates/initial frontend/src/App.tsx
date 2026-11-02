@@ -45,6 +45,7 @@ const PublicProfile = lazy(() => import("./pages/PublicProfile.tsx"));
 const PublicHospital = lazy(() => import("./pages/PublicHospital.tsx"));
 const Radiology = lazy(() => import("./pages/Radiology.tsx"));
 const Reports = lazy(() => import("./pages/Reports.tsx"));
+const RecoverAccount = lazy(() => import("./pages/RecoverAccount.tsx"));
 const SettingUp = lazy(() => import("./pages/SettingUp.tsx"));
 const Settings = lazy(() => import("./pages/Settings.tsx"));
 const StaffAccess = lazy(() => import("./pages/StaffAccess.tsx"));
@@ -153,6 +154,7 @@ const AppRoutes = () => (
         <Route path="/terms" element={<TermsOfService />} />
         <Route path="/dpa" element={<DataProcessingAgreement />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/recover-account" element={<RecoverAccount />} />
         <Route path="/branches/:branchSlug/login" element={tenantOnly(<Login />)} />
         <Route path="/login/:facilitySlug" element={<Login />} />
         <Route path="/:facilitySlug/login" element={<Login />} />

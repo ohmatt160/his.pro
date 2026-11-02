@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.facility import Facility
 from app.extensions import db_session
 from app.services.tenant_service import resolve_facility_id
 from app.utils.validators import Validators
@@ -68,6 +69,18 @@ class AuthService:
         
         if not user.check_password(password):
             return None, "Invalid username or password"
+
+        # A user can remain in the database for a scheduled account deletion,
+        # but must never be able to start a new session while that tenant is
+        # unavailable. Keep the response indistinguishable from bad credentials.
+        if user.facility_id or user.facility_slug:
+            facility_query = session.query(Facility).filter(Facility.is_active == True)
+            if user.facility_id:
+                facility_query = facility_query.filter(Facility.id == user.facility_id)
+            else:
+                facility_query = facility_query.filter(Facility.slug == user.facility_slug)
+            if not facility_query.first():
+                return None, "Invalid username or password"
         
         return user, None
     

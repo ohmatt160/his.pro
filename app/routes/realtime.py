@@ -2,18 +2,25 @@ import asyncio
 import os
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
 from app.extensions import SessionLocal
 from app.middleware.jwt import verify_token
+from app.models.facility import Facility
 from app.models.user import User
+from app.services.realtime_ticket_service import (
+    RealtimeTicketError,
+    consume_realtime_ticket,
+    issue_realtime_ticket,
+)
 from app.services.realtime_service import (
     REALTIME_KEEPALIVE_TYPE,
     event_visible_to_user,
     public_realtime_event,
     realtime_broker,
 )
+from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/realtime", tags=["realtime"])
 _connections_by_user: dict[str, int] = {}
@@ -51,17 +58,30 @@ def _allowed_websocket_origins() -> set[str]:
     app_env = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")).lower()
     if app_env == "production":
         return configured or set(PRODUCTION_ORIGINS)
+    if app_env == "staging":
+        return configured
     return configured | PRODUCTION_ORIGINS | LOCAL_ORIGINS
 
 
 def _origin_allowed(websocket: WebSocket) -> bool:
-    origin = websocket.headers.get("origin")
+    return _origin_value_allowed(websocket.headers.get("origin"))
+
+
+def _origin_value_allowed(origin: str | None) -> bool:
     app_env = (os.getenv("APP_ENV") or os.getenv("FLASK_ENV", "development")).lower()
     if not origin:
-        return app_env != "production"
+        return app_env not in {"production", "staging"}
 
     parsed = urlparse(origin)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
         return False
 
     normalized = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
@@ -119,20 +139,68 @@ def _token_from_websocket(websocket: WebSocket) -> str | None:
 
 
 def _authenticate_websocket_user(websocket: WebSocket) -> User | None:
-    token = _token_from_websocket(websocket)
-    if not token:
-        return None
-
     db: Session = SessionLocal()
     try:
-        payload = verify_token(token)
+        ticket = websocket.query_params.get("ticket")
+        if ticket:
+            try:
+                payload = consume_realtime_ticket(
+                    ticket,
+                    origin=websocket.headers.get("origin"),
+                )
+            except RealtimeTicketError:
+                return None
+        else:
+            token = _token_from_websocket(websocket)
+            if not token:
+                return None
+            payload = verify_token(token)
+
         user = db.query(User).filter(User.id == payload.get("sub"), User.is_active == True).first()
         if not user or not user.facility_slug:
+            return None
+        tenant_id = payload.get("tid") or user.facility_id
+        facility = (
+            db.query(Facility)
+            .filter(
+                Facility.id == tenant_id,
+                Facility.slug == user.facility_slug,
+                Facility.is_active == True,
+            )
+            .first()
+        )
+        if not facility:
+            return None
+        if ticket and (
+            str(user.facility_id) != str(payload.get("tid"))
+            or user.facility_slug != payload.get("facility_slug")
+        ):
             return None
         db.expunge(user)
         return user
     finally:
         db.close()
+
+
+@router.post("/ticket")
+async def create_realtime_ticket(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    origin = request.headers.get("origin")
+    if not _origin_value_allowed(origin):
+        raise HTTPException(status_code=403, detail="Realtime origin is not allowed")
+    if not current_user.facility_id or not current_user.facility_slug:
+        raise HTTPException(status_code=403, detail="Realtime is unavailable for this account")
+    try:
+        return issue_realtime_ticket(
+            user_id=str(current_user.id),
+            facility_id=str(current_user.facility_id),
+            facility_slug=current_user.facility_slug,
+            origin=origin or "",
+        )
+    except RealtimeTicketError as exc:
+        raise HTTPException(status_code=503, detail="Realtime is temporarily unavailable") from exc
 
 
 @router.websocket("/ws")

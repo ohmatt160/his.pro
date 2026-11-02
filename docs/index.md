@@ -24,6 +24,7 @@ worker, and deployment code. It does not claim features that are only planned.
 | [Implementation Notes and Roadmap](11_IMPLEMENTATION_NOTES_AND_ROADMAP.md) | Leadership, engineering | Code review, technical debt, limitations, recommended sequence |
 | [Launch Readiness](12_LAUNCH_READINESS.md) | Release owner, hospital sponsor | Evidence-based go/no-go gates and sign-off criteria |
 | [Hospital Operations Manual](13_HOSPITAL_OPERATIONS_MANUAL.md) | Hospital administrators and staff | Setup, daily use, security, migration, downtime, support |
+| [System Migration and Account Lifecycle](SYSTEM_MIGRATION_AND_ACCOUNT_LIFECYCLE.md) | Hospital migration leads, administrators, support, operations | Import/export runbooks, restrictions, recoverable deletion, purge and retention |
 | [Hospital Manual - Word](HIS_PRO_HOSPITAL_OPERATIONS_MANUAL.docx) | Hospital leadership and trainers | Distributable, editable customer operations manual |
 | [Hospital Manual - PDF](../output/pdf/HIS_PRO_HOSPITAL_OPERATIONS_MANUAL.pdf) | Hospital leadership and staff | Fixed-layout customer operations manual |
 | [OhmattOS Integration](ohmattos_integration.md) | Platform and integration teams | Current client-credentials/outbox contract and feature flags |

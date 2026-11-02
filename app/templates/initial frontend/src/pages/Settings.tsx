@@ -112,6 +112,7 @@ type MigrationResult = {
   warnings: string[];
   next_step?: string;
   job_id?: string;
+  validation_ticket?: string;
 };
 
 const emptyFacilityForm = {
@@ -190,6 +191,11 @@ const Settings = () => {
   const [migrationStatus, setMigrationStatus] = useState("");
   const [migrationResult, setMigrationResult] = useState<MigrationResult | null>(null);
   const [migrationBusy, setMigrationBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [deletionPassword, setDeletionPassword] = useState("");
+  const [deletionConfirmation, setDeletionConfirmation] = useState("");
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [deletionStatus, setDeletionStatus] = useState("");
   const [error, setError] = useState("");
   const [dataErrors, setDataErrors] = useState<ResourceErrors<SettingsResource>>({});
 
@@ -544,13 +550,16 @@ const Settings = () => {
     return true;
   };
 
-  const buildMigrationFormData = () => {
+  const buildMigrationFormData = (validationTicket?: string) => {
     const formData = new FormData();
     if (migrationFile) {
       formData.append("file", migrationFile);
     }
     formData.append("source_system", migrationSource);
     formData.append("import_mode", migrationMode);
+    if (validationTicket) {
+      formData.append("validation_ticket", validationTicket);
+    }
     return formData;
   };
 
@@ -581,6 +590,10 @@ const Settings = () => {
     if (!facility || !validateMigrationFile()) {
       return;
     }
+    if (!migrationResult?.validation_ticket) {
+      setError("Validate this exact migration file before queueing the import.");
+      return;
+    }
 
     setError("");
     setMigrationStatus("Starting migration import...");
@@ -588,7 +601,7 @@ const Settings = () => {
     try {
       const result = await apiClient.post<MigrationResult>(
         `/facilities/${facility.slug}/data-migrations/import`,
-        buildMigrationFormData()
+        buildMigrationFormData(migrationResult.validation_ticket)
       );
       setMigrationResult(result);
       setMigrationStatus("Migration import queued.");
@@ -597,6 +610,54 @@ const Settings = () => {
       setError(migrationError instanceof Error ? migrationError.message : "Migration import failed.");
     } finally {
       setMigrationBusy(false);
+    }
+  };
+
+  const exportFacilityData = async () => {
+    if (!facility) return;
+    setError("");
+    setExportBusy(true);
+    try {
+      const archive = await apiClient.downloadBlob(
+        `/facilities/${encodeURIComponent(facility.slug)}/data-migrations/export`
+      );
+      const downloadUrl = URL.createObjectURL(archive);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `${facility.slug}-hispro-export.zip`;
+      link.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "Facility export failed.");
+    } finally {
+      setExportBusy(false);
+    }
+  };
+
+  const requestFacilityDeletion = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!facility) return;
+    if (deletionConfirmation.trim() !== facility.name.trim()) {
+      setError("Enter the facility name exactly as shown to confirm deletion.");
+      return;
+    }
+    setError("");
+    setDeletionStatus("");
+    setDeletionBusy(true);
+    try {
+      const result = await apiClient.post<{ retention_days: number; scheduled_for: string }>(
+        `/facilities/${encodeURIComponent(facility.slug)}/account-deletion/request`,
+        { password: deletionPassword, confirmation_name: deletionConfirmation },
+      );
+      setDeletionStatus(
+        `Deletion scheduled for ${new Date(result.scheduled_for).toLocaleString()}. ` +
+        `The account can be recovered from the emailed link within ${result.retention_days} days.`
+      );
+      await logoutEverywhere();
+      navigate(`/login/${encodeURIComponent(facility.slug)}`, { replace: true });
+    } catch (deletionError) {
+      setError(deletionError instanceof Error ? deletionError.message : "Deletion could not be scheduled.");
+      setDeletionBusy(false);
     }
   };
 
@@ -978,6 +1039,42 @@ const Settings = () => {
                     <Database className="h-4 w-4" /> Queue Import
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {!isBranchAdmin && (
+            <Card className="h-fit border-border/60">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Database className="h-4 w-4 text-primary" /> Data portability and account
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <section className="space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    Download a tenant-scoped archive of your facility data. The export is generated for this request and is not retained as a shared file.
+                  </p>
+                  <Button type="button" variant="outline" className="gap-2" onClick={exportFacilityData} disabled={exportBusy}>
+                    <Database className="h-4 w-4" /> {exportBusy ? "Preparing export..." : "Export facility data"}
+                  </Button>
+                </section>
+                <section className="space-y-3 border-t border-border pt-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-destructive">Delete facility account</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      This immediately disables access and revokes staff sessions. Data is retained for the recovery period, then permanently purged. The facility administrator receives a recovery link by email.
+                    </p>
+                  </div>
+                  <form onSubmit={requestFacilityDeletion} className="space-y-3">
+                    <Field label={`Type ${facility?.name || "facility name"}`} value={deletionConfirmation} onChange={setDeletionConfirmation} required />
+                    <Field label="Confirm your password" type="password" value={deletionPassword} onChange={setDeletionPassword} required />
+                    {deletionStatus && <p role="status" className="text-sm text-emerald-700">{deletionStatus}</p>}
+                    <Button type="submit" variant="destructive" className="gap-2" disabled={deletionBusy}>
+                      <Trash2 className="h-4 w-4" /> {deletionBusy ? "Scheduling deletion..." : "Schedule account deletion"}
+                    </Button>
+                  </form>
+                </section>
               </CardContent>
             </Card>
           )}

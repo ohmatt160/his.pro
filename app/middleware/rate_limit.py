@@ -5,8 +5,10 @@ Auth-sensitive endpoints get explicit per-IP windows and all limited responses
 include Retry-After plus rate-limit headers.
 """
 
+import asyncio
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -15,6 +17,8 @@ import redis
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+
+from app.utils.network import client_ip
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +44,21 @@ UPLOAD_LIMIT = RateLimitRule(20, 60)
 SEARCH_LIMIT = RateLimitRule(30, 60)
 
 _memory_windows: dict[str, tuple[int, float]] = {}
+_redis_client_instance = None
+_redis_client_url: str | None = None
+_redis_client_lock = threading.Lock()
+_INCREMENT_SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+end
+local ttl = redis.call('TTL', KEYS[1])
+return {count, ttl}
+"""
 
 
 def get_client_ip(request: Request) -> str:
-    forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return client_ip(request)
 
 
 def get_rate_limit_key(request: Request) -> str:
@@ -65,10 +77,21 @@ def _rule_for_request(request: Request) -> RateLimitRule:
 
 
 def _redis_client():
-    redis_url = os.getenv("REDIS_URL")
+    global _redis_client_instance, _redis_client_url
+    redis_url = os.getenv("REDIS_URL", "").strip()
     if not redis_url:
         return None
-    return redis.from_url(redis_url, socket_connect_timeout=1, socket_timeout=1)
+    with _redis_client_lock:
+        if _redis_client_instance is None or _redis_client_url != redis_url:
+            if _redis_client_instance is not None:
+                _redis_client_instance.close()
+            _redis_client_instance = redis.from_url(
+                redis_url,
+                socket_connect_timeout=0.2,
+                socket_timeout=0.2,
+            )
+            _redis_client_url = redis_url
+        return _redis_client_instance
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -81,7 +104,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         rule = _rule_for_request(request)
         namespace = os.getenv("RATE_LIMIT_NAMESPACE", "hispro")
         key = f"{namespace}:rate:{request.method}:{request.url.path}:{get_rate_limit_key(request)}"
-        count, reset_at = self._increment(key, rule)
+        if os.getenv("REDIS_URL", "").strip():
+            count, reset_at = await asyncio.to_thread(self._increment, key, rule)
+        else:
+            count, reset_at = self._increment(key, rule)
         remaining = max(rule.limit - count, 0)
         retry_after = max(int(reset_at - time.time()), 1)
 
@@ -110,10 +136,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client = _redis_client()
         if client:
             try:
-                current = client.incr(key)
-                if current == 1:
-                    client.expire(key, rule.window_seconds)
-                ttl = client.ttl(key)
+                current, ttl = client.eval(_INCREMENT_SCRIPT, 1, key, rule.window_seconds)
                 reset_at = now + (ttl if ttl > 0 else rule.window_seconds)
                 return int(current), reset_at
             except redis.RedisError as exc:

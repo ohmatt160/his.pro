@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Column, String, Text, Boolean, JSON, event
+from sqlalchemy import Column, DateTime, ForeignKey, String, Text, Boolean, JSON, event
 from sqlalchemy.orm import relationship
 from app.models.base_model import BaseModel
 from app.utils.tenant_urls import generate_canonical_subdomain
@@ -23,6 +23,14 @@ class Facility(BaseModel):
     modules = Column(JSON, default=list)  # list of enabled modules
     settings = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
+    deletion_status = Column(
+        String(24), nullable=False, default="ACTIVE", server_default="ACTIVE", index=True
+    )
+    deletion_requested_at = Column(DateTime, nullable=True)
+    deletion_scheduled_for = Column(DateTime, nullable=True, index=True)
+    deletion_cancelled_at = Column(DateTime, nullable=True)
+    deletion_requested_by_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    deletion_recovery_token_hash = Column(String(64), nullable=True)
 
     # Relationships
     branches = relationship('Branch', back_populates='facility', lazy=True, foreign_keys='Branch.facility_slug')
@@ -41,6 +49,7 @@ class Facility(BaseModel):
 
     # Facility types
     FACILITY_TYPES = ['hospital', 'clinic', 'lab', 'pharmacy']
+    DELETION_STATUSES = ("ACTIVE", "PENDING_DELETION", "PURGED")
 
     # Available modules
     AVAILABLE_MODULES = [

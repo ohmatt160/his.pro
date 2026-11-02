@@ -44,5 +44,9 @@ class BackgroundJob(BaseModel):
     error = Column(Text, nullable=True)
     external_job_id = Column(String(200), nullable=True)
 
-    STATUSES = ("QUEUED", "RUNNING", "COMPLETED", "RETRY", "FAILED")
-    NAMES = ("data_migration_import",)
+    STATUSES = ("QUEUED", "RUNNING", "COMPLETED", "RETRY", "FAILED", "CANCELLED")
+    NAMES = (
+        "data_migration_import",
+        "facility_deletion_purge",
+        "facility_storage_purge",
+    )

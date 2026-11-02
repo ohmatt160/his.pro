@@ -79,9 +79,19 @@ async def get_current_user(
                 detail="User not found or inactive"
             )
 
-        if user.facility_slug and not user.facility_id:
-            facility = db.query(Facility).filter_by(slug=user.facility_slug, is_active=True).first()
-            if facility:
+        if user.facility_id or user.facility_slug:
+            facility_query = db.query(Facility).filter(Facility.is_active == True)
+            if user.facility_id:
+                facility_query = facility_query.filter(Facility.id == user.facility_id)
+            else:
+                facility_query = facility_query.filter(Facility.slug == user.facility_slug)
+            facility = facility_query.first()
+            if not facility:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Account is unavailable",
+                )
+            if not user.facility_id:
                 user.facility_id = facility.id
                 db.add(user)
                 db.flush()

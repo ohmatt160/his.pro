@@ -14,6 +14,7 @@ from app.routes.realtime import (
     _allowed_websocket_origins,
     _connections_by_facility,
     _connections_by_user,
+    _origin_value_allowed,
     _try_register_connection,
     _unregister_connection,
 )
@@ -100,7 +101,9 @@ class RealtimeIsolationTest(unittest.TestCase):
 
     def test_websocket_origin_allowlist_uses_configured_origins(self):
         previous = os.environ.get("ALLOWED_ORIGINS")
+        previous_env = os.environ.get("APP_ENV")
         try:
+            os.environ["APP_ENV"] = "production"
             os.environ["ALLOWED_ORIGINS"] = "https://hospital.example, https://admin.example/"
             origins = _allowed_websocket_origins()
             self.assertIn("https://hospital.example", origins)
@@ -110,6 +113,59 @@ class RealtimeIsolationTest(unittest.TestCase):
                 os.environ.pop("ALLOWED_ORIGINS", None)
             else:
                 os.environ["ALLOWED_ORIGINS"] = previous
+            if previous_env is None:
+                os.environ.pop("APP_ENV", None)
+            else:
+                os.environ["APP_ENV"] = previous_env
+
+    def test_staging_websocket_origins_require_explicit_configuration(self):
+        previous_origins = os.environ.get("ALLOWED_ORIGINS")
+        previous_env = os.environ.get("APP_ENV")
+        previous_frontend = os.environ.get("FRONTEND_URL")
+        try:
+            os.environ["APP_ENV"] = "staging"
+            os.environ.pop("FRONTEND_URL", None)
+            os.environ["ALLOWED_ORIGINS"] = "https://his-pro-staging.example"
+            origins = _allowed_websocket_origins()
+            self.assertEqual(origins, {"https://his-pro-staging.example"})
+        finally:
+            if previous_origins is None:
+                os.environ.pop("ALLOWED_ORIGINS", None)
+            else:
+                os.environ["ALLOWED_ORIGINS"] = previous_origins
+            if previous_env is None:
+                os.environ.pop("APP_ENV", None)
+            else:
+                os.environ["APP_ENV"] = previous_env
+            if previous_frontend is None:
+                os.environ.pop("FRONTEND_URL", None)
+            else:
+                os.environ["FRONTEND_URL"] = previous_frontend
+
+    def test_websocket_origin_rejects_paths_and_unconfigured_staging_origins(self):
+        previous_origins = os.environ.get("ALLOWED_ORIGINS")
+        previous_env = os.environ.get("APP_ENV")
+        previous_frontend = os.environ.get("FRONTEND_URL")
+        try:
+            os.environ["APP_ENV"] = "staging"
+            os.environ.pop("FRONTEND_URL", None)
+            os.environ["ALLOWED_ORIGINS"] = "https://his-pro-staging.example"
+            self.assertTrue(_origin_value_allowed("https://his-pro-staging.example"))
+            self.assertFalse(_origin_value_allowed("https://his-pro-staging.example/path"))
+            self.assertFalse(_origin_value_allowed("https://his-pro.vercel.app"))
+        finally:
+            if previous_origins is None:
+                os.environ.pop("ALLOWED_ORIGINS", None)
+            else:
+                os.environ["ALLOWED_ORIGINS"] = previous_origins
+            if previous_env is None:
+                os.environ.pop("APP_ENV", None)
+            else:
+                os.environ["APP_ENV"] = previous_env
+            if previous_frontend is None:
+                os.environ.pop("FRONTEND_URL", None)
+            else:
+                os.environ["FRONTEND_URL"] = previous_frontend
 
     def test_public_event_strips_private_routing_fields(self):
         event = build_realtime_event(

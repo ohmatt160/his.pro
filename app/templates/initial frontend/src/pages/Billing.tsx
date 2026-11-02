@@ -42,6 +42,8 @@ import {
   type ResourceErrors,
 } from "@/lib/resource-loading";
 import { useRealtimeRefresh } from "@/hooks/useRealtimeRefresh";
+import { useAuth } from "@/context/AuthContext";
+import { roleAllows, routeRoles } from "@/lib/role-access";
 
 type Patient = {
   id: string;
@@ -119,6 +121,7 @@ const formatCurrency = (value: number) =>
 const Billing = () => {
   const navigate = useNavigate();
   const { facilitySlug = "", branchSlug = "" } = useTenantParams();
+  const { user } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentsByInvoice, setPaymentsByInvoice] = useState<Record<string, Payment[]>>({});
@@ -486,13 +489,15 @@ const Billing = () => {
           </CardContent>
         </Card>
 
-        <div className="flex justify-end">
-          <Button asChild variant="outline" className="gap-2">
-            <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
-              <Users className="h-4 w-4" /> Patient Registry
-            </Link>
-          </Button>
-        </div>
+        {roleAllows(user?.role, routeRoles.patients) && (
+          <div className="flex justify-end">
+            <Button asChild variant="outline" className="gap-2">
+              <Link to={getWorkspaceRoutePath(facilitySlug, "patients", branchSlug || undefined)}>
+                <Users className="h-4 w-4" /> Patient Registry
+              </Link>
+            </Button>
+          </div>
+        )}
       </main>
 
       <Dialog

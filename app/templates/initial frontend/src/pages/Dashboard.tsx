@@ -60,6 +60,7 @@ import {
   useFacilityQuery,
   useWorkspaceQuery,
 } from "@/hooks/useWorkspaceQueries";
+import { roleAllows, routeRoles } from "@/lib/role-access";
 
 type FacilityDepartment = {
   id: string;
@@ -184,52 +185,52 @@ const Dashboard = () => {
   const selectedModules = normalizeModules(rawSelectedModules);
   const moduleEnabled = (moduleId: Parameters<typeof isModuleEnabled>[1]) =>
     isModuleEnabled(selectedModules, moduleId);
-  const patientsPath = resolvedFacilitySlug && moduleEnabled("reception")
+  const patientsPath = resolvedFacilitySlug && moduleEnabled("reception") && roleAllows(user?.role, routeRoles.patients)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "patients", branchSlug || undefined)
     : "";
-  const appointmentsPath = resolvedFacilitySlug && moduleEnabled("reception")
+  const appointmentsPath = resolvedFacilitySlug && moduleEnabled("reception") && roleAllows(user?.role, routeRoles.appointments)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "appointments", branchSlug || undefined)
     : "";
-  const billingPath = resolvedFacilitySlug && moduleEnabled("billing")
+  const billingPath = resolvedFacilitySlug && moduleEnabled("billing") && roleAllows(user?.role, routeRoles.billing)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "billing", branchSlug || undefined)
     : "";
-  const laboratoryPath = resolvedFacilitySlug && moduleEnabled("lab")
+  const laboratoryPath = resolvedFacilitySlug && moduleEnabled("lab") && roleAllows(user?.role, routeRoles.laboratory)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "laboratory", branchSlug || undefined)
     : "";
-  const pharmacyPath = resolvedFacilitySlug && moduleEnabled("pharmacy")
+  const pharmacyPath = resolvedFacilitySlug && moduleEnabled("pharmacy") && roleAllows(user?.role, routeRoles.pharmacy)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "pharmacy", branchSlug || undefined)
     : "";
-  const radiologyPath = resolvedFacilitySlug && moduleEnabled("radiology")
+  const radiologyPath = resolvedFacilitySlug && moduleEnabled("radiology") && roleAllows(user?.role, routeRoles.radiology)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "radiology", branchSlug || undefined)
     : "";
-  const inventoryPath = resolvedFacilitySlug && moduleEnabled("inventory")
+  const inventoryPath = resolvedFacilitySlug && moduleEnabled("inventory") && roleAllows(user?.role, routeRoles.inventory)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "inventory", branchSlug || undefined)
     : "";
-  const queuePath = resolvedFacilitySlug && moduleEnabled("reception")
+  const queuePath = resolvedFacilitySlug && moduleEnabled("reception") && roleAllows(user?.role, routeRoles.queue)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "queue", branchSlug || undefined)
     : "";
-  const consultationsPath = resolvedFacilitySlug && moduleEnabled("consultations")
+  const consultationsPath = resolvedFacilitySlug && moduleEnabled("consultations") && roleAllows(user?.role, routeRoles.consultations)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "consultations", branchSlug || undefined)
     : "";
-  const wardsPath = resolvedFacilitySlug && moduleEnabled("nursing")
+  const wardsPath = resolvedFacilitySlug && moduleEnabled("nursing") && roleAllows(user?.role, routeRoles.wards)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "wards", branchSlug || undefined)
     : "";
-  const reportsPath = resolvedFacilitySlug && moduleEnabled("reports")
+  const reportsPath = resolvedFacilitySlug && moduleEnabled("reports") && roleAllows(user?.role, routeRoles.reports)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "reports", branchSlug || undefined)
     : "";
-  const recordsPath = resolvedFacilitySlug && moduleEnabled("records")
+  const recordsPath = resolvedFacilitySlug && moduleEnabled("records") && roleAllows(user?.role, routeRoles.records)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "records", branchSlug || undefined)
     : "";
-  const alertsPath = resolvedFacilitySlug
+  const alertsPath = resolvedFacilitySlug && roleAllows(user?.role, routeRoles.alerts)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "alerts", branchSlug || undefined)
     : "";
-  const auditLogsPath = resolvedFacilitySlug
+  const auditLogsPath = resolvedFacilitySlug && user?.role === "admin"
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "audit-logs", branchSlug || undefined)
     : "";
-  const settingsPath = resolvedFacilitySlug
+  const settingsPath = resolvedFacilitySlug && roleAllows(user?.role, routeRoles.admin)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "settings", branchSlug || undefined)
     : "";
-  const suppliersPath = resolvedFacilitySlug && moduleEnabled("inventory")
+  const suppliersPath = resolvedFacilitySlug && moduleEnabled("inventory") && roleAllows(user?.role, routeRoles.inventory)
     ? getWorkspaceRoutePath(resolvedFacilitySlug, "suppliers", branchSlug || undefined)
     : "";
   const facilityLoginPath = resolvedFacilitySlug

@@ -25,6 +25,7 @@ from app.models.hospital_listing import HospitalListing
 from app.models.integration_outbox import IntegrationOutbox
 from app.models.background_job import BackgroundJob
 from app.models.write_idempotency import WriteIdempotencyRecord
+from app.models.security_event import SecurityEvent
 
 # Export all models
 __all__ = [
@@ -64,4 +65,6 @@ __all__ = [
     'HospitalListing',
     'IntegrationOutbox',
     'BackgroundJob',
+    'WriteIdempotencyRecord',
+    'SecurityEvent',
 ]
